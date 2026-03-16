@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>mast-browser</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1e1e2e; color: #cdd6f4; font-family: monospace; display: flex; height: 100vh; }
+#sidebar { width: 280px; overflow-y: auto; background: #181825; border-right: 1px solid #313244; padding: 8px; }
+#sidebar h2 { font-size: 14px; color: #89b4fa; margin: 12px 0 4px; }
+#sidebar a { display: block; padding: 2px 4px; color: #a6adc8; text-decoration: none; font-size: 13px; }
+#sidebar a:hover { color: #cdd6f4; background: #313244; }
+#content { flex: 1; }
+#content iframe { width: 100%; height: 100%; border: none; }
+</style></head><body>
+<div id="sidebar">
+<h2>mast-browser</h2>
+{{range .Pkgs}}
+<h2>{{.Path}}</h2>
+{{range .Files}}<a href="/file?path={{.Rel}}" target="src">{{.Label}}</a>
+{{end}}
+{{end}}
+</div>
+<div id="content"><iframe name="src"></iframe></div>
+</body></html>

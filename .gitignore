@@ -8,6 +8,9 @@
 # Test binary
 *.test
 
+# Commands
+/mast-browser
+
 # Go workspace
 go.work
 go.work.sum
