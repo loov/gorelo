@@ -112,14 +112,7 @@ func objectKeyFor(obj types.Object) objectKey {
 		}
 	case *types.Var:
 		if o.IsField() {
-			// Fields are distinguished by receiver type when possible.
-			// For struct fields, the parent type info isn't directly
-			// accessible from the Var, so fields with the same name in
-			// different structs will get separate groups through the
-			// type-checker giving them distinct types.Object instances.
-			// We use the package path + field name which works for
-			// most cases; same-named fields in different structs within
-			// the same package are handled by the merge logic.
+			key.Receiver = fieldOwnerName(o)
 		}
 	}
 
@@ -230,6 +223,35 @@ func embeddedTypeName(t types.Type) *types.TypeName {
 		return named.Obj()
 	}
 	return nil
+}
+
+// fieldOwnerName returns the name of the struct type that owns the given field.
+// It searches the field's package scope for a named struct type containing
+// this field. Returns "" if the owner cannot be determined.
+func fieldOwnerName(field *types.Var) string {
+	pkg := field.Pkg()
+	if pkg == nil {
+		return ""
+	}
+	scope := pkg.Scope()
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		tn, ok := obj.(*types.TypeName)
+		if !ok {
+			continue
+		}
+		t := tn.Type().Underlying()
+		st, ok := t.(*types.Struct)
+		if !ok {
+			continue
+		}
+		for i := 0; i < st.NumFields(); i++ {
+			if st.Field(i) == field {
+				return tn.Name()
+			}
+		}
+	}
+	return ""
 }
 
 // baseTypeName returns a string representation of the base type for a receiver.

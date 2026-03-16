@@ -149,6 +149,58 @@ func TestFieldRename(t *testing.T) {
 	}
 }
 
+func TestSameNameFieldsDifferentStructs(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// User.Name and File.Name are fields with the same name in different structs.
+	// They must be in separate groups. This was previously broken when multi-pass
+	// type-checking (for platform-specific files) merged them via identical keys.
+
+	// Find the User.Name group (defined in structs.go).
+	var userNameGroup *mast.Group
+	for _, id := range findIdentsInFile(ix, "Name", "structs.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Field {
+			userNameGroup = grp
+			break
+		}
+	}
+	if userNameGroup == nil {
+		t.Fatal("no Field group for User.Name in structs.go")
+	}
+
+	// Find the File.Name group (defined in platform_linux.go or platform_windows.go).
+	var fileNameGroup *mast.Group
+	for _, pathFrag := range []string{"platform_linux.go", "platform_windows.go"} {
+		for _, id := range findIdentsInFile(ix, "Name", pathFrag) {
+			grp := ix.Group(id)
+			if grp != nil && grp.Kind == mast.Field {
+				fileNameGroup = grp
+				break
+			}
+		}
+		if fileNameGroup != nil {
+			break
+		}
+	}
+	if fileNameGroup == nil {
+		t.Fatal("no Field group for File.Name in platform files")
+	}
+
+	if userNameGroup == fileNameGroup {
+		t.Error("User.Name and File.Name must be in separate groups, but were merged into one")
+	}
+
+	// Verify f.Name in platform_common.go (PrintName method) is in File.Name's group, not User.Name's.
+	for _, id := range findIdentsInFile(ix, "Name", "platform_common.go") {
+		grp := ix.Group(id)
+		if grp == userNameGroup {
+			pos := ix.Fset.Position(id.Pos())
+			t.Errorf("Name at %s is in User.Name group but should be in File.Name group", pos)
+		}
+	}
+}
+
 func TestEmbeddedField(t *testing.T) {
 	ix := loadTestdata(t)
 
