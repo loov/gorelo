@@ -772,6 +772,167 @@ func TestTypeAssertionAndSwitch(t *testing.T) {
 	}
 }
 
+func TestCompoundBuildTags(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// platform_linux_amd64.go (linux && amd64) and platform_linux_arm64.go (linux && arm64)
+	// both define Arch and ArchBits with conflicting definitions.
+	// They should be loaded and partitioned into separate type-check passes.
+
+	// Both files should be present.
+	hasAmd64 := false
+	hasArm64 := false
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "platform_linux_amd64.go") {
+				hasAmd64 = true
+				if f.BuildTag != "linux && amd64" {
+					t.Errorf("expected build tag 'linux && amd64', got %q", f.BuildTag)
+				}
+			}
+			if strings.Contains(f.Path, "platform_linux_arm64.go") {
+				hasArm64 = true
+				if f.BuildTag != "linux && arm64" {
+					t.Errorf("expected build tag 'linux && arm64', got %q", f.BuildTag)
+				}
+			}
+		}
+	}
+	if !hasAmd64 {
+		t.Error("platform_linux_amd64.go not loaded")
+	}
+	if !hasArm64 {
+		t.Error("platform_linux_arm64.go not loaded")
+	}
+
+	// Arch var is defined in both files — they should be in the same group
+	// (same package-level var name, merged across passes).
+	archIdents := findIdents(ix, "Arch")
+	if len(archIdents) == 0 {
+		t.Fatal("no Arch idents found")
+	}
+	grp := ix.Group(archIdents[0])
+	if grp == nil {
+		t.Fatal("Arch has no group")
+	}
+	for _, id := range archIdents {
+		if ix.Group(id) != grp {
+			t.Error("Arch idents not all in same group across compound tags")
+		}
+	}
+
+	// ArchBits is defined in both files — should also merge.
+	abIdents := findIdents(ix, "ArchBits")
+	if len(abIdents) == 0 {
+		t.Fatal("no ArchBits idents found")
+	}
+	abGrp := ix.Group(abIdents[0])
+	if abGrp == nil {
+		t.Fatal("ArchBits has no group")
+	}
+	if abGrp.Kind != mast.Func {
+		t.Errorf("expected Func kind for ArchBits, got %v", abGrp.Kind)
+	}
+}
+
+func TestOrBuildTag(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// platform_unix.go has //go:build linux || darwin
+	var found bool
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "platform_unix.go") {
+				found = true
+				if f.BuildTag != "linux || darwin" {
+					t.Errorf("expected build tag 'linux || darwin', got %q", f.BuildTag)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("platform_unix.go not loaded")
+	}
+
+	// IsUnix should have a group.
+	idents := findIdentsInFile(ix, "IsUnix", "platform_unix.go")
+	if len(idents) == 0 {
+		t.Fatal("no IsUnix idents found")
+	}
+	grp := ix.Group(idents[0])
+	if grp == nil {
+		t.Fatal("IsUnix has no group")
+	}
+	if grp.Kind != mast.Func {
+		t.Errorf("expected Func kind for IsUnix, got %v", grp.Kind)
+	}
+}
+
+func TestNegatedBuildTag(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// platform_not_windows.go has //go:build !windows
+	var found bool
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "platform_not_windows.go") {
+				found = true
+				if f.BuildTag != "!windows" {
+					t.Errorf("expected build tag '!windows', got %q", f.BuildTag)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("platform_not_windows.go not loaded")
+	}
+
+	idents := findIdentsInFile(ix, "IsWindows", "platform_not_windows.go")
+	if len(idents) == 0 {
+		t.Fatal("no IsWindows idents found")
+	}
+	grp := ix.Group(idents[0])
+	if grp == nil {
+		t.Fatal("IsWindows has no group")
+	}
+	if grp.Kind != mast.Func {
+		t.Errorf("expected Func kind for IsWindows, got %v", grp.Kind)
+	}
+}
+
+func TestCustomBuildTag(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// custom_tag.go has //go:build custom (non-standard tag)
+	var found bool
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "custom_tag.go") {
+				found = true
+				if f.BuildTag != "custom" {
+					t.Errorf("expected build tag 'custom', got %q", f.BuildTag)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("custom_tag.go not loaded")
+	}
+
+	// CustomFeature and CustomGreeting should have groups.
+	for _, name := range []string{"CustomFeature", "CustomGreeting"} {
+		idents := findIdentsInFile(ix, name, "custom_tag.go")
+		if len(idents) == 0 {
+			t.Errorf("no %s idents found", name)
+			continue
+		}
+		grp := ix.Group(idents[0])
+		if grp == nil {
+			t.Errorf("%s has no group", name)
+		}
+	}
+}
+
 func TestGroupDeduplication(t *testing.T) {
 	ix := loadTestdata(t)
 
