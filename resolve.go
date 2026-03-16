@@ -120,6 +120,11 @@ func objectKeyFor(obj types.Object) objectKey {
 				key.Receiver = baseTypeName(recv.Type())
 			}
 		}
+		// Go allows multiple init() functions per package/file.
+		// Distinguish them by position.
+		if o.Name() == "init" {
+			key.Scope = fmt.Sprintf("%d", o.Pos())
+		}
 	case *types.Var:
 		if o.IsField() {
 			key.Receiver = fieldOwnerName(o)

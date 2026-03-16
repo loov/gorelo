@@ -123,3 +123,56 @@ func IgnoreError() {
 func CallStringer(s Stringer) string {
 	return s.String()
 }
+
+// Second init function — Go allows multiple init() per file/package.
+// Each is a distinct function and should not merge with the other.
+func init() {
+	_ = MaxUsers
+}
+
+// Closure capturing outer variable: greeting (parameter) is used
+// inside the closure and should link to the same group as the def.
+// The closure's own "name" parameter must NOT merge with other "name" params.
+func MakeCounter(start int) func() int {
+	count := start
+	return func() int {
+		count++
+		return count
+	}
+}
+
+// Short variable declaration reuse: err is reused across := in same scope.
+func MultiError() error {
+	_, err := Divide(1, 0)
+	if err != nil {
+		return err
+	}
+	_, err = Divide(2, 0) // reuse, not :=
+	return err
+}
+
+// Nested scope: err in the if block is a NEW variable shadowing outer err.
+func NestedScopeErr() error {
+	var err error
+	if true {
+		err := fmt.Errorf("inner")
+		_ = err
+	}
+	return err
+}
+
+// Method expression: User.String used as a value.
+func MethodExpr() func(User) string {
+	return User.String
+}
+
+// Generic instantiation with named type args.
+func MakeCounterPair() Pair[Counter, Counter] {
+	return MakePair[Counter, Counter](1, 2)
+}
+
+// Interface embedding
+type StringerAlt interface {
+	Stringer
+	Describe() string
+}
