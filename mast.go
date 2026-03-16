@@ -19,7 +19,7 @@ type Index struct {
 	Pkgs   []*Package
 	Errors []error
 
-	groups     map[*ast.Ident]*Group
+	groups      map[*ast.Ident]*Group
 	groupsByKey map[objectKey]*Group
 }
 

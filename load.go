@@ -360,5 +360,5 @@ var knownGOARCH = map[string]bool{
 	"s390x": true, "wasm": true,
 }
 
-func isKnownGOOS(s string) bool  { return knownGOOS[s] }
+func isKnownGOOS(s string) bool   { return knownGOOS[s] }
 func isKnownGOARCH(s string) bool { return knownGOARCH[s] }

@@ -561,6 +561,217 @@ func TestPlatformSpecificUniqueFields(t *testing.T) {
 	}
 }
 
+func TestFieldThroughTypeAlias(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Member is a type alias for User. Accessing m.Name through a Member
+	// should resolve to the same User.Name field group.
+
+	// Find the User.Name field group from structs.go.
+	var userNameGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "Name", "structs.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Field {
+			userNameGrp = grp
+			break
+		}
+	}
+	if userNameGrp == nil {
+		t.Fatal("no Field group for User.Name in structs.go")
+	}
+
+	// The m.Name in MemberName (accessing Name through the Member alias)
+	// should be in the same group as User.Name.
+	// MemberName is in structs.go; find the Name ident that is a Use.
+	found := false
+	for _, ident := range userNameGrp.Idents {
+		pos := ix.Fset.Position(ident.Ident.Pos())
+		if strings.Contains(pos.Filename, "structs.go") && ident.Kind == mast.Use {
+			// This should be the m.Name use inside MemberName.
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("m.Name in MemberName (via type alias Member) not linked to User.Name field group")
+	}
+}
+
+func TestChannelTypes(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Event type should link across channels.go usages.
+	eventIdents := findIdentsInFile(ix, "Event", "channels.go")
+	if len(eventIdents) == 0 {
+		t.Fatal("no Event idents in channels.go")
+	}
+	grp := ix.Group(eventIdents[0])
+	if grp == nil {
+		t.Fatal("Event has no group")
+	}
+	if grp.Kind != mast.TypeName {
+		t.Errorf("expected TypeName kind for Event, got %v", grp.Kind)
+	}
+	for _, id := range eventIdents {
+		if g := ix.Group(id); g != grp {
+			t.Errorf("Event ident at %v in different group", ix.Fset.Position(id.Pos()))
+		}
+	}
+
+	// EventChan should be its own type group, separate from Event.
+	ecIdents := findIdentsInFile(ix, "EventChan", "channels.go")
+	if len(ecIdents) == 0 {
+		t.Fatal("no EventChan idents in channels.go")
+	}
+	ecGrp := ix.Group(ecIdents[0])
+	if ecGrp == nil {
+		t.Fatal("EventChan has no group")
+	}
+	if ecGrp == grp {
+		t.Error("EventChan and Event should be in separate groups")
+	}
+
+	// EventReceiver should be its own group too.
+	erIdents := findIdentsInFile(ix, "EventReceiver", "channels.go")
+	if len(erIdents) == 0 {
+		t.Fatal("no EventReceiver idents in channels.go")
+	}
+	erGrp := ix.Group(erIdents[0])
+	if erGrp == nil {
+		t.Fatal("EventReceiver has no group")
+	}
+	if erGrp == grp || erGrp == ecGrp {
+		t.Error("EventReceiver should be in its own group")
+	}
+}
+
+func TestLabels(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// "Outer" label in SearchMatrix — def and use should be in same group.
+	outerIdents := findIdentsInFile(ix, "Outer", "advanced.go")
+	if len(outerIdents) == 0 {
+		t.Fatal("no Outer idents in advanced.go")
+	}
+	grp := ix.Group(outerIdents[0])
+	if grp == nil {
+		t.Fatal("Outer label has no group")
+	}
+	if grp.Kind != mast.Label {
+		t.Errorf("expected Label kind for Outer, got %v", grp.Kind)
+	}
+	for _, id := range outerIdents {
+		if ix.Group(id) != grp {
+			t.Error("Outer label idents not all in same group")
+		}
+	}
+	if len(grp.Idents) < 2 {
+		t.Errorf("expected at least 2 Outer label idents (def + use), got %d", len(grp.Idents))
+	}
+}
+
+func TestNamedFuncType(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Predicate is a named function type.
+	predIdents := findIdentsInFile(ix, "Predicate", "advanced.go")
+	if len(predIdents) == 0 {
+		t.Fatal("no Predicate idents in advanced.go")
+	}
+	grp := ix.Group(predIdents[0])
+	if grp == nil {
+		t.Fatal("Predicate has no group")
+	}
+	if grp.Kind != mast.TypeName {
+		t.Errorf("expected TypeName kind for Predicate, got %v", grp.Kind)
+	}
+	// Should have def + use in Filter parameter.
+	if len(grp.Idents) < 2 {
+		t.Errorf("expected at least 2 Predicate idents, got %d", len(grp.Idents))
+	}
+}
+
+func TestNamedReturnValues(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// "result" named return in Divide — def and uses should be grouped.
+	resultIdents := findIdentsInFile(ix, "result", "advanced.go")
+	if len(resultIdents) == 0 {
+		t.Fatal("no result idents in advanced.go")
+	}
+	grp := ix.Group(resultIdents[0])
+	if grp == nil {
+		t.Fatal("result named return has no group")
+	}
+	if grp.Kind != mast.Var {
+		t.Errorf("expected Var kind for result, got %v", grp.Kind)
+	}
+	for _, id := range resultIdents {
+		if ix.Group(id) != grp {
+			t.Error("result idents not all in same group")
+		}
+	}
+}
+
+func TestMapNamedType(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// UserIndex is a named map type.
+	uiIdents := findIdents(ix, "UserIndex")
+	if len(uiIdents) == 0 {
+		t.Fatal("no UserIndex idents found")
+	}
+	grp := ix.Group(uiIdents[0])
+	if grp == nil {
+		t.Fatal("UserIndex has no group")
+	}
+	if grp.Kind != mast.TypeName {
+		t.Errorf("expected TypeName kind for UserIndex, got %v", grp.Kind)
+	}
+	// def + uses in BuildIndex and LookupUser.
+	if len(grp.Idents) < 3 {
+		t.Errorf("expected at least 3 UserIndex idents, got %d", len(grp.Idents))
+	}
+}
+
+func TestTypeAssertionAndSwitch(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// In Describe, type switch uses User, Counter, Event — each should link
+	// to their respective type groups.
+	userIdents := findIdentsInFile(ix, "User", "advanced.go")
+	if len(userIdents) == 0 {
+		t.Fatal("no User idents in advanced.go")
+	}
+	// The User ident in the type switch should be in the same group as User struct def.
+	userDefIdents := findIdentsInFile(ix, "User", "structs.go")
+	if len(userDefIdents) == 0 {
+		t.Fatal("no User idents in structs.go")
+	}
+	var userTypeGrp *mast.Group
+	for _, id := range userDefIdents {
+		g := ix.Group(id)
+		if g != nil && g.Kind == mast.TypeName {
+			userTypeGrp = g
+			break
+		}
+	}
+	if userTypeGrp == nil {
+		t.Fatal("no TypeName group for User in structs.go")
+	}
+
+	linked := false
+	for _, id := range userIdents {
+		if ix.Group(id) == userTypeGrp {
+			linked = true
+			break
+		}
+	}
+	if !linked {
+		t.Error("User in advanced.go type switch not linked to User type definition")
+	}
+}
+
 func TestGroupDeduplication(t *testing.T) {
 	ix := loadTestdata(t)
 

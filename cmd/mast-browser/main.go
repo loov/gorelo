@@ -295,8 +295,8 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 // groupHighlight marks a single referenced identifier within a snippet.
 type groupHighlight struct {
 	Line int    `json:"line"`
-	Col  int    `json:"col"` // 1-based column (byte offset in line)
-	Len  int    `json:"len"` // length of identifier in bytes
+	Col  int    `json:"col"`  // 1-based column (byte offset in line)
+	Len  int    `json:"len"`  // length of identifier in bytes
 	Kind string `json:"kind"` // "def" or "use"
 }
 

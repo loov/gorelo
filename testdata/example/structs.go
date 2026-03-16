@@ -1,5 +1,7 @@
 package example
 
+import "fmt"
+
 // Regular struct with fields
 type User struct {
 	Name  string
@@ -9,8 +11,16 @@ type User struct {
 
 // Embedded field
 type Admin struct {
-	User           // embedded — renaming User type should rename this too
+	User        // embedded — renaming User type should rename this too
 	Permissions []string
+}
+
+// Type alias for struct
+type Member = User
+
+// Field access through type alias
+func MemberName(m Member) string {
+	return m.Name
 }
 
 // Anonymous struct in var
