@@ -28,7 +28,7 @@ var tmpl = template.Must(template.ParseFS(templates, "*.html"))
 
 func main() {
 	dir := flag.String("dir", ".", "directory to load")
-	addr := flag.String("addr", "localhost:8080", "listen address")
+	listen := flag.String("listen", "127.0.0.1:8080", "listen address")
 	flag.Parse()
 
 	absDir, err := filepath.Abs(*dir)
@@ -93,8 +93,8 @@ func main() {
 	http.HandleFunc("/file", s.handleFile)
 	http.HandleFunc("/group", s.handleGroup)
 
-	log.Printf("listening on http://%s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	log.Printf("listening on http://%s", *listen)
+	log.Fatal(http.ListenAndServe(*listen, nil))
 }
 
 type server struct {
