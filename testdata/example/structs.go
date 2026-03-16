@@ -48,6 +48,27 @@ func (server *Server) Print() {
 	fmt.Println(server.TLS.KeyFile)
 }
 
+// Multi-level embedding: SuperAdmin → Admin → User
+type SuperAdmin struct {
+	Admin
+	Level int
+}
+
+// Promoted field access through two levels of embedding.
+func SuperAdminName(sa SuperAdmin) string {
+	return sa.Name
+}
+
+// Same-named method on different type than User.String().
+func (s *Server) String() string {
+	return s.Addr
+}
+
+// Selector on return value.
+func DefaultUserName() string {
+	return NewUser("test", "test@test.com").Name
+}
+
 // Function on package level using anonymous fields.
 func PrintConfig() {
 	fmt.Println(Config.Host)

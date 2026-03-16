@@ -93,3 +93,33 @@ func LookupUser(idx UserIndex, name string) (*User, bool) {
 	u, ok := idx[name]
 	return u, ok
 }
+
+// Same-named locals in different functions.
+// "name" appears as a parameter in both LookupUser (above) and here.
+// "ok" appears as a local in both LookupUser and here.
+// They must NOT be in the same group.
+func ValidateUser(name string) (bool, error) {
+	ok := len(name) > 0
+	if !ok {
+		return false, fmt.Errorf("empty name")
+	}
+	return ok, nil
+}
+
+// Local variable shadowing a package-level variable.
+func ShadowDefaultUser() *User {
+	DefaultUser := NewUser("shadow", "shadow@test.com")
+	return DefaultUser
+}
+
+// Blank identifier usage.
+func IgnoreError() {
+	_, _ = Divide(1, 0)
+}
+
+// Interface method resolution: Stringer.String is defined in types.go,
+// User.String is defined in funcs.go. They are separate methods but
+// calling s.String() on a Stringer should resolve to Stringer.String.
+func CallStringer(s Stringer) string {
+	return s.String()
+}

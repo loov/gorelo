@@ -694,21 +694,46 @@ func TestNamedFuncType(t *testing.T) {
 func TestNamedReturnValues(t *testing.T) {
 	ix := loadTestdata(t)
 
-	// "result" named return in Divide — def and uses should be grouped.
+	// "result" named return in Divide — def and uses within Divide should be grouped.
+	// Note: "result" also appears in Filter as a different local var.
 	resultIdents := findIdentsInFile(ix, "result", "advanced.go")
 	if len(resultIdents) == 0 {
 		t.Fatal("no result idents in advanced.go")
 	}
-	grp := ix.Group(resultIdents[0])
-	if grp == nil {
-		t.Fatal("result named return has no group")
-	}
-	if grp.Kind != mast.Var {
-		t.Errorf("expected Var kind for result, got %v", grp.Kind)
-	}
+
+	// Find the group for the "result" in Divide (around line 43-49).
+	var divideResultGrp *mast.Group
 	for _, id := range resultIdents {
-		if ix.Group(id) != grp {
-			t.Error("result idents not all in same group")
+		pos := ix.Fset.Position(id.Pos())
+		if pos.Line >= 43 && pos.Line <= 49 {
+			divideResultGrp = ix.Group(id)
+			break
+		}
+	}
+	if divideResultGrp == nil {
+		t.Fatal("result named return in Divide has no group")
+	}
+	if divideResultGrp.Kind != mast.Var {
+		t.Errorf("expected Var kind for result, got %v", divideResultGrp.Kind)
+	}
+
+	// All "result" idents within Divide should be in the same group.
+	for _, id := range resultIdents {
+		pos := ix.Fset.Position(id.Pos())
+		if pos.Line >= 43 && pos.Line <= 49 {
+			if ix.Group(id) != divideResultGrp {
+				t.Errorf("result ident at %v not in same group as Divide's named return", pos)
+			}
+		}
+	}
+
+	// "result" in Filter (around line 26) should be in a DIFFERENT group.
+	for _, id := range resultIdents {
+		pos := ix.Fset.Position(id.Pos())
+		if pos.Line >= 25 && pos.Line <= 33 {
+			if ix.Group(id) == divideResultGrp {
+				t.Errorf("result in Filter at %v should be in separate group from result in Divide", pos)
+			}
 		}
 	}
 }
@@ -929,6 +954,294 @@ func TestCustomBuildTag(t *testing.T) {
 		grp := ix.Group(idents[0])
 		if grp == nil {
 			t.Errorf("%s has no group", name)
+		}
+	}
+}
+
+func TestLocalVariableScoping(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// "name" is a parameter in LookupUser and also in ValidateUser.
+	// These are different local variables and must be in separate groups.
+	lookupNames := findIdentsInFile(ix, "name", "advanced.go")
+	if len(lookupNames) == 0 {
+		t.Fatal("no name idents in advanced.go")
+	}
+
+	// Collect distinct groups for "name" idents in advanced.go.
+	nameGroups := map[*mast.Group]bool{}
+	for _, id := range lookupNames {
+		grp := ix.Group(id)
+		if grp != nil {
+			nameGroups[grp] = true
+		}
+	}
+	if len(nameGroups) < 2 {
+		t.Errorf("expected 'name' parameter in LookupUser and ValidateUser to be in separate groups, got %d group(s)", len(nameGroups))
+	}
+}
+
+func TestLocalOkVariableScoping(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// "ok" appears as a local in LookupUser and ValidateUser.
+	// They must be in separate groups.
+	okIdents := findIdentsInFile(ix, "ok", "advanced.go")
+	if len(okIdents) == 0 {
+		t.Fatal("no ok idents in advanced.go")
+	}
+
+	okGroups := map[*mast.Group]bool{}
+	for _, id := range okIdents {
+		grp := ix.Group(id)
+		if grp != nil {
+			okGroups[grp] = true
+		}
+	}
+	if len(okGroups) < 2 {
+		t.Errorf("expected 'ok' in LookupUser and ValidateUser to be in separate groups, got %d group(s)", len(okGroups))
+	}
+}
+
+func TestLocalShadowingPackageVar(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// ShadowDefaultUser declares a local "DefaultUser" that shadows the
+	// package-level var. They must be in separate groups.
+	pkgIdents := findIdentsInFile(ix, "DefaultUser", "vars.go")
+	if len(pkgIdents) == 0 {
+		t.Fatal("no DefaultUser idents in vars.go")
+	}
+	pkgGrp := ix.Group(pkgIdents[0])
+	if pkgGrp == nil {
+		t.Fatal("package-level DefaultUser has no group")
+	}
+
+	localIdents := findIdentsInFile(ix, "DefaultUser", "advanced.go")
+	// There are two kinds: the use of the package-level DefaultUser (in init())
+	// and the local shadow in ShadowDefaultUser. The local shadow should be in
+	// a different group.
+	localGroups := map[*mast.Group]bool{}
+	for _, id := range localIdents {
+		grp := ix.Group(id)
+		if grp != nil {
+			localGroups[grp] = true
+		}
+	}
+	if len(localGroups) < 2 {
+		t.Errorf("expected local shadow of DefaultUser to be in separate group from package var, got %d group(s)", len(localGroups))
+	}
+}
+
+func TestPromotedFieldMultiLevel(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// SuperAdmin embeds Admin which embeds User.
+	// sa.Name should resolve to User.Name field group.
+	var userNameGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "Name", "structs.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Field {
+			// Find the one with User as owner by checking if it has a def in structs.go
+			for _, ident := range grp.Idents {
+				if ident.Kind == mast.Def && strings.Contains(ident.File.Path, "structs.go") {
+					pos := ix.Fset.Position(ident.Ident.Pos())
+					// User.Name is on an early line, File.Name would be in platform files.
+					if pos.Line < 15 {
+						userNameGrp = grp
+						break
+					}
+				}
+			}
+		}
+		if userNameGrp != nil {
+			break
+		}
+	}
+	if userNameGrp == nil {
+		t.Fatal("no User.Name field group found")
+	}
+
+	// The sa.Name in SuperAdminName should be in this group.
+	found := false
+	for _, ident := range userNameGrp.Idents {
+		pos := ix.Fset.Position(ident.Ident.Pos())
+		if strings.Contains(pos.Filename, "structs.go") && ident.Kind == mast.Use {
+			// Check it's from SuperAdminName (not MemberName or other uses).
+			if pos.Line > 55 && pos.Line < 70 {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Error("sa.Name in SuperAdminName not linked to User.Name field group (multi-level promoted field)")
+	}
+}
+
+func TestSameMethodNameDifferentTypes(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// User.String() and Server.String() should be in separate groups.
+	var userStringGrp, serverStringGrp *mast.Group
+
+	for _, id := range findIdentsInFile(ix, "String", "funcs.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Method {
+			userStringGrp = grp
+			break
+		}
+	}
+	for _, id := range findIdentsInFile(ix, "String", "structs.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Method {
+			serverStringGrp = grp
+			break
+		}
+	}
+
+	if userStringGrp == nil {
+		t.Fatal("no Method group for User.String")
+	}
+	if serverStringGrp == nil {
+		t.Fatal("no Method group for Server.String")
+	}
+	if userStringGrp == serverStringGrp {
+		t.Error("User.String() and Server.String() must be in separate groups")
+	}
+}
+
+func TestSelectorOnReturnValue(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// NewUser("test", "test@test.com").Name — the .Name selector should
+	// resolve to User.Name field group.
+	var userNameGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "Name", "structs.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Field {
+			for _, ident := range grp.Idents {
+				if ident.Kind == mast.Def && strings.Contains(ident.File.Path, "structs.go") {
+					pos := ix.Fset.Position(ident.Ident.Pos())
+					if pos.Line < 15 {
+						userNameGrp = grp
+						break
+					}
+				}
+			}
+		}
+		if userNameGrp != nil {
+			break
+		}
+	}
+	if userNameGrp == nil {
+		t.Fatal("no User.Name field group found")
+	}
+
+	// DefaultUserName calls NewUser(...).Name — find that Name use.
+	found := false
+	for _, ident := range userNameGrp.Idents {
+		pos := ix.Fset.Position(ident.Ident.Pos())
+		if strings.Contains(pos.Filename, "structs.go") && ident.Kind == mast.Use {
+			// DefaultUserName is around line 62-64
+			if pos.Line > 60 && pos.Line < 70 {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Error("NewUser(...).Name selector not linked to User.Name field group")
+	}
+}
+
+func TestBlankIdentifierUntracked(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Blank identifiers (_) should be untracked (Group returns nil).
+	// Find _ idents in advanced.go (IgnoreError uses _ = Divide).
+	blankIdents := findIdentsInFile(ix, "_", "advanced.go")
+	for _, id := range blankIdents {
+		if grp := ix.Group(id); grp != nil {
+			t.Errorf("blank identifier at %v should be untracked but has group %q", ix.Fset.Position(id.Pos()), grp.Name)
+		}
+	}
+}
+
+func TestPackageNameUntracked(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// The "example" ident in "package example" declarations should be
+	// untracked (obj is nil for package name defs).
+	for _, pkg := range ix.Pkgs {
+		for _, file := range pkg.Files {
+			pkgIdent := file.Syntax.Name
+			if grp := ix.Group(pkgIdent); grp != nil {
+				t.Errorf("package name ident %q at %v should be untracked",
+					pkgIdent.Name, ix.Fset.Position(pkgIdent.Pos()))
+			}
+		}
+	}
+}
+
+func TestInterfaceMethodVsConcreteMethod(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Stringer.String() (interface method def in types.go) and
+	// User.String() (concrete method def in funcs.go) should be in
+	// separate groups. Calling s.String() on a Stringer value should
+	// resolve to the interface method, not the concrete one.
+
+	// Find Stringer.String group from types.go.
+	var stringerStringGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "String", "types.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Method {
+			stringerStringGrp = grp
+			break
+		}
+	}
+	if stringerStringGrp == nil {
+		// It might be classified as Func rather than Method for interface methods.
+		for _, id := range findIdentsInFile(ix, "String", "types.go") {
+			grp := ix.Group(id)
+			if grp != nil {
+				stringerStringGrp = grp
+				break
+			}
+		}
+	}
+	if stringerStringGrp == nil {
+		t.Fatal("no group for String in types.go")
+	}
+
+	// Find User.String group from funcs.go.
+	var userStringGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "String", "funcs.go") {
+		grp := ix.Group(id)
+		if grp != nil && grp.Kind == mast.Method {
+			userStringGrp = grp
+			break
+		}
+	}
+	if userStringGrp == nil {
+		t.Fatal("no Method group for User.String in funcs.go")
+	}
+
+	if stringerStringGrp == userStringGrp {
+		t.Error("Stringer.String() and User.String() should be in separate groups")
+	}
+
+	// s.String() call in CallStringer should resolve to Stringer.String, not User.String.
+	callIdents := findIdentsInFile(ix, "String", "advanced.go")
+	for _, id := range callIdents {
+		grp := ix.Group(id)
+		if grp == userStringGrp {
+			pos := ix.Fset.Position(id.Pos())
+			// Only flag if it's the one inside CallStringer
+			if pos.Line > 100 {
+				t.Errorf("s.String() in CallStringer at %v resolved to User.String group instead of Stringer.String", pos)
+			}
 		}
 	}
 }

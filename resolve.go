@@ -1,6 +1,7 @@
 package mast
 
 import (
+	"fmt"
 	"go/ast"
 	"go/types"
 )
@@ -10,6 +11,21 @@ type objectKey struct {
 	PkgPath  string
 	Name     string
 	Receiver string // non-empty for methods and fields
+	Scope    string // non-empty for local (non-package-scope) variables
+}
+
+// shouldSkip returns true if the object should not be tracked.
+func shouldSkip(obj types.Object) bool {
+	if obj == nil {
+		return true
+	}
+	if obj.Name() == "_" {
+		return true
+	}
+	if isBuiltinOrUniverse(obj) {
+		return true
+	}
+	return false
 }
 
 // resolveInfo processes a single type-check pass's Info, building
@@ -17,10 +33,7 @@ type objectKey struct {
 func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 	// Process Defs (skip embedded fields — handled below).
 	for ident, obj := range info.Defs {
-		if obj == nil {
-			continue // package name, blank ident
-		}
-		if isBuiltinOrUniverse(obj) {
+		if shouldSkip(obj) {
 			continue
 		}
 		if v, ok := obj.(*types.Var); ok && v.Embedded() {
@@ -38,10 +51,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 	// Process Uses.
 	for ident, obj := range info.Uses {
-		if obj == nil {
-			continue
-		}
-		if isBuiltinOrUniverse(obj) {
+		if shouldSkip(obj) {
 			continue
 		}
 		file := fileForIdent(ident, fileMap)
@@ -57,7 +67,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 	// Process Selections (field/method access via selector expressions).
 	for sel, selection := range info.Selections {
 		obj := selection.Obj()
-		if obj == nil || isBuiltinOrUniverse(obj) {
+		if shouldSkip(obj) {
 			continue
 		}
 		file := fileForIdent(sel.Sel, fileMap)
@@ -113,7 +123,15 @@ func objectKeyFor(obj types.Object) objectKey {
 	case *types.Var:
 		if o.IsField() {
 			key.Receiver = fieldOwnerName(o)
+		} else if isLocalScope(o) {
+			key.Scope = fmt.Sprintf("%d", o.Pos())
 		}
+	case *types.Const:
+		if isLocalScope(o) {
+			key.Scope = fmt.Sprintf("%d", o.Pos())
+		}
+	case *types.Label:
+		key.Scope = fmt.Sprintf("%d", o.Pos())
 	}
 
 	return key
@@ -223,6 +241,21 @@ func embeddedTypeName(t types.Type) *types.TypeName {
 		return named.Obj()
 	}
 	return nil
+}
+
+// isLocalScope returns true if the object is declared in a local scope
+// (not at package level). Local variables, constants, etc. need position-based
+// keys to avoid merging same-named locals from different functions.
+func isLocalScope(obj types.Object) bool {
+	parent := obj.Parent()
+	if parent == nil {
+		return false
+	}
+	pkg := obj.Pkg()
+	if pkg == nil {
+		return false
+	}
+	return parent != pkg.Scope()
 }
 
 // fieldOwnerName returns the name of the struct type that owns the given field.
