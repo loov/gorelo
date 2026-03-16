@@ -1461,6 +1461,361 @@ func TestInterfaceEmbedding(t *testing.T) {
 	}
 }
 
+func TestShortVarDeclReuse(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// In ShortVarDeclReuse, "err" is introduced by := then reused by =.
+	// Both should be the same local variable, in the same group.
+	errIdents := findIdentsInFile(ix, "err", "advanced.go")
+
+	// Find err idents in ShortVarDeclReuse's line range.
+	var svrGrp *mast.Group
+	var svrIdents []*ast.Ident
+	for _, id := range errIdents {
+		pos := ix.Fset.Position(id.Pos())
+		if pos.Line >= 181 && pos.Line <= 188 {
+			svrIdents = append(svrIdents, id)
+			if svrGrp == nil {
+				svrGrp = ix.Group(id)
+			}
+		}
+	}
+	if svrGrp == nil {
+		t.Fatal("err in ShortVarDeclReuse has no group")
+	}
+	for _, id := range svrIdents {
+		if ix.Group(id) != svrGrp {
+			pos := ix.Fset.Position(id.Pos())
+			t.Errorf("err at %v should be in same group as other err in ShortVarDeclReuse", pos)
+		}
+	}
+}
+
+func TestReceiverVariable(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// "u" is a receiver variable in User.String (funcs.go) and User.Rename (advanced.go).
+	// They are different parameters in different methods and must be in separate groups.
+	funcU := findIdentsInFile(ix, "u", "funcs.go")
+	advU := findIdentsInFile(ix, "u", "advanced.go")
+	if len(funcU) == 0 || len(advU) == 0 {
+		t.Skip("receiver variable idents not found in both files")
+	}
+
+	funcUGroups := map[*mast.Group]bool{}
+	for _, id := range funcU {
+		if g := ix.Group(id); g != nil {
+			funcUGroups[g] = true
+		}
+	}
+
+	advUGroups := map[*mast.Group]bool{}
+	for _, id := range advU {
+		if g := ix.Group(id); g != nil {
+			advUGroups[g] = true
+		}
+	}
+
+	// There should be no overlap between the groups.
+	for g := range advUGroups {
+		if funcUGroups[g] {
+			t.Error("receiver 'u' in funcs.go and advanced.go should be in separate groups")
+			break
+		}
+	}
+}
+
+func TestClosureSameNamedParam(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// TransformAll has outer param "x" and inner closure param "x".
+	// They should be in separate groups.
+	xIdents := findIdentsInFile(ix, "x", "advanced.go")
+
+	xGroups := map[*mast.Group]bool{}
+	for _, id := range xIdents {
+		pos := ix.Fset.Position(id.Pos())
+		// TransformAll region
+		if pos.Line >= 195 && pos.Line <= 199 {
+			if g := ix.Group(id); g != nil {
+				xGroups[g] = true
+			}
+		}
+	}
+	if len(xGroups) < 2 {
+		t.Errorf("expected outer 'x' and inner closure 'x' in TransformAll to be in separate groups, got %d group(s)", len(xGroups))
+	}
+}
+
+func TestPointerMethodExpression(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// (*User).SetEmail used as a value should link to SetEmail method group.
+	var setEmailGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "SetEmail", "funcs.go") {
+		g := ix.Group(id)
+		if g != nil && g.Kind == mast.Method {
+			setEmailGrp = g
+			break
+		}
+	}
+	if setEmailGrp == nil {
+		t.Fatal("no Method group for SetEmail in funcs.go")
+	}
+
+	// The SetEmail ident in PointerMethodExpr should be in same group.
+	found := false
+	for _, id := range findIdentsInFile(ix, "SetEmail", "advanced.go") {
+		if ix.Group(id) == setEmailGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("(*User).SetEmail method expression not linked to SetEmail method group")
+	}
+}
+
+func TestTypeConversion(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Counter(n) — the "Counter" ident in the type conversion should link
+	// to the Counter type definition.
+	var counterGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "Counter", "types.go") {
+		g := ix.Group(id)
+		if g != nil && g.Kind == mast.TypeName {
+			counterGrp = g
+			break
+		}
+	}
+	if counterGrp == nil {
+		t.Fatal("no TypeName group for Counter")
+	}
+
+	found := false
+	for _, id := range findIdentsInFile(ix, "Counter", "advanced.go") {
+		if ix.Group(id) == counterGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Counter in type conversion not linked to Counter type group")
+	}
+}
+
+func TestBuildIgnoreFile(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// ignored.go has //go:build ignore. Mast should still load it.
+	var found bool
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "ignored.go") {
+				found = true
+				if f.BuildTag != "ignore" {
+					t.Errorf("expected build tag 'ignore', got %q", f.BuildTag)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("ignored.go not loaded (//go:build ignore file should still be included)")
+	}
+
+	// IgnoredVar and IgnoredFunc should have groups.
+	for _, name := range []string{"IgnoredVar", "IgnoredFunc"} {
+		idents := findIdentsInFile(ix, name, "ignored.go")
+		if len(idents) == 0 {
+			t.Errorf("no %s idents found in ignored.go", name)
+			continue
+		}
+		if ix.Group(idents[0]) == nil {
+			t.Errorf("%s has no group", name)
+		}
+	}
+}
+
+func TestEmptyFile(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// empty.go has only a package declaration. It should be loaded without errors.
+	var found bool
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "empty.go") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("empty.go not loaded")
+	}
+}
+
+func TestRenamedImport(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// imports.go uses `import lnx "example/linux"`.
+	// "lnx" should be a PackageName ident with a group.
+	lnxIdents := findIdentsInFile(ix, "lnx", "imports.go")
+	if len(lnxIdents) == 0 {
+		t.Fatal("no lnx idents in imports.go")
+	}
+
+	var pkgNameGrp *mast.Group
+	for _, id := range lnxIdents {
+		g := ix.Group(id)
+		if g != nil {
+			pkgNameGrp = g
+			break
+		}
+	}
+	if pkgNameGrp == nil {
+		t.Fatal("lnx import has no group")
+	}
+	if pkgNameGrp.Kind != mast.PackageName {
+		t.Errorf("expected PackageName kind for lnx, got %v", pkgNameGrp.Kind)
+	}
+
+	// All lnx idents (import def + uses) should be in same group.
+	for _, id := range lnxIdents {
+		if ix.Group(id) != pkgNameGrp {
+			t.Error("lnx idents not all in same group")
+			break
+		}
+	}
+}
+
+func TestCrossPackageFieldAccess(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// LinuxDistro in platform_linux.go calls linux.GetInfo().Distro.
+	// "Distro" should link to linux.Info.Distro field group.
+	var distroGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "Distro", "linux/linux.go") {
+		g := ix.Group(id)
+		if g != nil && g.Kind == mast.Field {
+			distroGrp = g
+			break
+		}
+	}
+	if distroGrp == nil {
+		t.Fatal("no Field group for Distro in linux/linux.go")
+	}
+
+	// The "Distro" use in platform_linux.go should be in the same group.
+	found := false
+	for _, id := range findIdentsInFile(ix, "Distro", "platform_linux.go") {
+		if ix.Group(id) == distroGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("info.Distro in platform_linux.go not linked to linux.Info.Distro field group")
+	}
+}
+
+func TestLocalConst(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// "limit" is a local const in LocalConst. It should have its own group,
+	// separate from any other "limit" that might exist.
+	limitIdents := findIdentsInFile(ix, "limit", "advanced.go")
+	if len(limitIdents) == 0 {
+		t.Fatal("no limit idents in advanced.go")
+	}
+
+	grp := ix.Group(limitIdents[0])
+	if grp == nil {
+		t.Fatal("local const limit has no group")
+	}
+	if grp.Kind != mast.Const {
+		t.Errorf("expected Const kind for limit, got %v", grp.Kind)
+	}
+
+	// All limit idents in LocalConst should be in the same group.
+	for _, id := range limitIdents {
+		if ix.Group(id) != grp {
+			t.Error("limit idents not all in same group")
+			break
+		}
+	}
+}
+
+func TestVariadicForwarding(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// FirstName calls Names(users...). The "Names" ident should link
+	// to the Names function definition.
+	var namesGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "Names", "funcs.go") {
+		g := ix.Group(id)
+		if g != nil && g.Kind == mast.Func {
+			namesGrp = g
+			break
+		}
+	}
+	if namesGrp == nil {
+		t.Fatal("no Func group for Names in funcs.go")
+	}
+
+	found := false
+	for _, id := range findIdentsInFile(ix, "Names", "advanced.go") {
+		if ix.Group(id) == namesGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Names call in FirstName not linked to Names function group")
+	}
+}
+
+func TestAlternateInterfaceSameMethod(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Stringer and Alternate both define String() method.
+	// These are separate interfaces with separate method definitions.
+	var stringerStringGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "String", "types.go") {
+		g := ix.Group(id)
+		if g == nil || g.Kind != mast.Method {
+			continue
+		}
+		// Determine which interface this belongs to by checking the Receiver
+		// or by position. Stringer is on line 16, Alternate on line 19.
+		pos := ix.Fset.Position(id.Pos())
+		if pos.Line == 16 {
+			stringerStringGrp = g
+		}
+	}
+
+	var alternateStringGrp *mast.Group
+	for _, id := range findIdentsInFile(ix, "String", "types.go") {
+		g := ix.Group(id)
+		if g == nil || g.Kind != mast.Method {
+			continue
+		}
+		pos := ix.Fset.Position(id.Pos())
+		if pos.Line == 19 {
+			alternateStringGrp = g
+		}
+	}
+
+	if stringerStringGrp == nil {
+		t.Fatal("no Method group for Stringer.String")
+	}
+	if alternateStringGrp == nil {
+		t.Fatal("no Method group for Alternate.String")
+	}
+	if stringerStringGrp == alternateStringGrp {
+		t.Error("Stringer.String() and Alternate.String() should be in separate groups")
+	}
+}
+
 func TestGroupDeduplication(t *testing.T) {
 	ix := loadTestdata(t)
 

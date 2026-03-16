@@ -13,3 +13,9 @@ type File struct {
 func PlatformName() string {
 	return linux.Name()
 }
+
+// Cross-package type used as field type and accessed.
+func LinuxDistro() string {
+	info := linux.GetInfo()
+	return info.Distro
+}

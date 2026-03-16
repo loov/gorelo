@@ -176,3 +176,50 @@ type StringerAlt interface {
 	Stringer
 	Describe() string
 }
+
+// Short variable declaration that introduces a new var alongside an existing one.
+func ShortVarDeclReuse() (int, error) {
+	x, err := Divide(10, 2)
+	y, err := Divide(20, 2) // err is reused, y is new
+	return int(x + y), err
+}
+
+// Receiver variable: "u" is a parameter var on the method.
+// It should be scoped to this method, not merged with other "u" params.
+func (u *User) Rename(newName string) {
+	u.Name = newName
+}
+
+// Closure with same-named parameter as outer function.
+// Inner "x" should NOT merge with outer "x".
+func TransformAll(x int) func(int) int {
+	return func(x int) int {
+		return x * 2
+	}
+}
+
+// Pointer method expression: (*User).SetEmail as a value.
+func PointerMethodExpr() func(*User, string) {
+	return (*User).SetEmail
+}
+
+// Type conversion with named type.
+func ToCounter(n int) Counter {
+	return Counter(n)
+}
+
+// Variadic call forwarding.
+func FirstName(users ...*User) string {
+	names := Names(users...)
+	if len(names) > 0 {
+		return names[0]
+	}
+	return ""
+}
+
+// Const in local scope.
+func LocalConst() int {
+	const limit = 100
+	x := limit
+	return x
+}
