@@ -1,5 +1,3 @@
-// Command mast-browser serves a web UI for browsing Go packages
-// with identifier rename-group highlighting.
 package main
 
 import (
