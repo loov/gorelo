@@ -1,34 +1,94 @@
-/* --- palette --- */
+/*
+ * open-props modules are prepended at build time:
+ *   palette, sizes, fonts, borders, shadows, easings, durations
+ *
+ * The palette module generates --color-1 (lightest) to --color-16
+ * (darkest) from --palette-hue and --palette-chroma.
+ */
+
+/* --- theme --- */
 :root {
-	--bg: #1e1e2e;
-	--bg-surface: #181825;
-	--bg-highlight: #45475a;
+	--palette-hue: 260;
+	--palette-chroma: 0.08;
 
-	--border: #313244;
+	--hue-accent: 250;
+	--hue-def: 55;
+	--hue-use: 160;
 
-	--text: #cdd6f4;
-	--text-muted: #a6adc8;
-	--text-dim: #585b70;
+	--bg: var(--color-16);
+	--bg-surface: var(--color-15);
+	--bg-highlight: var(--color-12);
 
-	--accent: #89b4fa;
+	--border: var(--color-14);
 
-	--def: #fab387;
-	--def-bg: rgba(139, 94, 59, 0.35);
-	--def-highlight: #8b5e3b;
+	--text: var(--color-2);
+	--text-muted: var(--color-5);
+	--text-dim: var(--color-9);
 
-	--use: #f9e2af;
-	--use-bg: rgba(122, 108, 58, 0.35);
-	--use-highlight: #7a6c3a;
+	--accent: oklch(72% 0.14 var(--hue-accent));
 
-	--font: monospace;
-	--font-size: 13px;
-	--font-size-sm: 12px;
-	--font-size-xs: 11px;
+	--def: oklch(78% 0.14 var(--hue-def));
+	--def-bg: oklch(40% 0.06 var(--hue-def) / 0.5);
+	--def-highlight: oklch(32% 0.08 var(--hue-def));
 
-	--sidebar-width: 280px;
+	--use: oklch(78% 0.1 var(--hue-use));
+	--use-bg: oklch(40% 0.05 var(--hue-use) / 0.5);
+	--use-highlight: oklch(32% 0.06 var(--hue-use));
+
+	--sidebar-width: var(--size-14);
 	--refs-width: 45%;
-	--line-num-width: 50px;
+	--line-num-width: var(--size-7);
 	--ref-line-num-width: 45px;
+}
+
+/* --- light theme --- */
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme="dark"]) {
+		color-scheme: light;
+
+		--bg: var(--color-1);
+		--bg-surface: var(--color-2);
+		--bg-highlight: var(--color-4);
+
+		--border: var(--color-3);
+
+		--text: var(--color-15);
+		--text-muted: var(--color-11);
+		--text-dim: var(--color-8);
+
+		--accent: oklch(45% 0.18 var(--hue-accent));
+
+		--def: oklch(45% 0.14 var(--hue-def));
+		--def-bg: oklch(88% 0.06 var(--hue-def) / 0.6);
+		--def-highlight: oklch(82% 0.08 var(--hue-def));
+
+		--use: oklch(40% 0.1 var(--hue-use));
+		--use-bg: oklch(88% 0.05 var(--hue-use) / 0.6);
+		--use-highlight: oklch(82% 0.06 var(--hue-use));
+	}
+}
+:root[data-theme="light"] {
+	color-scheme: light;
+
+	--bg: var(--color-1);
+	--bg-surface: var(--color-2);
+	--bg-highlight: var(--color-4);
+
+	--border: var(--color-3);
+
+	--text: var(--color-15);
+	--text-muted: var(--color-11);
+	--text-dim: var(--color-8);
+
+	--accent: oklch(45% 0.18 var(--hue-accent));
+
+	--def: oklch(45% 0.14 var(--hue-def));
+	--def-bg: oklch(88% 0.06 var(--hue-def) / 0.6);
+	--def-highlight: oklch(82% 0.08 var(--hue-def));
+
+	--use: oklch(40% 0.1 var(--hue-use));
+	--use-bg: oklch(88% 0.05 var(--hue-use) / 0.6);
+	--use-highlight: oklch(82% 0.06 var(--hue-use));
 }
 
 /* --- reset --- */
@@ -40,10 +100,26 @@
 body {
 	background: var(--bg);
 	color: var(--text);
-	font-family: var(--font);
-	font-size: var(--font-size);
+	font-family: var(--font-mono);
+	font-size: var(--font-size-0);
 	display: flex;
 	height: 100vh;
+}
+
+/* --- theme toggle --- */
+#theme-toggle {
+	background: none;
+	border: none;
+	color: var(--text-dim);
+	font-family: var(--font-mono);
+	font-size: var(--font-size-00);
+	cursor: pointer;
+	padding: var(--size-1);
+
+	&:hover,
+	&:focus-visible {
+		color: var(--text);
+	}
 }
 
 /* --- index — sidebar --- */
@@ -51,20 +127,20 @@ body {
 	width: var(--sidebar-width);
 	overflow-y: auto;
 	background: var(--bg-surface);
-	border-right: 1px solid var(--border);
-	padding: 8px;
+	border-right: var(--border-size-1) solid var(--border);
+	padding: var(--size-2);
 
 	& h2 {
-		font-size: 14px;
+		font-size: var(--font-size-1);
 		color: var(--accent);
-		margin: 12px 0 4px;
+		margin: var(--size-3) 0 var(--size-1);
 	}
 	& a {
 		display: block;
-		padding: 2px 4px;
+		padding: var(--size-1);
 		color: var(--text-muted);
 		text-decoration: none;
-		font-size: var(--font-size);
+		font-size: var(--font-size-0);
 
 		&:hover {
 			color: var(--text);
@@ -86,7 +162,7 @@ body {
 #source-pane {
 	flex: 1;
 	overflow-y: auto;
-	padding: 8px 0;
+	padding: var(--size-2) 0;
 }
 
 /* --- file — refs pane --- */
@@ -94,8 +170,8 @@ body {
 	width: 0;
 	overflow: hidden;
 	background: var(--bg-surface);
-	border-left: 1px solid var(--border);
-	transition: width 0.15s;
+	border-left: var(--border-size-1) solid var(--border);
+	transition: width var(--duration-1) var(--ease-3);
 
 	&.open {
 		width: var(--refs-width);
@@ -107,8 +183,8 @@ body {
 	position: sticky;
 	top: 0;
 	background: var(--bg-surface);
-	border-bottom: 1px solid var(--border);
-	padding: 8px 12px;
+	border-bottom: var(--border-size-1) solid var(--border);
+	padding: var(--size-2) var(--size-3);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
@@ -122,16 +198,16 @@ body {
 		cursor: pointer;
 		background: none;
 		border: none;
-		font-family: var(--font);
-		font-size: 16px;
+		font-family: var(--font-mono);
+		font-size: var(--font-size-3);
 
 		&:hover,
 		&:focus-visible {
 			color: var(--text);
 		}
 		&:focus-visible {
-			outline: 1px solid var(--accent);
-			outline-offset: 2px;
+			outline: var(--border-size-1) solid var(--accent);
+			outline-offset: var(--size-1);
 		}
 	}
 }
@@ -142,7 +218,7 @@ body {
 	display: flex;
 }
 .ref-line {
-	padding: 0 12px;
+	padding: 0 var(--size-3);
 }
 
 .line-num,
@@ -155,11 +231,11 @@ body {
 }
 .line-num {
 	width: var(--line-num-width);
-	padding-right: 12px;
+	padding-right: var(--size-3);
 }
 .ref-line-num {
 	width: var(--ref-line-num-width);
-	padding-right: 10px;
+	padding-right: var(--size-2);
 }
 
 .line-content,
@@ -172,13 +248,13 @@ body {
 	margin: 0;
 }
 .ref-file-header {
-	padding: 6px 12px;
+	padding: var(--size-1) var(--size-3);
 	background: var(--bg);
 	color: var(--accent);
-	font-size: var(--font-size-sm);
+	font-size: var(--font-size-00);
 	position: sticky;
 	top: 0;
-	border-bottom: 1px solid var(--border);
+	border-bottom: var(--border-size-1) solid var(--border);
 
 	& a {
 		color: var(--accent);
@@ -191,27 +267,27 @@ body {
 }
 .ref-file-pkg {
 	color: var(--text-dim);
-	margin-left: 8px;
-	font-size: var(--font-size-xs);
+	margin-left: var(--size-2);
+	font-size: var(--font-size-00);
 }
 
 .ref-snippet {
-	border-bottom: 1px solid var(--border);
-	padding: 4px 0;
+	border-bottom: var(--border-size-1) solid var(--border);
+	padding: var(--size-1) 0;
 }
 
 .ref-ident {
-	border-radius: 3px;
-	padding: 0 2px;
-	margin: 0 -2px;
+	border-radius: var(--radius-1);
+	padding: 0 var(--size-1);
+	margin: 0 calc(-1 * var(--size-1));
 
 	&.def {
-		border: 1px solid var(--def);
+		border: var(--border-size-1) solid var(--def);
 		background: var(--def-bg);
 		color: var(--def);
 	}
 	&.use {
-		border: 1px solid var(--use);
+		border: var(--border-size-1) solid var(--use);
 		background: var(--use-bg);
 		color: var(--use);
 	}
@@ -220,11 +296,11 @@ body {
 /* --- file — source idents --- */
 .ident {
 	cursor: pointer;
-	border-radius: 2px;
+	border-radius: var(--radius-1);
 
 	&:hover,
 	&:focus-visible {
-		outline: 1px solid var(--text-dim);
+		outline: var(--border-size-1) solid var(--text-dim);
 	}
 	&.def {
 		color: var(--def);
@@ -248,6 +324,6 @@ body {
 	&.qualifier.highlight {
 		text-decoration: underline;
 		text-decoration-color: var(--text-dim);
-		text-underline-offset: 2px;
+		text-underline-offset: var(--size-1);
 	}
 }

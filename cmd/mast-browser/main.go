@@ -22,11 +22,38 @@ import (
 //go:embed index.html file.html
 var templates embed.FS
 
-//go:embed style.css
-var styleCSS []byte
+//go:embed style.css vendor/open-props/*.min.css
+var styleFS embed.FS
+
+var styleCSS = func() []byte {
+	// Concatenate open-props modules with our styles into a single CSS blob.
+	modules := []string{
+		"vendor/open-props/palette.min.css",
+		"vendor/open-props/sizes.min.css",
+		"vendor/open-props/fonts.min.css",
+		"vendor/open-props/borders.min.css",
+		"vendor/open-props/shadows.min.css",
+		"vendor/open-props/easings.min.css",
+		"vendor/open-props/durations.min.css",
+		"style.css",
+	}
+	var buf []byte
+	for _, name := range modules {
+		data, err := styleFS.ReadFile(name)
+		if err != nil {
+			panic(err)
+		}
+		buf = append(buf, data...)
+		buf = append(buf, '\n')
+	}
+	return buf
+}()
 
 //go:embed file.js
 var fileJS []byte
+
+//go:embed theme.js
+var themeJS []byte
 
 var tmpl = template.Must(template.ParseFS(templates, "*.html"))
 
@@ -100,6 +127,10 @@ func main() {
 	http.HandleFunc("/file.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(fileJS)
+	})
+	http.HandleFunc("/theme.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Write(themeJS)
 	})
 	http.HandleFunc("/", s.handleIndex)
 	http.HandleFunc("/file", s.handleFile)

@@ -7,7 +7,7 @@
 	</head>
 	<body>
 		<div id="sidebar">
-			<h2>mast-browser</h2>
+			<h2>mast-browser <button id="theme-toggle"></button></h2>
 			{{range .Pkgs}}
 			<h2>{{.Path}}</h2>
 			{{range .Files}}<a href="/file?path={{.Rel}}" target="src"
@@ -16,5 +16,6 @@
 			{{end}} {{end}}
 		</div>
 		<div id="content"><iframe name="src"></iframe></div>
+		<script src="/theme.js"></script>
 	</body>
 </html>
