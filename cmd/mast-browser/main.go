@@ -169,8 +169,8 @@ type indexPkg struct {
 }
 
 type indexFile struct {
-	Rel   string
-	Label string
+	Rel      string
+	BuildTag string
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -178,12 +178,10 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	for _, pkg := range s.ix.Pkgs {
 		p := indexPkg{Path: pkg.Path}
 		for _, f := range pkg.Files {
-			rel := relativePath(s.dir, f.Path)
-			label := rel
-			if f.BuildTag != "" {
-				label += " (" + f.BuildTag + ")"
-			}
-			p.Files = append(p.Files, indexFile{Rel: rel, Label: label})
+			p.Files = append(p.Files, indexFile{
+				Rel:      relativePath(s.dir, f.Path),
+				BuildTag: f.BuildTag,
+			})
 		}
 		pkgs = append(pkgs, p)
 	}

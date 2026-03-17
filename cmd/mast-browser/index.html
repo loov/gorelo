@@ -7,11 +7,14 @@
 	</head>
 	<body>
 		<div id="sidebar">
-			<h2>mast-browser <button id="theme-toggle"></button></h2>
+			<div id="sidebar-header">
+				<span>mast-browser</span>
+				<button id="theme-toggle"></button>
+			</div>
 			{{range .Pkgs}}
 			<h2>{{.Path}}</h2>
 			{{range .Files}}<a href="/file?path={{.Rel}}" target="src"
-				>{{.Label}}</a
+				>{{.Rel}}{{if .BuildTag}} <span class="chip">{{.BuildTag}}</span>{{end}}</a
 			>
 			{{end}} {{end}}
 		</div>
