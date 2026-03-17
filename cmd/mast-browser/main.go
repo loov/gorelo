@@ -55,6 +55,12 @@ var fileJS []byte
 //go:embed theme.js
 var themeJS []byte
 
+//go:embed vendor/jetbrains-mono/JetBrainsMono-Regular.woff2
+var fontRegular []byte
+
+//go:embed vendor/jetbrains-mono/JetBrainsMono-Bold.woff2
+var fontBold []byte
+
 var tmpl = template.Must(template.ParseFS(templates, "*.html"))
 
 func main() {
@@ -132,6 +138,15 @@ func main() {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Write(themeJS)
 	})
+	serveFont := func(data []byte) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "font/woff2")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Write(data)
+		}
+	}
+	http.HandleFunc("/fonts/JetBrainsMono-Regular.woff2", serveFont(fontRegular))
+	http.HandleFunc("/fonts/JetBrainsMono-Bold.woff2", serveFont(fontBold))
 	http.HandleFunc("/", s.handleIndex)
 	http.HandleFunc("/file", s.handleFile)
 	http.HandleFunc("/group", s.handleGroup)

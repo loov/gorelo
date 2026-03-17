@@ -6,8 +6,27 @@
  * (darkest) from --palette-hue and --palette-chroma.
  */
 
+/* --- embedded font --- */
+@font-face {
+	font-family: "JetBrains Mono";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+}
+@font-face {
+	font-family: "JetBrains Mono";
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
+}
+
 /* --- theme --- */
 :root {
+	--font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+		Consolas, "DejaVu Sans Mono", monospace;
+
 	--palette-hue: 260;
 	--palette-chroma: 0.08;
 
