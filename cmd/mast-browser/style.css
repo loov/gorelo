@@ -24,6 +24,11 @@
 	--font-size: 13px;
 	--font-size-sm: 12px;
 	--font-size-xs: 11px;
+
+	--sidebar-width: 280px;
+	--refs-width: 45%;
+	--line-num-width: 50px;
+	--ref-line-num-width: 45px;
 }
 
 /* --- reset --- */
@@ -43,35 +48,38 @@ body {
 
 /* --- index — sidebar --- */
 #sidebar {
-	width: 280px;
+	width: var(--sidebar-width);
 	overflow-y: auto;
 	background: var(--bg-surface);
 	border-right: 1px solid var(--border);
 	padding: 8px;
-}
-#sidebar h2 {
-	font-size: 14px;
-	color: var(--accent);
-	margin: 12px 0 4px;
-}
-#sidebar a {
-	display: block;
-	padding: 2px 4px;
-	color: var(--text-muted);
-	text-decoration: none;
-	font-size: var(--font-size);
-}
-#sidebar a:hover {
-	color: var(--text);
-	background: var(--border);
+
+	& h2 {
+		font-size: 14px;
+		color: var(--accent);
+		margin: 12px 0 4px;
+	}
+	& a {
+		display: block;
+		padding: 2px 4px;
+		color: var(--text-muted);
+		text-decoration: none;
+		font-size: var(--font-size);
+
+		&:hover {
+			color: var(--text);
+			background: var(--border);
+		}
+	}
 }
 #content {
 	flex: 1;
-}
-#content iframe {
-	width: 100%;
-	height: 100%;
-	border: none;
+
+	& iframe {
+		width: 100%;
+		height: 100%;
+		border: none;
+	}
 }
 
 /* --- file — source pane --- */
@@ -84,14 +92,15 @@ body {
 /* --- file — refs pane --- */
 #refs-pane {
 	width: 0;
-	overflow-y: auto;
+	overflow: hidden;
 	background: var(--bg-surface);
 	border-left: 1px solid var(--border);
 	transition: width 0.15s;
-	overflow: hidden;
-}
-#refs-pane.open {
-	width: 45%;
+
+	&.open {
+		width: var(--refs-width);
+		overflow-y: auto;
+	}
 }
 
 #refs-header {
@@ -104,20 +113,58 @@ body {
 	justify-content: space-between;
 	align-items: center;
 	z-index: 1;
+
+	& .title {
+		color: var(--accent);
+	}
+	& .close-btn {
+		color: var(--text-muted);
+		cursor: pointer;
+		background: none;
+		border: none;
+		font-family: var(--font);
+		font-size: 16px;
+
+		&:hover,
+		&:focus-visible {
+			color: var(--text);
+		}
+		&:focus-visible {
+			outline: 1px solid var(--accent);
+			outline-offset: 2px;
+		}
+	}
 }
-#refs-header .title {
-	color: var(--accent);
+
+/* --- shared line styles --- */
+.line,
+.ref-line {
+	display: flex;
 }
-#refs-header .close-btn {
-	color: var(--text-muted);
-	cursor: pointer;
-	background: none;
-	border: none;
-	font-family: var(--font);
-	font-size: 16px;
+.ref-line {
+	padding: 0 12px;
 }
-#refs-header .close-btn:hover {
-	color: var(--text);
+
+.line-num,
+.ref-line-num {
+	display: inline-block;
+	text-align: right;
+	color: var(--text-dim);
+	user-select: none;
+	flex-shrink: 0;
+}
+.line-num {
+	width: var(--line-num-width);
+	padding-right: 12px;
+}
+.ref-line-num {
+	width: var(--ref-line-num-width);
+	padding-right: 10px;
+}
+
+.line-content,
+.ref-line-content {
+	white-space: pre;
 }
 
 /* --- file — refs snippets --- */
@@ -132,13 +179,15 @@ body {
 	position: sticky;
 	top: 0;
 	border-bottom: 1px solid var(--border);
-}
-.ref-file-header a {
-	color: var(--accent);
-	text-decoration: none;
-}
-.ref-file-header a:hover {
-	text-decoration: underline;
+
+	& a {
+		color: var(--accent);
+		text-decoration: none;
+
+		&:hover {
+			text-decoration: underline;
+		}
+	}
 }
 .ref-file-pkg {
 	color: var(--text-dim);
@@ -150,82 +199,55 @@ body {
 	border-bottom: 1px solid var(--border);
 	padding: 4px 0;
 }
-.ref-line {
-	display: flex;
-	padding: 0 12px;
-}
-.ref-line-num {
-	display: inline-block;
-	width: 45px;
-	text-align: right;
-	padding-right: 10px;
-	color: var(--text-dim);
-	user-select: none;
-	flex-shrink: 0;
-}
-.ref-line-content {
-	white-space: pre;
-}
 
 .ref-ident {
 	border-radius: 3px;
 	padding: 0 2px;
 	margin: 0 -2px;
-}
-.ref-ident.def {
-	border: 1px solid var(--def);
-	background: var(--def-bg);
-	color: var(--def);
-}
-.ref-ident.use {
-	border: 1px solid var(--use);
-	background: var(--use-bg);
-	color: var(--use);
+
+	&.def {
+		border: 1px solid var(--def);
+		background: var(--def-bg);
+		color: var(--def);
+	}
+	&.use {
+		border: 1px solid var(--use);
+		background: var(--use-bg);
+		color: var(--use);
+	}
 }
 
-/* --- file — source lines --- */
-.line {
-	display: flex;
-}
-.line-num {
-	display: inline-block;
-	width: 50px;
-	text-align: right;
-	padding-right: 12px;
-	color: var(--text-dim);
-	user-select: none;
-}
-.line-content {
-	white-space: pre;
-}
-
+/* --- file — source idents --- */
 .ident {
 	cursor: pointer;
 	border-radius: 2px;
-}
-.ident:hover {
-	outline: 1px solid var(--text-dim);
-}
-.ident.def {
-	color: var(--def);
-}
-.ident.use {
-	color: var(--use);
-}
-.ident.untracked {
-	color: var(--text-muted);
-}
-.ident.highlight {
-	background: var(--bg-highlight);
-}
-.ident.highlight.def {
-	background: var(--def-highlight);
-}
-.ident.highlight.use {
-	background: var(--use-highlight);
-}
-.ident.qualifier.highlight {
-	text-decoration: underline;
-	text-decoration-color: var(--text-dim);
-	text-underline-offset: 2px;
+
+	&:hover,
+	&:focus-visible {
+		outline: 1px solid var(--text-dim);
+	}
+	&.def {
+		color: var(--def);
+	}
+	&.use {
+		color: var(--use);
+	}
+	&.untracked {
+		color: var(--text-muted);
+	}
+	&.highlight {
+		background: var(--bg-highlight);
+
+		&.def {
+			background: var(--def-highlight);
+		}
+		&.use {
+			background: var(--use-highlight);
+		}
+	}
+	&.qualifier.highlight {
+		text-decoration: underline;
+		text-decoration-color: var(--text-dim);
+		text-underline-offset: 2px;
+	}
 }
