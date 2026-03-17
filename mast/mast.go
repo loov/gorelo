@@ -37,7 +37,7 @@ type Package struct {
 // File represents a single Go source file.
 type File struct {
 	Path     string
-	Pkg      *Package  // the package this file belongs to
+	Pkg      *Package // the package this file belongs to
 	Syntax   *ast.File
 	BuildTag string // the build constraint, if any
 }

@@ -393,8 +393,8 @@ type groupSnippet struct {
 
 // groupFile collects all merged snippets for one file.
 type groupFile struct {
-	File    string         `json:"file"`
-	Pkg     string         `json:"pkg"` // package path the file belongs to
+	File     string         `json:"file"`
+	Pkg      string         `json:"pkg"` // package path the file belongs to
 	Snippets []groupSnippet `json:"snippets"`
 }
 
