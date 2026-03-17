@@ -1,19 +1,31 @@
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>{{.Title}}</title>
-<link rel="stylesheet" href="/style.css">
-<style>body { overflow: hidden; }</style>
-</head><body>
-<div id="source-pane">
-{{range .Lines}}
-<div class="line" id="L{{.Num}}"><span class="line-num">{{.Num}}</span><span class="line-content">{{.Content}}</span></div>
-{{end}}
-</div>
-<div id="refs-pane">
-<div id="refs-header">
-<span class="title" id="refs-title"></span>
-<button class="close-btn" id="refs-close">&times;</button>
-</div>
-<div id="refs-body"></div>
-</div>
-<script src="/file.js"></script>
-</body></html>
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>{{.Title}}</title>
+		<link rel="stylesheet" href="/style.css" />
+		<style>
+			body {
+				overflow: hidden;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="source-pane">
+			{{range .Lines}}
+			<div class="line" id="L{{.Num}}">
+				<span class="line-num">{{.Num}}</span
+				><span class="line-content">{{.Content}}</span>
+			</div>
+			{{end}}
+		</div>
+		<div id="refs-pane">
+			<div id="refs-header">
+				<span class="title" id="refs-title"></span>
+				<button class="close-btn" id="refs-close">&times;</button>
+			</div>
+			<div id="refs-body"></div>
+		</div>
+		<script src="/file.js"></script>
+	</body>
+</html>

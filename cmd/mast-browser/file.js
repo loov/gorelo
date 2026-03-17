@@ -14,8 +14,10 @@ function openRefsPanel(gid) {
 	activeGroupId = gid;
 	highlightGroup(gid);
 	fetch("/group?id=" + encodeURIComponent(gid))
-		.then(function(r) { return r.json(); })
-		.then(function(data) {
+		.then(function (r) {
+			return r.json();
+		})
+		.then(function (data) {
 			if (activeGroupId !== gid) return;
 			renderRefs(data);
 			refsPane.classList.add("open");
@@ -49,7 +51,7 @@ function clearHighlights() {
 
 document.getElementById("refs-close").addEventListener("click", closeRefsPanel);
 
-sourcePane.addEventListener("click", function(e) {
+sourcePane.addEventListener("click", function (e) {
 	var el = e.target;
 	while (el && !el.classList.contains("ident")) {
 		if (el === sourcePane) return;
@@ -97,7 +99,8 @@ function renderRefs(data) {
 }
 
 function formatRefsTitle(data) {
-	var defs = 0, uses = 0;
+	var defs = 0,
+		uses = 0;
 	for (var fi = 0; fi < data.files.length; fi++) {
 		var snippets = data.files[fi].snippets;
 		for (var si = 0; si < snippets.length; si++) {
@@ -108,8 +111,18 @@ function formatRefsTitle(data) {
 			}
 		}
 	}
-	return data.kind + " " + data.name + " (" + data.pkg + ") \u2014 " +
-		defs + " def(s), " + uses + " use(s)";
+	return (
+		data.kind +
+		" " +
+		data.name +
+		" (" +
+		data.pkg +
+		") \u2014 " +
+		defs +
+		" def(s), " +
+		uses +
+		" use(s)"
+	);
 }
 
 function renderFileGroup(file) {
@@ -172,13 +185,17 @@ function renderLine(lineNum, text, highlights) {
 }
 
 function renderHighlightedText(container, text, highlights) {
-	highlights.sort(function(a, b) { return a.col - b.col; });
+	highlights.sort(function (a, b) {
+		return a.col - b.col;
+	});
 	var cursor = 0;
 	for (var i = 0; i < highlights.length; i++) {
 		var start = highlights[i].col - 1;
 		var end = start + highlights[i].len;
 		if (start > cursor) {
-			container.appendChild(document.createTextNode(text.substring(cursor, start)));
+			container.appendChild(
+				document.createTextNode(text.substring(cursor, start)),
+			);
 		}
 		var span = document.createElement("span");
 		span.className = "ref-ident " + highlights[i].kind;
