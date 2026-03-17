@@ -69,8 +69,14 @@
 // Same-package test files (package foo in _test.go files) are
 // type-checked together with the main package files. External test
 // files (package foo_test) are type-checked in a separate pass after
-// the main package, so they can import it. All test files are
-// included in the same [Package] as the main files.
+// the main package, so they can import it, and are returned as a
+// separate [Package] with path "pkg_test".
+//
+// Every [File] carries a Pkg pointer back to the [Package] it belongs
+// to, so from any [Ident] the containing package is available via
+// ident.File.Pkg. This is needed when moving declarations between
+// packages, where each use site may need its package qualifier and
+// imports adjusted.
 //
 // # Embedded fields
 //

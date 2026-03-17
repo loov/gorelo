@@ -74,10 +74,8 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 			continue
 		}
 
-		mpkg, errs := loadPackage(ix, pkg, depPkgs)
-		if mpkg != nil {
-			ix.Pkgs = append(ix.Pkgs, mpkg)
-		}
+		pkgs, errs := loadPackage(ix, pkg, depPkgs)
+		ix.Pkgs = append(ix.Pkgs, pkgs...)
 		ix.Errors = append(ix.Errors, errs...)
 	}
 
@@ -87,23 +85,17 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 // loadPackage loads a single target package: discovers all files,
 // parses them, partitions by build constraints, and type-checks each set.
 // Test files (_test.go) are included. Files declaring the external test
-// package (e.g. package foo_test) are type-checked after the main
-// package so they can import it.
-func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Package) (*Package, []error) {
-	mpkg := &Package{
-		Name: pkg.Name,
-		Path: pkg.PkgPath,
-	}
-
+// package (e.g. package foo_test) are returned as a separate Package.
+func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Package) ([]*Package, []error) {
 	dir := packageDir(pkg)
 	if dir == "" {
-		return mpkg, []error{fmt.Errorf("cannot determine directory for package %s", pkg.PkgPath)}
+		return nil, []error{fmt.Errorf("cannot determine directory for package %s", pkg.PkgPath)}
 	}
 
 	// Discover all .go files in the directory.
 	allPaths, err := discoverGoFiles(dir)
 	if err != nil {
-		return mpkg, []error{err}
+		return nil, []error{err}
 	}
 
 	// Parse all files.
@@ -134,25 +126,39 @@ func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Pac
 		})
 	}
 
-	// Build File objects.
+	// Create packages and assign files.
+	mpkg := &Package{
+		Name: pkg.Name,
+		Path: pkg.PkgPath,
+	}
+	extTestName := pkg.Name + "_test"
+	var extTestPkg *Package
+
 	fileMap := map[*ast.File]*File{}
+	var mainFiles, extTestFiles []parsedFile
 	for _, pf := range parsed {
+		isExtTest := pf.syntax.Name.Name == extTestName
+		owner := mpkg
+		if isExtTest {
+			if extTestPkg == nil {
+				extTestPkg = &Package{
+					Name: extTestName,
+					Path: pkg.PkgPath + "_test",
+				}
+			}
+			owner = extTestPkg
+		}
+
 		mf := &File{
 			Path:     pf.path,
+			Pkg:      owner,
 			Syntax:   pf.syntax,
 			BuildTag: pf.buildTag,
 		}
-		mpkg.Files = append(mpkg.Files, mf)
+		owner.Files = append(owner.Files, mf)
 		fileMap[pf.syntax] = mf
-	}
 
-	// Split files by declared package name: same-package test files
-	// (package foo) are type-checked with the main files; external test
-	// files (package foo_test) need a separate pass.
-	extTestName := pkg.Name + "_test"
-	var mainFiles, extTestFiles []parsedFile
-	for _, pf := range parsed {
-		if pf.syntax.Name.Name == extTestName {
+		if isExtTest {
 			extTestFiles = append(extTestFiles, pf)
 		} else {
 			mainFiles = append(mainFiles, pf)
@@ -163,14 +169,17 @@ func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Pac
 	mainErrs := typeCheckFiles(ix, mainFiles, fileMap, pkg.PkgPath, pkg.Name, depPkgs)
 	errs = append(errs, mainErrs...)
 
-	// Type-check external test package files. They can import the main
-	// package, so register its types first.
+	// Type-check external test package files.
 	if len(extTestFiles) > 0 {
 		extErrs := typeCheckFiles(ix, extTestFiles, fileMap, pkg.PkgPath+"_test", extTestName, depPkgs)
 		errs = append(errs, extErrs...)
 	}
 
-	return mpkg, errs
+	pkgs := []*Package{mpkg}
+	if extTestPkg != nil {
+		pkgs = append(pkgs, extTestPkg)
+	}
+	return pkgs, errs
 }
 
 // typeCheckFiles partitions files by build constraints and type-checks

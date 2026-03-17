@@ -110,6 +110,11 @@ body {
 .ref-file-header a:hover {
 	text-decoration: underline;
 }
+.ref-file-pkg {
+	color: #585b70;
+	margin-left: 8px;
+	font-size: 11px;
+}
 
 .ref-snippet {
 	border-bottom: 1px solid #313244;
@@ -187,4 +192,9 @@ body {
 }
 .ident.highlight.use {
 	background: #7a6c3a;
+}
+.ident.qualifier.highlight {
+	text-decoration: underline;
+	text-decoration-color: #585b70;
+	text-underline-offset: 2px;
 }

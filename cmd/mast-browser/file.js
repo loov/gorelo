@@ -77,6 +77,7 @@ sourcePane.addEventListener("click", function (e) {
 //     pkg:  string,          // package path where defined
 //     files: [{
 //       file: string,        // relative file path
+//       pkg:  string,        // package path the file belongs to
 //       snippets: [{
 //         contextStart: int, // 1-based line number of first context line
 //         context: [string], // source lines surrounding the references
@@ -135,6 +136,12 @@ function renderFileGroup(file) {
 	link.href = "/file?path=" + encodeURIComponent(file.file);
 	link.textContent = file.file;
 	header.appendChild(link);
+	if (file.pkg) {
+		var pkgSpan = document.createElement("span");
+		pkgSpan.className = "ref-file-pkg";
+		pkgSpan.textContent = file.pkg;
+		header.appendChild(pkgSpan);
+	}
 	div.appendChild(header);
 
 	for (var i = 0; i < file.snippets.length; i++) {

@@ -37,6 +37,7 @@ type Package struct {
 // File represents a single Go source file.
 type File struct {
 	Path     string
+	Pkg      *Package  // the package this file belongs to
 	Syntax   *ast.File
 	BuildTag string // the build constraint, if any
 }
@@ -51,9 +52,10 @@ type Group struct {
 
 // Ident is a single identifier occurrence within a group.
 type Ident struct {
-	Ident *ast.Ident
-	File  *File
-	Kind  IdentKind
+	Ident     *ast.Ident
+	Qualifier *ast.Ident // package qualifier ident in pkg.Name expressions, or nil
+	File      *File
+	Kind      IdentKind
 }
 
 // IdentKind distinguishes definitions from uses.

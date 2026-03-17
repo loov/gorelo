@@ -182,15 +182,18 @@ func TestTestFilesLoaded(t *testing.T) {
 
 	var hasSamePkg, hasExtPkg bool
 	for _, pkg := range ix.Pkgs {
-		if pkg.Path != "example" {
-			continue
-		}
 		for _, f := range pkg.Files {
 			if strings.Contains(f.Path, "example_test.go") {
 				hasSamePkg = true
+				if pkg.Path != "example" {
+					t.Errorf("example_test.go should be in package example, got %s", pkg.Path)
+				}
 			}
 			if strings.Contains(f.Path, "example_ext_test.go") {
 				hasExtPkg = true
+				if pkg.Path != "example_test" {
+					t.Errorf("example_ext_test.go should be in package example_test, got %s", pkg.Path)
+				}
 			}
 		}
 	}
@@ -254,6 +257,105 @@ func TestExternalTestIdents(t *testing.T) {
 	}
 	if !hasTypes {
 		t.Error("Counter group does not include idents from types.go")
+	}
+}
+
+func TestFilePkg(t *testing.T) {
+	ix := loadTestdata(t)
+
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if f.Pkg != pkg {
+				t.Errorf("file %s: Pkg points to %q, expected %q", f.Path, f.Pkg.Path, pkg.Path)
+			}
+		}
+	}
+}
+
+func TestIdentPkg(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Server defined in structs.go should have File.Pkg.Path == "example".
+	serverIdents := findIdentsInFile(ix, "Server", "structs.go")
+	if len(serverIdents) == 0 {
+		t.Fatal("Server not found in structs.go")
+	}
+	grp := ix.Group(serverIdents[0])
+	for _, id := range grp.Idents {
+		if id.File.Pkg == nil {
+			t.Errorf("ident %s in %s has nil File.Pkg", id.Ident.Name, id.File.Path)
+		}
+	}
+
+	// Counter used in example_ext_test.go should have File.Pkg.Path == "example_test".
+	counterInExt := findIdentsInFile(ix, "Counter", "example_ext_test.go")
+	if len(counterInExt) == 0 {
+		t.Fatal("Counter not found in example_ext_test.go")
+	}
+	extGrp := ix.Group(counterInExt[0])
+	for _, id := range extGrp.Idents {
+		if strings.Contains(id.File.Path, "example_ext_test.go") {
+			if id.File.Pkg.Path != "example_test" {
+				t.Errorf("Counter ident in ext test: File.Pkg.Path = %q, want example_test", id.File.Pkg.Path)
+			}
+		}
+		if strings.Contains(id.File.Path, "types.go") {
+			if id.File.Pkg.Path != "example" {
+				t.Errorf("Counter ident in types.go: File.Pkg.Path = %q, want example", id.File.Pkg.Path)
+			}
+		}
+	}
+}
+
+func TestQualifier(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// In example_ext_test.go, "example.Counter" is a qualified reference.
+	// The Counter ident should have Qualifier pointing to the "example" ident.
+	counterInExt := findIdentsInFile(ix, "Counter", "example_ext_test.go")
+	if len(counterInExt) == 0 {
+		t.Fatal("Counter not found in example_ext_test.go")
+	}
+	grp := ix.Group(counterInExt[0])
+	if grp == nil {
+		t.Fatal("Counter has no group")
+	}
+
+	var qualifiedCount, unqualifiedCount int
+	for _, id := range grp.Idents {
+		if id.Qualifier != nil {
+			qualifiedCount++
+			if id.Qualifier.Name != "example" {
+				t.Errorf("Counter qualifier = %q, want %q", id.Qualifier.Name, "example")
+			}
+		} else {
+			unqualifiedCount++
+		}
+	}
+	if qualifiedCount == 0 {
+		t.Error("expected at least one qualified Counter reference")
+	}
+	if unqualifiedCount == 0 {
+		t.Error("expected at least one unqualified Counter reference (definition)")
+	}
+}
+
+func TestQualifierAbsentForLocal(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Server is used in structs.go without a package qualifier.
+	serverIdents := findIdentsInFile(ix, "Server", "structs.go")
+	if len(serverIdents) == 0 {
+		t.Fatal("Server not found in structs.go")
+	}
+	grp := ix.Group(serverIdents[0])
+	for _, id := range grp.Idents {
+		if !strings.Contains(id.File.Path, "structs.go") && !strings.Contains(id.File.Path, "example_test.go") {
+			continue
+		}
+		if id.Qualifier != nil {
+			t.Errorf("Server ident in %s has unexpected qualifier %q", id.File.Path, id.Qualifier.Name)
+		}
 	}
 }
 

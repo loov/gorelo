@@ -31,6 +31,10 @@ func shouldSkip(obj types.Object) bool {
 // resolveInfo processes a single type-check pass's Info, building
 // and populating groups in the index.
 func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
+	// Build a map from Sel ident to its package qualifier ident
+	// for expressions like pkg.Name.
+	qualifiers := buildQualifierMap(info, fileMap)
+
 	// Process Defs (skip embedded fields — handled below).
 	for ident, obj := range info.Defs {
 		if shouldSkip(obj) {
@@ -46,7 +50,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(obj)
 		grp := findOrCreateGroup(ix, key, obj)
-		addIdent(ix, grp, ident, file, Def)
+		addIdent(ix, grp, ident, qualifiers[ident], file, Def)
 	}
 
 	// Process Uses.
@@ -61,7 +65,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(obj)
 		grp := findOrCreateGroup(ix, key, obj)
-		addIdent(ix, grp, ident, file, Use)
+		addIdent(ix, grp, ident, qualifiers[ident], file, Use)
 	}
 
 	// Process Selections (field/method access via selector expressions).
@@ -77,7 +81,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(obj)
 		grp := findOrCreateGroup(ix, key, obj)
-		addIdent(ix, grp, sel.Sel, file, Use)
+		addIdent(ix, grp, sel.Sel, qualifiers[sel.Sel], file, Use)
 	}
 
 	// Process embedded fields: link the embedded field ident to the
@@ -99,8 +103,35 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(typeName)
 		grp := findOrCreateGroup(ix, key, typeName)
-		addIdent(ix, grp, ident, file, Use)
+		addIdent(ix, grp, ident, qualifiers[ident], file, Use)
 	}
+}
+
+// buildQualifierMap walks the AST to find selector expressions where
+// X is a package name (e.g. pkg.Type). It returns a map from the Sel
+// ident to the package qualifier ident.
+func buildQualifierMap(info *types.Info, fileMap map[*ast.File]*File) map[*ast.Ident]*ast.Ident {
+	qualifiers := map[*ast.Ident]*ast.Ident{}
+	for astFile := range fileMap {
+		ast.Inspect(astFile, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			xIdent, ok := sel.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			// Check if X resolves to a package name.
+			if obj, exists := info.Uses[xIdent]; exists {
+				if _, isPkg := obj.(*types.PkgName); isPkg {
+					qualifiers[sel.Sel] = xIdent
+				}
+			}
+			return true
+		})
+	}
+	return qualifiers
 }
 
 // objectKeyFor computes the unique key for a types.Object.
@@ -184,7 +215,7 @@ func findOrCreateGroup(ix *Index, key objectKey, obj types.Object) *Group {
 	return grp
 }
 
-func addIdent(ix *Index, grp *Group, ident *ast.Ident, file *File, kind IdentKind) {
+func addIdent(ix *Index, grp *Group, ident *ast.Ident, qualifier *ast.Ident, file *File, kind IdentKind) {
 	// Deduplicate by pointer identity (same ident may appear in multiple passes).
 	if existing, ok := ix.groups[ident]; ok {
 		if existing != grp {
@@ -194,9 +225,10 @@ func addIdent(ix *Index, grp *Group, ident *ast.Ident, file *File, kind IdentKin
 	}
 
 	id := &Ident{
-		Ident: ident,
-		File:  file,
-		Kind:  kind,
+		Ident:     ident,
+		Qualifier: qualifier,
+		File:      file,
+		Kind:      kind,
 	}
 	grp.Idents = append(grp.Idents, id)
 	ix.groups[ident] = grp

@@ -186,11 +186,17 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 
 	// Collect ident spans sorted by position.
 	type identSpan struct {
-		start int // byte offset in src
-		end   int
-		group int // global group ID (0 = untracked)
-		kind  string
+		start     int // byte offset in src
+		end       int
+		group     int // global group ID (0 = untracked)
+		kind      string
+		qualifier bool // true for the "pkg." part of a qualified reference
 	}
+
+	// Collect qualifier idents: maps qualifier *ast.Ident → group ID of the qualified name.
+	qualifierGroup := map[*ast.Ident]int{}
+	// Map byte offset → *ast.Ident for resolving qualifier spans.
+	identByOffset := map[int]*ast.Ident{}
 
 	var spans []identSpan
 	ast.Inspect(file.Syntax, func(n ast.Node) bool {
@@ -208,6 +214,8 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 			return true
 		}
 
+		identByOffset[start] = id
+
 		g := s.ix.Group(id)
 		sp := identSpan{start: start, end: end}
 		if g == nil {
@@ -220,6 +228,9 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 					if ident.Kind == mast.Def {
 						sp.kind = "def"
 					}
+					if ident.Qualifier != nil {
+						qualifierGroup[ident.Qualifier] = sp.group
+					}
 					break
 				}
 			}
@@ -227,6 +238,19 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 		spans = append(spans, sp)
 		return true
 	})
+
+	// Mark qualifier spans and extend them to include the "." separator.
+	for i := range spans {
+		if id, ok := identByOffset[spans[i].start]; ok {
+			if gid, ok := qualifierGroup[id]; ok {
+				spans[i].qualifier = true
+				spans[i].group = gid
+				if spans[i].end < len(src) && src[spans[i].end] == '.' {
+					spans[i].end++
+				}
+			}
+		}
+	}
 
 	sort.Slice(spans, func(i, j int) bool {
 		return spans[i].start < spans[j].start
@@ -250,10 +274,14 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 				sb.WriteString(html.EscapeString(srcStr[cursor:sp.start]))
 			}
 			end := min(sp.end, lineEnd)
+			cls := "ident " + sp.kind
+			if sp.qualifier {
+				cls += " qualifier"
+			}
 			if sp.group > 0 {
-				fmt.Fprintf(&sb, `<span class="ident %s" data-group="%d">`, sp.kind, sp.group)
+				fmt.Fprintf(&sb, `<span class="%s" data-group="%d">`, cls, sp.group)
 			} else {
-				fmt.Fprintf(&sb, `<span class="ident %s">`, sp.kind)
+				fmt.Fprintf(&sb, `<span class="%s">`, cls)
 			}
 			sb.WriteString(html.EscapeString(srcStr[sp.start:end]))
 			sb.WriteString(`</span>`)
@@ -321,7 +349,8 @@ type groupSnippet struct {
 
 // groupFile collects all merged snippets for one file.
 type groupFile struct {
-	File     string         `json:"file"`
+	File    string         `json:"file"`
+	Pkg     string         `json:"pkg"` // package path the file belongs to
 	Snippets []groupSnippet `json:"snippets"`
 }
 
@@ -360,6 +389,7 @@ func (s *server) handleGroup(w http.ResponseWriter, r *http.Request) {
 		kind string
 	}
 	byFile := map[string][]identInfo{}
+	filePkg := map[string]string{} // rel path → package path
 	var fileOrder []string
 	for _, ident := range g.Idents {
 		pos := s.ix.Fset.Position(ident.Ident.Pos())
@@ -370,6 +400,9 @@ func (s *server) handleGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, seen := byFile[rel]; !seen {
 			fileOrder = append(fileOrder, rel)
+			if ident.File.Pkg != nil {
+				filePkg[rel] = ident.File.Pkg.Path
+			}
 		}
 		byFile[rel] = append(byFile[rel], identInfo{
 			line: pos.Line,
@@ -407,7 +440,7 @@ func (s *server) handleGroup(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Merge overlapping context ranges.
-		gf := groupFile{File: rel}
+		gf := groupFile{File: rel, Pkg: filePkg[rel]}
 		var cur *groupSnippet
 		curEnd := 0 // exclusive 0-based end of current snippet
 
