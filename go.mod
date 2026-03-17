@@ -1,4 +1,4 @@
-module github.com/loov/mast
+module github.com/loov/gorelo
 
 go 1.26.0
 

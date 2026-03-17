@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/loov/mast"
+	"github.com/loov/gorelo/mast"
 )
 
 func TestLocalVariableScoping(t *testing.T) {

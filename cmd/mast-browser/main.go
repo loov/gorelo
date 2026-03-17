@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/loov/mast"
+	"github.com/loov/gorelo/mast"
 )
 
 //go:embed index.html file.html
