@@ -756,6 +756,113 @@ func TestSwitchCaseVariableScoping(t *testing.T) {
 	}
 }
 
+func TestUserDefinedTypeConstraint(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Accumulator[T Addable] uses Addable as a type constraint.
+	// The "Addable" ident should link to the Addable type definition.
+	addableGrp := findTypeGroup(ix, "Addable", "types.go")
+	if addableGrp == nil {
+		t.Fatal("no TypeName group for Addable")
+	}
+
+	// The Addable ident in Accumulator's type parameter should be in the same group.
+	found := false
+	for _, id := range findIdentsInFile(ix, "Addable", "types.go") {
+		if ix.Group(id) == addableGrp {
+			// Check it's a use (not the def)
+			for _, ident := range addableGrp.Idents {
+				if ident.Ident == id && ident.Kind == mast.Use {
+					found = true
+					break
+				}
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Error("Addable constraint in Accumulator not linked to Addable type group as a use")
+	}
+}
+
+func TestRecursiveType(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Node has Children []*Node — the Node ident in the field type
+	// should link to the Node type definition.
+	nodeGrp := findTypeGroup(ix, "Node", "types.go")
+	if nodeGrp == nil {
+		t.Fatal("no TypeName group for Node")
+	}
+
+	// Should have at least 2 idents: the def and the self-reference in the field.
+	defs := 0
+	uses := 0
+	for _, ident := range nodeGrp.Idents {
+		if ident.Kind == mast.Def {
+			defs++
+		} else {
+			uses++
+		}
+	}
+	if defs < 1 {
+		t.Error("Node should have at least 1 def")
+	}
+	if uses < 1 {
+		t.Error("Node should have at least 1 use (self-reference in Children field)")
+	}
+
+	// Verify the Depth method's recursive c.Depth() links to the method group.
+	depthGrp := findMethodGroup(ix, "Depth", "types.go")
+	if depthGrp == nil {
+		t.Fatal("no Method group for Node.Depth")
+	}
+	if len(depthGrp.Idents) < 2 {
+		t.Errorf("expected at least 2 Depth idents (def + recursive call), got %d", len(depthGrp.Idents))
+	}
+}
+
+func TestEmbeddedInterfaceInStruct(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Formatted embeds Stringer (an interface, not a struct).
+	// The "Stringer" ident should link to the Stringer type group.
+	stringerGrp := findTypeGroup(ix, "Stringer", "types.go")
+	if stringerGrp == nil {
+		t.Fatal("no TypeName group for Stringer")
+	}
+
+	// The embedded Stringer in Formatted should be in the Stringer group.
+	found := false
+	for _, ident := range stringerGrp.Idents {
+		if strings.Contains(ident.File.Path, "types.go") && ident.Kind == mast.Use {
+			// Check it's from the Formatted struct area (not from Use() or CallStringer etc)
+			pos := ix.Fset.Position(ident.Ident.Pos())
+			if pos.Line > 40 {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Error("embedded Stringer in Formatted struct not linked to Stringer type group")
+	}
+
+	// f.String() on Formatted should work through the embedded interface.
+	found = false
+	for _, id := range findIdentsInFunc(ix, "String", "types.go", "FormatWith") {
+		if g := ix.Group(id); g != nil && g.Kind == mast.Method {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("f.String() on Formatted not resolved to a Method group")
+	}
+}
+
 func TestVarConst(t *testing.T) {
 	ix := loadTestdata(t)
 

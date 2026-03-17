@@ -142,6 +142,10 @@ func objectKeyFor(obj types.Object) objectKey {
 		}
 	case *types.Label:
 		key.Scope = fmt.Sprintf("%d", o.Pos())
+	case *types.PkgName:
+		// Import aliases are file-scoped. Two files with the same alias
+		// for different packages must not merge.
+		key.Scope = fmt.Sprintf("%d", o.Pos())
 	}
 
 	return key

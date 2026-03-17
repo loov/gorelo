@@ -376,3 +376,30 @@ func TestSideEffectImport(t *testing.T) {
 		}
 	}
 }
+
+func TestImportAliasCollisionAcrossFiles(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// imports.go has `import lnx "example/linux"` (linux-tagged).
+	// imports2.go has `import lnx "example/windows"` (windows-tagged).
+	// These are different imports with the same alias. They should be
+	// in separate groups — renaming lnx in one file shouldn't affect the other.
+	lnxInImports := findIdentsInFile(ix, "lnx", "imports.go")
+	lnxInImports2 := findIdentsInFile(ix, "lnx", "imports2.go")
+
+	if len(lnxInImports) == 0 {
+		t.Fatal("no lnx idents in imports.go")
+	}
+	if len(lnxInImports2) == 0 {
+		t.Fatal("no lnx idents in imports2.go")
+	}
+
+	grp1 := ix.Group(lnxInImports[0])
+	grp2 := ix.Group(lnxInImports2[0])
+	if grp1 == nil || grp2 == nil {
+		t.Fatal("lnx import has no group")
+	}
+	if grp1 == grp2 {
+		t.Error("lnx in imports.go and imports2.go point to different packages and should be in separate groups")
+	}
+}
