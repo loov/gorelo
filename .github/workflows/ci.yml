@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go install honnef.co/go/tools/cmd/staticcheck@latest
+      - name: vet and staticcheck (all platforms)
+        run: |
+          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            echo "=== vet [$p] ==="
+            GOOS=${p%/*} GOARCH=${p#*/} go vet ./...
+            echo "=== staticcheck [$p] ==="
+            GOOS=${p%/*} GOARCH=${p#*/} staticcheck ./...
+          done
+
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go install golang.org/x/tools/cmd/goimports@latest
+      - name: Check formatting
+        run: |
+          make fmt
+          git diff --exit-code
