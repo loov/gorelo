@@ -86,6 +86,9 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 
 // loadPackage loads a single target package: discovers all files,
 // parses them, partitions by build constraints, and type-checks each set.
+// Test files (_test.go) are included. Files declaring the external test
+// package (e.g. package foo_test) are type-checked after the main
+// package so they can import it.
 func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Package) (*Package, []error) {
 	mpkg := &Package{
 		Name: pkg.Name,
@@ -143,10 +146,39 @@ func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Pac
 		fileMap[pf.syntax] = mf
 	}
 
-	// Partition files into compatible sets for type-checking.
-	sets := partitionFiles(parsed)
+	// Split files by declared package name: same-package test files
+	// (package foo) are type-checked with the main files; external test
+	// files (package foo_test) need a separate pass.
+	extTestName := pkg.Name + "_test"
+	var mainFiles, extTestFiles []parsedFile
+	for _, pf := range parsed {
+		if pf.syntax.Name.Name == extTestName {
+			extTestFiles = append(extTestFiles, pf)
+		} else {
+			mainFiles = append(mainFiles, pf)
+		}
+	}
 
-	// Type-check each set.
+	// Type-check main package files (including same-package _test.go files).
+	mainErrs := typeCheckFiles(ix, mainFiles, fileMap, pkg.PkgPath, pkg.Name, depPkgs)
+	errs = append(errs, mainErrs...)
+
+	// Type-check external test package files. They can import the main
+	// package, so register its types first.
+	if len(extTestFiles) > 0 {
+		extErrs := typeCheckFiles(ix, extTestFiles, fileMap, pkg.PkgPath+"_test", extTestName, depPkgs)
+		errs = append(errs, extErrs...)
+	}
+
+	return mpkg, errs
+}
+
+// typeCheckFiles partitions files by build constraints and type-checks
+// each partition under the given package path and name.
+func typeCheckFiles(ix *Index, files []parsedFile, fileMap map[*ast.File]*File, pkgPath, pkgName string, depPkgs map[string]*types.Package) []error {
+	sets := partitionFiles(files)
+	var errs []error
+
 	for _, set := range sets {
 		astFiles := make([]*ast.File, len(set))
 		for i, pf := range set {
@@ -159,7 +191,7 @@ func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Pac
 			Selections: map[*ast.SelectorExpr]*types.Selection{},
 		}
 
-		tpkg := types.NewPackage(pkg.PkgPath, pkg.Name)
+		tpkg := types.NewPackage(pkgPath, pkgName)
 		tcfg := &types.Config{
 			Importer: importerFunc(func(path string) (*types.Package, error) {
 				if tp, ok := depPkgs[path]; ok {
@@ -175,7 +207,7 @@ func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Pac
 		resolveInfo(ix, info, fileMap)
 	}
 
-	return mpkg, errs
+	return errs
 }
 
 // importerFunc adapts a function to the types.Importer interface.
@@ -199,7 +231,7 @@ func packageDir(pkg *packages.Package) string {
 	return ""
 }
 
-// discoverGoFiles returns all non-test .go files in dir.
+// discoverGoFiles returns all .go files in dir, including test files.
 func discoverGoFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -212,7 +244,7 @@ func discoverGoFiles(dir string) ([]string, error) {
 			continue
 		}
 		name := e.Name()
-		if strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
+		if strings.HasSuffix(name, ".go") {
 			files = append(files, filepath.Join(dir, name))
 		}
 	}

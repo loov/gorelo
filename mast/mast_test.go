@@ -177,6 +177,86 @@ func TestAllPackagesLoaded(t *testing.T) {
 	}
 }
 
+func TestTestFilesLoaded(t *testing.T) {
+	ix := loadTestdata(t)
+
+	var hasSamePkg, hasExtPkg bool
+	for _, pkg := range ix.Pkgs {
+		if pkg.Path != "example" {
+			continue
+		}
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "example_test.go") {
+				hasSamePkg = true
+			}
+			if strings.Contains(f.Path, "example_ext_test.go") {
+				hasExtPkg = true
+			}
+		}
+	}
+	if !hasSamePkg {
+		t.Error("same-package test file example_test.go not loaded")
+	}
+	if !hasExtPkg {
+		t.Error("external test file example_ext_test.go not loaded")
+	}
+}
+
+func TestSamePackageTestIdents(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Server is used in example_test.go (same-package test).
+	// It should be in the same group as the Server defined in structs.go.
+	serverInTest := findIdentsInFile(ix, "Server", "example_test.go")
+	if len(serverInTest) == 0 {
+		t.Fatal("Server not found in example_test.go")
+	}
+
+	grp := ix.Group(serverInTest[0])
+	if grp == nil {
+		t.Fatal("Server ident in example_test.go has no group")
+	}
+
+	// The group should also contain idents from structs.go.
+	var hasStructs bool
+	for _, id := range grp.Idents {
+		if strings.Contains(id.File.Path, "structs.go") {
+			hasStructs = true
+			break
+		}
+	}
+	if !hasStructs {
+		t.Error("Server group does not include idents from structs.go")
+	}
+}
+
+func TestExternalTestIdents(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Counter is used in example_ext_test.go (external test package).
+	counterInTest := findIdentsInFile(ix, "Counter", "example_ext_test.go")
+	if len(counterInTest) == 0 {
+		t.Fatal("Counter not found in example_ext_test.go")
+	}
+
+	grp := ix.Group(counterInTest[0])
+	if grp == nil {
+		t.Fatal("Counter ident in example_ext_test.go has no group")
+	}
+
+	// The group should also contain idents from types.go.
+	var hasTypes bool
+	for _, id := range grp.Idents {
+		if strings.Contains(id.File.Path, "types.go") {
+			hasTypes = true
+			break
+		}
+	}
+	if !hasTypes {
+		t.Error("Counter group does not include idents from types.go")
+	}
+}
+
 func TestEmptyFile(t *testing.T) {
 	ix := loadTestdata(t)
 

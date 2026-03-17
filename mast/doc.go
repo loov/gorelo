@@ -49,10 +49,10 @@
 // Identifiers that are blank (_), builtins, or universe-scope return
 // nil from [Index.Group].
 //
-// # Build constraints
+// # Build constraints and test files
 //
-// mast discovers all .go files in a package directory (excluding
-// _test.go files) and extracts build constraints from //go:build
+// mast discovers all .go files in a package directory, including
+// _test.go files, and extracts build constraints from //go:build
 // directives and filename conventions (_linux.go, _amd64.go, etc.).
 //
 // Files are partitioned into sets that can be type-checked together.
@@ -65,6 +65,12 @@
 // Identifiers that appear in multiple passes (for example a type
 // defined in a shared file and used in two platform files) are
 // automatically merged into the same group.
+//
+// Same-package test files (package foo in _test.go files) are
+// type-checked together with the main package files. External test
+// files (package foo_test) are type-checked in a separate pass after
+// the main package, so they can import it. All test files are
+// included in the same [Package] as the main files.
 //
 // # Embedded fields
 //
