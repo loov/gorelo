@@ -1,5 +1,3 @@
-// Package mast parses Go source code and links all ast.Ident nodes
-// that refer to the same logical entity across files and packages.
 package mast
 
 import (
