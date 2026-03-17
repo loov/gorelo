@@ -1,0 +1,706 @@
+package rules
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestParseForward(t *testing.T) {
+	input := `Server ServerOption -> server.go`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "ServerOption"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseReverse(t *testing.T) {
+	input := `server.go <- Server ServerOption`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "ServerOption"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseMultiline(t *testing.T) {
+	input := "server.go <-\n\tServer\n\tServerOption"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "ServerOption"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseRenames(t *testing.T) {
+	input := `Server=Core ServerOptions=Options -> server/core.go`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server/core.go",
+		Items: []Item{
+			{Name: "Server", Rename: "Core"},
+			{Name: "ServerOptions", Rename: "Options"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseFieldRenames(t *testing.T) {
+	input := "server/core.go <-\n\tServerOptions=Options\n\tServerOptions#Listen=Address"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server/core.go",
+		Items: []Item{
+			{Name: "ServerOptions", Rename: "Options"},
+			{Name: "ServerOptions", Field: "Listen", FieldRename: "Address"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseAnonymousFieldRename(t *testing.T) {
+	input := "server/core.go <-\n\tServerOptions#Limits.min=Min"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server/core.go",
+		Items: []Item{
+			{Name: "ServerOptions", Field: "Limits.min", FieldRename: "Min"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseSourceFile(t *testing.T) {
+	input := "server/core_linux.go <-\n\tserver_linux.go:File"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server/core_linux.go",
+		Items: []Item{
+			{Source: "server_linux.go", Name: "File"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseSourceFilePath(t *testing.T) {
+	input := "server/core_linux.go <-\n\t./util/file_linux.go:File"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server/core_linux.go",
+		Items: []Item{
+			{Source: "./util/file_linux.go", Name: "File"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseSourcePackage(t *testing.T) {
+	input := "server/core_linux.go <-\n\t./util.File"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server/core_linux.go",
+		Items: []Item{
+			{Source: "./util", Name: "File"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseComments(t *testing.T) {
+	input := "# Move server types\nServer -> server.go\n# Done"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest:  "server.go",
+		Items: []Item{{Name: "Server"}},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseInlineComment(t *testing.T) {
+	input := "server.go <- Server # move it"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest:  "server.go",
+		Items: []Item{{Name: "Server"}},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseMultipleRules(t *testing.T) {
+	input := "server.go <- Server\n\nhandler.go <- Handler"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{
+		{Dest: "server.go", Items: []Item{{Name: "Server"}}},
+		{Dest: "handler.go", Items: []Item{{Name: "Handler"}}},
+	}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseMultilineMultipleRules(t *testing.T) {
+	input := "server.go <-\n\tServer\n\nhandler.go <-\n\tHandler"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{
+		{Dest: "server.go", Items: []Item{{Name: "Server"}}},
+		{Dest: "handler.go", Items: []Item{{Name: "Handler"}}},
+	}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseEmpty(t *testing.T) {
+	file, err := Parse("test", []byte(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseCommentsOnly(t *testing.T) {
+	file, err := Parse("test", []byte("# just a comment\n# another"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"no arrow", "Server"},
+		{"missing dest", "Server -> "},
+		{"missing items forward", " -> server.go"},
+		{"missing dest reverse", " <- Server"},
+		{"unexpected indent", "\tServer"},
+		{"empty field", "server.go <- Server#"},
+		{"empty name colon", "server.go <- file.go:"},
+		{"empty rename", "server.go <- Server="},
+		{"empty field rename", "server.go <- Server#Field="},
+		{"empty field name in rename", "server.go <- Server#=New"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse("test", []byte(tt.input))
+			if err == nil {
+				t.Fatalf("expected error for input %q", tt.input)
+			}
+		})
+	}
+}
+
+func TestParseFieldWithoutRename(t *testing.T) {
+	input := "server.go <- Server#Listen"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server", Field: "Listen"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDirectiveEquals(t *testing.T) {
+	input := `#@stubs=true`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Directives: []Directive{{Key: "stubs", Value: "true"}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDirectiveSpace(t *testing.T) {
+	input := `#@fmt goimports`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Directives: []Directive{{Key: "fmt", Value: "goimports"}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDirectiveNoValue(t *testing.T) {
+	input := `#@verbose`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Directives: []Directive{{Key: "verbose"}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDirectiveWithRules(t *testing.T) {
+	input := "#@fmt goimports\n#@stubs=true\nServer -> server.go"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Directives) != 2 {
+		t.Fatalf("got %d directives, want 2", len(file.Directives))
+	}
+	if file.Directives[0].Key != "fmt" || file.Directives[0].Value != "goimports" {
+		t.Errorf("directive 0: %+v", file.Directives[0])
+	}
+	if file.Directives[1].Key != "stubs" || file.Directives[1].Value != "true" {
+		t.Errorf("directive 1: %+v", file.Directives[1])
+	}
+	if len(file.Rules) != 1 || file.Rules[0].Dest != "server.go" {
+		t.Errorf("rules: %+v", file.Rules)
+	}
+}
+
+func TestParseDirectiveIndented(t *testing.T) {
+	input := "  #@fmt goimports"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Directives: []Directive{{Key: "fmt", Value: "goimports"}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDirectiveBreaksMultiline(t *testing.T) {
+	input := "server.go <-\n\tServer\n#@fmt goimports\nhandler.go <- Handler"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Directives) != 1 || file.Directives[0].Key != "fmt" {
+		t.Errorf("directives: %+v", file.Directives)
+	}
+	if len(file.Rules) != 2 {
+		t.Fatalf("got %d rules, want 2", len(file.Rules))
+	}
+	if len(file.Rules[0].Items) != 1 || file.Rules[0].Items[0].Name != "Server" {
+		t.Errorf("rule 0: %+v", file.Rules[0])
+	}
+}
+
+func TestParseComplex(t *testing.T) {
+	input := `# Move server types to their own file:
+Server ServerOption -> server.go
+
+# Or alternatively using the reverse notation
+server.go <- Server ServerOption
+
+# Or using multiline notation:
+server.go <-
+    Server
+    ServerOption
+
+# It should also allow defining renames for moves:
+Server=Core ServerOptions=Options -> server/core.go
+
+# It should allow defining renames for field names:
+server/core.go <-
+    ServerOptions=Options
+    ServerOptions#Listen=Address
+
+# When a struct contains anonymous fields:
+server/core.go <-
+    ServerOptions#Limits.min=Min
+
+# Source file references:
+server/core_linux.go <-
+    server_linux.go:File
+
+server/core_linux.go <-
+    ./util/file_linux.go:File
+
+server/core_linux.go <-
+    ./util.File
+`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(file.Rules) != 9 {
+		t.Fatalf("got %d rules, want 9", len(file.Rules))
+	}
+
+	// Spot-check a few rules.
+	r := file.Rules[0]
+	if r.Dest != "server.go" || len(r.Items) != 2 || r.Items[0].Name != "Server" {
+		t.Errorf("rule 0: %+v", r)
+	}
+
+	r = file.Rules[3]
+	if r.Dest != "server/core.go" || r.Items[0].Rename != "Core" || r.Items[1].Rename != "Options" {
+		t.Errorf("rule 3: %+v", r)
+	}
+
+	r = file.Rules[5]
+	if r.Dest != "server/core.go" || r.Items[0].Field != "Limits.min" || r.Items[0].FieldRename != "Min" {
+		t.Errorf("rule 5: %+v", r)
+	}
+
+	r = file.Rules[7]
+	if r.Dest != "server/core_linux.go" || r.Items[0].Source != "./util/file_linux.go" || r.Items[0].Name != "File" {
+		t.Errorf("rule 7: %+v", r)
+	}
+
+	r = file.Rules[8]
+	if r.Dest != "server/core_linux.go" || r.Items[0].Source != "./util" || r.Items[0].Name != "File" {
+		t.Errorf("rule 8: %+v", r)
+	}
+}
+
+func TestParseCRLF(t *testing.T) {
+	input := "server.go <-\r\n\tServer\r\n\tHandler\r\n"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "Handler"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseCR(t *testing.T) {
+	input := "server.go <- Server\rhandler.go <- Handler\r"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Rules) != 2 {
+		t.Fatalf("got %d rules, want 2", len(file.Rules))
+	}
+}
+
+func TestParseDirectiveTab(t *testing.T) {
+	input := "#@fmt\tgoimports"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Directives: []Directive{{Key: "fmt", Value: "goimports"}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDirectiveEmptyKeyIgnored(t *testing.T) {
+	// "#@" alone and "#@=value" should not produce a directive.
+	for _, input := range []string{"#@", "#@=value", "#@ "} {
+		file, err := Parse("test", []byte(input))
+		if err != nil {
+			t.Fatalf("input %q: unexpected error: %v", input, err)
+		}
+		if len(file.Directives) != 0 {
+			t.Errorf("input %q: got %d directives, want 0", input, len(file.Directives))
+		}
+	}
+}
+
+func TestParseMultilineNoItems(t *testing.T) {
+	input := "server.go <-\n\n"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(file.Rules))
+	}
+	if len(file.Rules[0].Items) != 0 {
+		t.Errorf("got %d items, want 0", len(file.Rules[0].Items))
+	}
+}
+
+func TestParseMultilineContinuesWithoutBlank(t *testing.T) {
+	// A non-indented rule line ends the previous multiline block.
+	input := "server.go <-\n\tServer\nhandler.go <- Handler"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Rules) != 2 {
+		t.Fatalf("got %d rules, want 2", len(file.Rules))
+	}
+	if file.Rules[0].Dest != "server.go" || len(file.Rules[0].Items) != 1 {
+		t.Errorf("rule 0: %+v", file.Rules[0])
+	}
+	if file.Rules[1].Dest != "handler.go" || len(file.Rules[1].Items) != 1 {
+		t.Errorf("rule 1: %+v", file.Rules[1])
+	}
+}
+
+func TestParseSourceWithRename(t *testing.T) {
+	input := "server.go <- file.go:Server=Core"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Source: "file.go", Name: "Server", Rename: "Core"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseSourceWithFieldRename(t *testing.T) {
+	input := "server.go <- ./util.Server#Listen=Address"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Source: "./util", Name: "Server", Field: "Listen", FieldRename: "Address"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseAbsolutePackage(t *testing.T) {
+	input := "server.go <- github.com/loov/gorelo.Server"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Source: "github.com/loov/gorelo", Name: "Server"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseAbsolutePackageWithRename(t *testing.T) {
+	input := "server.go <- github.com/loov/gorelo.Server=Core"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Source: "github.com/loov/gorelo", Name: "Server", Rename: "Core"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseAbsolutePackageWithFieldRename(t *testing.T) {
+	input := "server.go <- github.com/loov/gorelo.Server#Listen=Address"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Source: "github.com/loov/gorelo", Name: "Server", Field: "Listen", FieldRename: "Address"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseAbsolutePackageMultiline(t *testing.T) {
+	input := "server.go <-\n\tgithub.com/loov/gorelo.Server\n\tgithub.com/loov/gorelo.Handler"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Source: "github.com/loov/gorelo", Name: "Server"},
+			{Source: "github.com/loov/gorelo", Name: "Handler"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseMultipleItemsOnMultilineLine(t *testing.T) {
+	// An indented line can contain multiple space-separated items.
+	input := "server.go <-\n\tServer Handler"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Rules[0].Items) != 2 {
+		t.Fatalf("got %d items, want 2", len(file.Rules[0].Items))
+	}
+}
+
+func FuzzParse(f *testing.F) {
+	seeds := []string{
+		"",
+		"# comment",
+		"#@fmt goimports",
+		"#@stubs=true",
+		"#@verbose",
+		"Server -> server.go",
+		"server.go <- Server",
+		"server.go <-\n\tServer\n\tHandler",
+		"Server=Core -> server.go",
+		"server.go <- S#Listen=Addr",
+		"server.go <- S#Limits.min=Min",
+		"server.go <- file.go:Server",
+		"server.go <- ./util.File",
+		"server.go <- ./util/file.go:File",
+		"server.go <- github.com/loov/gorelo.Server",
+		"server.go <- github.com/loov/gorelo.Server=Core",
+		"server.go <- github.com/loov/gorelo.Server#F=G",
+		"A B C -> x.go",
+		"x.go <- A=B C#D=E",
+		"# comment\nServer -> server.go\n# end",
+		"server.go <-\r\n\tServer\r\n",
+		"#@ ",
+		"#@=val",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		file, err := Parse("fuzz", []byte(input))
+		if err != nil {
+			return // parse errors are fine
+		}
+
+		// Validate invariants on successfully parsed output.
+		for ri, r := range file.Rules {
+			if r.Dest == "" {
+				t.Fatalf("rule %d: empty destination", ri)
+			}
+			for ii, item := range r.Items {
+				if item.Name == "" {
+					t.Fatalf("rule %d item %d: empty name", ri, ii)
+				}
+				if item.Field != "" && item.Rename != "" {
+					t.Fatalf("rule %d item %d: has both field %q and rename %q", ri, ii, item.Field, item.Rename)
+				}
+				if item.FieldRename != "" && item.Field == "" {
+					t.Fatalf("rule %d item %d: has field rename %q without field", ri, ii, item.FieldRename)
+				}
+			}
+		}
+		for di, d := range file.Directives {
+			if d.Key == "" {
+				t.Fatalf("directive %d: empty key", di)
+			}
+		}
+	})
+}
