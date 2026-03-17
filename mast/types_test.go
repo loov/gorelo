@@ -641,6 +641,82 @@ func TestCrossPackagePromotedField(t *testing.T) {
 	}
 }
 
+// TestCrossPackageMissingDep tests that cross-package references from
+// build-constrained files resolve correctly even when the sub-packages
+// aren't loaded as initial targets. This catches the bug where
+// packages.Load filters out imports from build-constrained files,
+// leaving depPkgs incomplete for type-checking.
+func TestCrossPackageMissingDep(t *testing.T) {
+	// Load only "." (not "./...") so sub-packages like example/linux
+	// and example/windows are NOT initial packages. They must be
+	// discovered from imports in build-constrained files.
+	ix := loadTestdataRoot(t)
+
+	tests := []struct {
+		name         string
+		identName    string
+		file         string
+		kind         mast.ObjectKind
+		funcName     string
+		searchInFunc bool
+	}{
+		{
+			name:         "linux field access",
+			identName:    "Distro",
+			file:         "platform_linux.go",
+			kind:         mast.Field,
+			funcName:     "LinuxDistro",
+			searchInFunc: true,
+		},
+		{
+			name:      "linux type embedding",
+			identName: "Info",
+			file:      "platform_linux.go",
+			kind:      mast.TypeName,
+		},
+		{
+			name:         "linux promoted field",
+			identName:    "Distro",
+			file:         "platform_linux.go",
+			kind:         mast.Field,
+			funcName:     "LinuxAdminDistro",
+			searchInFunc: true,
+		},
+		{
+			name:         "linux dot import func",
+			identName:    "Name",
+			file:         "dotimport.go",
+			kind:         mast.Func,
+			funcName:     "DotImportName",
+			searchInFunc: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var found bool
+			if tt.searchInFunc {
+				for _, id := range findIdentsInFunc(ix, tt.identName, tt.file, tt.funcName) {
+					if g := ix.Group(id); g != nil && g.Kind == tt.kind {
+						found = true
+						break
+					}
+				}
+			} else {
+				for _, id := range findIdentsInFile(ix, tt.identName, tt.file) {
+					if g := ix.Group(id); g != nil && g.Kind == tt.kind {
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				t.Errorf("no group (kind=%d) found for %s in %s — dependency not loaded?", tt.kind, tt.identName, tt.file)
+			}
+		})
+	}
+}
+
 func TestDeferWithMethod(t *testing.T) {
 	ix := loadTestdata(t)
 

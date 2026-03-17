@@ -11,11 +11,24 @@ import (
 
 func loadTestdata(t *testing.T) *mast.Index {
 	t.Helper()
+	return loadTestdataWith(t, "./...")
+}
+
+// loadTestdataRoot loads only the root example package (not sub-packages).
+// This exercises the dependency loading path for build-constrained files
+// that import sub-packages not present in the initial packages.Load result.
+func loadTestdataRoot(t *testing.T) *mast.Index {
+	t.Helper()
+	return loadTestdataWith(t, ".")
+}
+
+func loadTestdataWith(t *testing.T, pattern string) *mast.Index {
+	t.Helper()
 	dir, err := filepath.Abs("testdata/example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ix, err := mast.Load(&mast.Config{Dir: dir}, "./...")
+	ix, err := mast.Load(&mast.Config{Dir: dir}, pattern)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -74,7 +74,7 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 			continue
 		}
 
-		pkgs, errs := loadPackage(ix, pkg, depPkgs)
+		pkgs, errs := loadPackage(ix, pkg, pkgsCfg, depPkgs)
 		ix.Pkgs = append(ix.Pkgs, pkgs...)
 		ix.Errors = append(ix.Errors, errs...)
 	}
@@ -86,7 +86,7 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 // parses them, partitions by build constraints, and type-checks each set.
 // Test files (_test.go) are included. Files declaring the external test
 // package (e.g. package foo_test) are returned as a separate Package.
-func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Package) ([]*Package, []error) {
+func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs map[string]*types.Package) ([]*Package, []error) {
 	dir := packageDir(pkg)
 	if dir == "" {
 		return nil, []error{fmt.Errorf("cannot determine directory for package %s", pkg.PkgPath)}
@@ -124,6 +124,43 @@ func loadPackage(ix *Index, pkg *packages.Package, depPkgs map[string]*types.Pac
 			syntax:   f,
 			buildTag: tag,
 		})
+	}
+
+	// Collect imports from all parsed files and load any missing dependencies.
+	// This handles cases where build-constrained files import packages that
+	// weren't discovered during the initial packages.Load (e.g., a file with
+	// //go:build linux importing "example/linux" won't be seen on Windows).
+	var missingImports []string
+	for _, pf := range parsed {
+		for _, imp := range pf.syntax.Imports {
+			path := strings.Trim(imp.Path.Value, `"`)
+			if _, ok := depPkgs[path]; !ok {
+				missingImports = append(missingImports, path)
+			}
+		}
+	}
+	if len(missingImports) > 0 {
+		extraPkgs, loadErr := packages.Load(cfg, missingImports...)
+		if loadErr == nil {
+			var collectDeps func(p *packages.Package)
+			collectDeps = func(p *packages.Package) {
+				for _, imp := range p.Imports {
+					if _, ok := depPkgs[imp.PkgPath]; ok {
+						continue
+					}
+					if imp.Types != nil {
+						depPkgs[imp.PkgPath] = imp.Types
+					}
+					collectDeps(imp)
+				}
+			}
+			for _, ep := range extraPkgs {
+				if ep.PkgPath != "" && ep.Types != nil {
+					depPkgs[ep.PkgPath] = ep.Types
+				}
+				collectDeps(ep)
+			}
+		}
 	}
 
 	// Create packages and assign files.
