@@ -112,3 +112,62 @@ func FirstName(users ...*User) string {
 	}
 	return ""
 }
+
+// Defer with method call.
+func DeferPrint(s *Server) {
+	defer s.Print()
+	fmt.Println("before print")
+}
+
+// Go with function call.
+func GoProducer(ch chan<- Event) {
+	go Producer(ch, "a", "b")
+}
+
+// Generic struct field access.
+func PairFirst(p Pair[Counter, Counter]) Counter {
+	return p.First
+}
+
+// Slice with named element type.
+type CounterSlice []Counter
+
+func SumCounters(cs CounterSlice) Counter {
+	var total Counter
+	for _, c := range cs {
+		total += c
+	}
+	return total
+}
+
+// Pointer to named type in function signature.
+func IncrementCounter(c *Counter) {
+	*c++
+}
+
+// Switch case with variable scoping.
+func SwitchScope(v any) string {
+	switch x := v.(type) {
+	case User:
+		name := x.Name
+		return name
+	case Counter:
+		name := fmt.Sprintf("%d", x)
+		return name
+	}
+	return ""
+}
+
+// Composite literal with nested struct.
+func NewServer(addr string) Server {
+	return Server{
+		Addr: addr,
+		TLS: struct {
+			CertFile string
+			KeyFile  string
+		}{
+			CertFile: "/etc/cert.pem",
+			KeyFile:  "/etc/key.pem",
+		},
+	}
+}

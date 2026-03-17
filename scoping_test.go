@@ -1,6 +1,7 @@
 package mast_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/loov/mast"
@@ -279,6 +280,99 @@ func TestRenamedImport(t *testing.T) {
 		if ix.Group(id) != pkgNameGrp {
 			t.Error("lnx idents not all in same group")
 			break
+		}
+	}
+}
+
+func TestSelectCaseVariableScoping(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// SelectFirst has "e" in two different select cases — each is a new variable.
+	eIdents := findIdentsInFunc(ix, "e", "channels.go", "SelectFirst")
+	if len(eIdents) == 0 {
+		t.Fatal("no e idents in SelectFirst")
+	}
+
+	eGroups := map[*mast.Group]bool{}
+	for _, id := range eIdents {
+		if g := ix.Group(id); g != nil {
+			eGroups[g] = true
+		}
+	}
+	if len(eGroups) < 2 {
+		t.Errorf("expected 'e' in different select cases to be in separate groups, got %d", len(eGroups))
+	}
+}
+
+func TestDotImport(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// dotimport.go uses `import . "example/linux"`.
+	// Name() called without qualifier should link to linux.Name.
+	linuxNameGrp := findFuncGroup(ix, "Name", "linux/linux.go")
+	if linuxNameGrp == nil {
+		t.Fatal("no Func group for linux.Name")
+	}
+
+	found := false
+	for _, id := range findIdentsInFunc(ix, "Name", "dotimport.go", "DotImportName") {
+		if ix.Group(id) == linuxNameGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Name() via dot import not linked to linux.Name function group")
+	}
+
+	// Info type via dot import should link to linux.Info.
+	infoGrp := findTypeGroup(ix, "Info", "linux/linux.go")
+	if infoGrp == nil {
+		t.Fatal("no TypeName group for linux.Info")
+	}
+
+	found = false
+	for _, id := range findIdentsInFile(ix, "Info", "dotimport.go") {
+		if ix.Group(id) == infoGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Info type via dot import not linked to linux.Info type group")
+	}
+}
+
+func TestSideEffectImport(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// sideeffect.go uses `import _ "example/linux"`.
+	// The file should be loaded and SideEffectVar should have a group.
+	var fileFound bool
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if strings.Contains(f.Path, "sideeffect.go") {
+				fileFound = true
+			}
+		}
+	}
+	if !fileFound {
+		t.Fatal("sideeffect.go not loaded")
+	}
+
+	idents := findIdentsInFile(ix, "SideEffectVar", "sideeffect.go")
+	if len(idents) == 0 {
+		t.Fatal("no SideEffectVar idents")
+	}
+	if ix.Group(idents[0]) == nil {
+		t.Error("SideEffectVar has no group")
+	}
+
+	// The "_" in `import _ "example/linux"` should be untracked.
+	blankIdents := findIdentsInFile(ix, "_", "sideeffect.go")
+	for _, id := range blankIdents {
+		if g := ix.Group(id); g != nil {
+			t.Errorf("blank import ident at %v should be untracked", ix.Fset.Position(id.Pos()))
 		}
 	}
 }

@@ -128,6 +128,11 @@ func objectKeyFor(obj types.Object) objectKey {
 	case *types.Var:
 		if o.IsField() {
 			key.Receiver = fieldOwnerName(o)
+			if key.Receiver == "" {
+				// Anonymous struct field or generic instantiation field:
+				// use declaring position to avoid collisions.
+				key.Scope = fmt.Sprintf("%d", o.Pos())
+			}
 		} else if isLocalScope(o) {
 			key.Scope = fmt.Sprintf("%d", o.Pos())
 		}
@@ -265,7 +270,8 @@ func isLocalScope(obj types.Object) bool {
 
 // fieldOwnerName returns the name of the struct type that owns the given field.
 // It searches the field's package scope for a named struct type containing
-// this field. Returns "" if the owner cannot be determined.
+// this field. Returns "" if the owner cannot be determined (e.g., fields
+// in anonymous struct types).
 func fieldOwnerName(field *types.Var) string {
 	pkg := field.Pkg()
 	if pkg == nil {
@@ -284,7 +290,13 @@ func fieldOwnerName(field *types.Var) string {
 			continue
 		}
 		for i := 0; i < st.NumFields(); i++ {
-			if st.Field(i) == field {
+			f := st.Field(i)
+			if f == field {
+				return tn.Name()
+			}
+			// For generic type instantiations, the field object may differ
+			// from the origin type's field. Match by position instead.
+			if f.Pos() == field.Pos() && f.Name() == field.Name() {
 				return tn.Name()
 			}
 		}

@@ -69,6 +69,21 @@ func DefaultUserName() string {
 	return NewUser("test", "test@test.com").Name
 }
 
+// Second anonymous struct with a same-named field as Server.TLS
+// to test anonymous struct field key collision.
+type Database struct {
+	Addr string
+	TLS  struct {
+		CertFile string
+		CAFile   string
+	}
+}
+
+func (db *Database) PrintTLS() {
+	fmt.Println(db.TLS.CertFile)
+	fmt.Println(db.TLS.CAFile)
+}
+
 // Function on package level using anonymous fields.
 func PrintConfig() {
 	fmt.Println(Config.Host)

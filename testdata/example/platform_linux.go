@@ -19,3 +19,14 @@ func LinuxDistro() string {
 	info := linux.GetInfo()
 	return info.Distro
 }
+
+// Cross-package type embedding.
+type LinuxAdmin struct {
+	File
+	linux.Info
+}
+
+// Access promoted field from cross-package embedded type.
+func LinuxAdminDistro(la LinuxAdmin) string {
+	return la.Distro
+}

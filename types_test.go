@@ -551,6 +551,211 @@ func TestLabels(t *testing.T) {
 	}
 }
 
+func TestAnonymousStructFieldCollision(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Server.TLS.CertFile and Database.TLS.CertFile are fields in
+	// different anonymous structs. They should be in separate groups.
+	serverCert := findIdentsInFunc(ix, "CertFile", "structs.go", "Print")
+	dbCert := findIdentsInFunc(ix, "CertFile", "structs.go", "PrintTLS")
+
+	if len(serverCert) == 0 {
+		t.Fatal("no CertFile idents in Server.Print")
+	}
+	if len(dbCert) == 0 {
+		t.Fatal("no CertFile idents in Database.PrintTLS")
+	}
+
+	serverGrp := ix.Group(serverCert[0])
+	dbGrp := ix.Group(dbCert[0])
+	if serverGrp == nil || dbGrp == nil {
+		t.Fatal("CertFile has no group")
+	}
+	if serverGrp == dbGrp {
+		t.Error("Server.TLS.CertFile and Database.TLS.CertFile should be in separate groups")
+	}
+}
+
+func TestGenericStructFieldAccess(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// p.First where p is Pair[Counter, Counter] should link to Pair.First field.
+	firstGrp := findFieldGroup(ix, "First", "types.go")
+	if firstGrp == nil {
+		t.Fatal("no Field group for Pair.First in types.go")
+	}
+
+	found := false
+	for _, id := range findIdentsInFunc(ix, "First", "expressions.go", "PairFirst") {
+		if ix.Group(id) == firstGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("p.First in PairFirst not linked to Pair.First field group")
+	}
+}
+
+func TestCrossPackageTypeEmbedding(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// LinuxAdmin embeds linux.Info. The "Info" embedded field ident
+	// should link to the linux.Info type group.
+	infoGrp := findTypeGroup(ix, "Info", "linux/linux.go")
+	if infoGrp == nil {
+		t.Fatal("no TypeName group for linux.Info")
+	}
+
+	// The embedded "Info" ident in LinuxAdmin should be in this group.
+	found := false
+	for _, id := range findIdentsInFile(ix, "Info", "platform_linux.go") {
+		if ix.Group(id) == infoGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("embedded linux.Info in LinuxAdmin not linked to linux.Info type group")
+	}
+}
+
+func TestCrossPackagePromotedField(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// la.Distro in LinuxAdminDistro accesses a promoted field from linux.Info.
+	distroGrp := findFieldGroup(ix, "Distro", "linux/linux.go")
+	if distroGrp == nil {
+		t.Fatal("no Field group for linux.Info.Distro")
+	}
+
+	found := false
+	for _, id := range findIdentsInFunc(ix, "Distro", "platform_linux.go", "LinuxAdminDistro") {
+		if ix.Group(id) == distroGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("la.Distro in LinuxAdminDistro not linked to linux.Info.Distro field group")
+	}
+}
+
+func TestDeferWithMethod(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// defer s.Print() — "Print" should link to Server.Print method.
+	printGrp := findMethodGroup(ix, "Print", "structs.go")
+	if printGrp == nil {
+		t.Fatal("no Method group for Server.Print")
+	}
+
+	found := false
+	for _, id := range findIdentsInFunc(ix, "Print", "expressions.go", "DeferPrint") {
+		if ix.Group(id) == printGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("defer s.Print() not linked to Server.Print method group")
+	}
+}
+
+func TestGoWithFunction(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// go Producer(...) — "Producer" should link to Producer function.
+	producerGrp := findFuncGroup(ix, "Producer", "channels.go")
+	if producerGrp == nil {
+		t.Fatal("no Func group for Producer")
+	}
+
+	found := false
+	for _, id := range findIdentsInFunc(ix, "Producer", "expressions.go", "GoProducer") {
+		if ix.Group(id) == producerGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("go Producer() not linked to Producer function group")
+	}
+}
+
+func TestSliceWithNamedElementType(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// CounterSlice is []Counter — Counter should link to Counter type.
+	counterGrp := findTypeGroup(ix, "Counter", "types.go")
+	if counterGrp == nil {
+		t.Fatal("no TypeName group for Counter")
+	}
+
+	// Counter in "type CounterSlice []Counter"
+	found := false
+	for _, id := range findIdentsInFile(ix, "Counter", "expressions.go") {
+		if ix.Group(id) == counterGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Counter in CounterSlice definition not linked to Counter type group")
+	}
+
+	// CounterSlice itself should have its own group.
+	csGrp := findTypeGroup(ix, "CounterSlice", "expressions.go")
+	if csGrp == nil {
+		t.Fatal("no TypeName group for CounterSlice")
+	}
+	if csGrp == counterGrp {
+		t.Error("CounterSlice and Counter should be in separate groups")
+	}
+}
+
+func TestPointerToNamedType(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// IncrementCounter(c *Counter) — Counter in the pointer type should link.
+	counterGrp := findTypeGroup(ix, "Counter", "types.go")
+	if counterGrp == nil {
+		t.Fatal("no TypeName group for Counter")
+	}
+
+	found := false
+	for _, id := range findIdentsInFunc(ix, "Counter", "expressions.go", "IncrementCounter") {
+		if ix.Group(id) == counterGrp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("*Counter in IncrementCounter not linked to Counter type group")
+	}
+}
+
+func TestSwitchCaseVariableScoping(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// SwitchScope has "name" in two different case clauses.
+	// Each should be a separate local variable.
+	nameIdents := findIdentsInFunc(ix, "name", "expressions.go", "SwitchScope")
+	if len(nameIdents) == 0 {
+		t.Fatal("no name idents in SwitchScope")
+	}
+
+	nameGroups := map[*mast.Group]bool{}
+	for _, id := range nameIdents {
+		if g := ix.Group(id); g != nil {
+			nameGroups[g] = true
+		}
+	}
+	if len(nameGroups) < 2 {
+		t.Errorf("expected 'name' in different switch cases to be in separate groups, got %d", len(nameGroups))
+	}
+}
+
 func TestVarConst(t *testing.T) {
 	ix := loadTestdata(t)
 

@@ -79,3 +79,13 @@ func FormatEvent(v any) string {
 	}
 	return "unknown"
 }
+
+// Select case variable scoping: "e" in each case is a new variable.
+func SelectFirst(a, b <-chan Event) Event {
+	select {
+	case e := <-a:
+		return e
+	case e := <-b:
+		return e
+	}
+}
