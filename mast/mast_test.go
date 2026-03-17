@@ -3,6 +3,7 @@ package mast_test
 import (
 	"go/ast"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -71,12 +72,22 @@ func findIdents(ix *mast.Index, name string) []*ast.Ident {
 	return result
 }
 
+// pathContains checks whether filePath contains the given fragment,
+// normalising path separators on Windows so that "linux/linux.go" matches
+// paths like "linux\linux.go".
+func pathContains(filePath, fragment string) bool {
+	if runtime.GOOS == "windows" {
+		fragment = filepath.FromSlash(fragment)
+	}
+	return strings.Contains(filePath, fragment)
+}
+
 // findIdentsInFile returns all *ast.Ident with name in files whose path contains pathFragment.
 func findIdentsInFile(ix *mast.Index, name, pathFragment string) []*ast.Ident {
 	var result []*ast.Ident
 	for _, pkg := range ix.Pkgs {
 		for _, file := range pkg.Files {
-			if !strings.Contains(file.Path, pathFragment) {
+			if !pathContains(file.Path, pathFragment) {
 				continue
 			}
 			ast.Inspect(file.Syntax, func(n ast.Node) bool {
@@ -96,7 +107,7 @@ func findIdentsInFunc(ix *mast.Index, identName, pathFragment, funcName string) 
 	var result []*ast.Ident
 	for _, pkg := range ix.Pkgs {
 		for _, file := range pkg.Files {
-			if !strings.Contains(file.Path, pathFragment) {
+			if !pathContains(file.Path, pathFragment) {
 				continue
 			}
 			for _, decl := range file.Syntax.Decls {
