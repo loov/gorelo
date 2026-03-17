@@ -24,6 +24,12 @@ import (
 //go:embed index.html file.html
 var templates embed.FS
 
+//go:embed style.css
+var styleCSS []byte
+
+//go:embed file.js
+var fileJS []byte
+
 var tmpl = template.Must(template.ParseFS(templates, "*.html"))
 
 func main() {
@@ -89,6 +95,14 @@ func main() {
 		}
 	}
 
+	http.HandleFunc("/style.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Write(styleCSS)
+	})
+	http.HandleFunc("/file.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Write(fileJS)
+	})
 	http.HandleFunc("/", s.handleIndex)
 	http.HandleFunc("/file", s.handleFile)
 	http.HandleFunc("/group", s.handleGroup)
