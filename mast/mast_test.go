@@ -4,9 +4,16 @@ import (
 	"go/ast"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/loov/gorelo/mast"
+)
+
+var (
+	cachedIndex    = map[string]*mast.Index{}
+	cachedIndexErr = map[string]error{}
+	cachedIndexMu  sync.Mutex
 )
 
 func loadTestdata(t *testing.T) *mast.Index {
@@ -24,11 +31,24 @@ func loadTestdataRoot(t *testing.T) *mast.Index {
 
 func loadTestdataWith(t *testing.T, pattern string) *mast.Index {
 	t.Helper()
+
+	cachedIndexMu.Lock()
+	defer cachedIndexMu.Unlock()
+
+	if ix, ok := cachedIndex[pattern]; ok {
+		if err := cachedIndexErr[pattern]; err != nil {
+			t.Fatal(err)
+		}
+		return ix
+	}
+
 	dir, err := filepath.Abs("testdata/example")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ix, err := mast.Load(&mast.Config{Dir: dir}, pattern)
+	cachedIndex[pattern] = ix
+	cachedIndexErr[pattern] = err
 	if err != nil {
 		t.Fatal(err)
 	}
