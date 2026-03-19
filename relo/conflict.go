@@ -109,21 +109,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 
 	// Check against existing declarations in target packages.
 	for dir, entries := range byTargetDir {
-		// Find existing package in this directory.
-		var targetPkg *mast.Package
-		for _, pkg := range ix.Pkgs {
-			if len(pkg.Files) > 0 {
-				for _, f := range pkg.Files {
-					if dirOf(f.Path) == dir {
-						targetPkg = pkg
-						break
-					}
-				}
-				if targetPkg != nil {
-					break
-				}
-			}
-		}
+		targetPkg := findPkgForDir(ix, dir)
 		if targetPkg == nil {
 			continue
 		}
