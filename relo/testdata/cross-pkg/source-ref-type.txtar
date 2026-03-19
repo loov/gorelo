@@ -1,0 +1,68 @@
+# Move a type and constructor to a different package.
+# Remaining code in the source package that references the moved type
+# should be rewritten with qualified names.
+
+Config NewConfig -> dst/config.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+import "time"
+
+// Config holds application configuration.
+type Config struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+}
+
+// NewConfig creates a Config with defaults.
+func NewConfig() *Config {
+	return &Config{
+		Host:    "localhost",
+		Port:    8080,
+		Timeout: 30 * time.Second,
+	}
+}
+
+// UseConfig uses a config (stays).
+func UseConfig(c *Config) string {
+	return c.Host
+}
+-- golden/src/config.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// UseConfig uses a config (stays).
+func UseConfig(c *dst.Config) string {
+	return c.Host
+}
+-- golden/dst/config.go --
+package dst
+
+import (
+	"time"
+)
+
+// Config holds application configuration.
+type Config struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+}
+
+// NewConfig creates a Config with defaults.
+func NewConfig() *Config {
+	return &Config{
+		Host:    "localhost",
+		Port:    8080,
+		Timeout: 30 * time.Second,
+	}
+}

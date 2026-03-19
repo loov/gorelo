@@ -1,0 +1,75 @@
+# Move a declaration referenced from build-constrained source files.
+# All referencing files should get qualified references and imports.
+
+Helper -> dst/helper.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/common.go --
+package src
+
+// Helper is a shared helper function.
+func Helper() string { return "help" }
+
+// Keep stays in the package and references Helper.
+func Keep() string { return Helper() + "_kept" }
+-- input/src/darwin.go --
+//go:build darwin
+
+package src
+
+// PlatformInit initializes platform-specific settings.
+func PlatformInit() string {
+	return "darwin:" + Helper()
+}
+-- input/src/linux.go --
+//go:build linux
+
+package src
+
+// PlatformInit initializes platform-specific settings.
+func PlatformInit() string {
+	return "linux:" + Helper()
+}
+-- golden/src/common.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// Keep stays in the package and references Helper.
+func Keep() string { return dst.Helper() + "_kept" }
+-- golden/src/darwin.go --
+//go:build darwin
+
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// PlatformInit initializes platform-specific settings.
+func PlatformInit() string {
+	return "darwin:" + dst.Helper()
+}
+-- golden/src/linux.go --
+//go:build linux
+
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// PlatformInit initializes platform-specific settings.
+func PlatformInit() string {
+	return "linux:" + dst.Helper()
+}
+-- golden/dst/helper.go --
+package dst
+
+// Helper is a shared helper function.
+func Helper() string { return "help" }

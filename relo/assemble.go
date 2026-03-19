@@ -424,6 +424,14 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			}
 		}
 
+		// Add imports needed by consumer edits (e.g., source-file references
+		// to declarations that moved to a different package).
+		if ic := imports.byFile[sourcePath]; ic != nil {
+			for _, entry := range ic.Add {
+				newSrc, _ = ensureImport(newSrc, entry)
+			}
+		}
+
 		// Clean up.
 		newSrc = removeEmptyDeclBlocks(newSrc)
 		newSrc = cleanBlankLines(newSrc)

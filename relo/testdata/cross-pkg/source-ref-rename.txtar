@@ -1,0 +1,37 @@
+# Rename and move declarations cross-package.
+# Remaining source code should use the qualified new name.
+
+formatTitle=FormatTitle -> config/config.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+func formatTitle(name string) string {
+	return "Title: " + name
+}
+-- input/src/other.go --
+package src
+
+func UseTitle() string {
+	return formatTitle("hello")
+}
+-- golden/config/config.go --
+package config
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+-- golden/src/other.go --
+package src
+
+import (
+	"example.com/test/config"
+)
+
+func UseTitle() string {
+	return config.FormatTitle("hello")
+}

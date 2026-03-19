@@ -1,0 +1,68 @@
+# Move declarations to different target packages.
+# Source code remaining in the original package that references
+# moved declarations should be rewritten with qualified names.
+
+FormatTitle MinRetries MaxRetries -> config/config.go
+ErrNotFound ErrTimeout -> errors/errors.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+
+var MinRetries = 5
+
+var MaxRetries = 100
+-- input/src/errors.go --
+package src
+
+const ErrNotFound = "not_found"
+
+const ErrTimeout = "timeout"
+-- input/src/other.go --
+package src
+
+func OtherFunc() int {
+	return MinRetries + MaxRetries
+}
+
+func OtherTitle() string {
+	return FormatTitle("default") + ErrNotFound
+}
+-- golden/config/config.go --
+package config
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+
+var MinRetries = 5
+
+var MaxRetries = 100
+-- golden/errors/errors.go --
+package errors
+
+const ErrNotFound = "not_found"
+
+const ErrTimeout = "timeout"
+-- golden/src/other.go --
+package src
+
+import (
+	"example.com/test/errors"
+	"example.com/test/config"
+)
+
+func OtherFunc() int {
+	return config.MinRetries + config.MaxRetries
+}
+
+func OtherTitle() string {
+	return config.FormatTitle("default") + errors.ErrNotFound
+}

@@ -1,0 +1,40 @@
+# File-qualified cross-package move with rename.
+# References in the source package should be rewritten with qualified names.
+
+greet.go:greet=Greet -> pkg_b/b.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/greet.go --
+package main
+
+func greet() string {
+	return "Hello"
+}
+-- input/main.go --
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println(greet())
+}
+-- golden/main.go --
+package main
+
+import (
+	"fmt"
+	"example.com/test/pkg_b"
+)
+
+func main() {
+	fmt.Println(pkg_b.Greet())
+}
+-- golden/pkg_b/b.go --
+package pkg_b
+
+func Greet() string {
+	return "Hello"
+}

@@ -10,7 +10,7 @@ import (
 // from external packages and generates edits to update their qualifier
 // expressions and imports. Results are merged into the provided renameSet
 // and importSet so that the assembly phase applies them uniformly.
-func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
+func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, opts *Options, plan *Plan) {
 	// Build lookup structures.
 	type moveInfo struct {
 		srcPkgPath string // source package import path
@@ -80,17 +80,58 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		return fe
 	}
 
+	// Build moved span lookup so we can skip idents inside extracted code.
+	movedSpans := make(map[string][]*span) // filePath -> spans being removed
+	for _, rr := range resolved {
+		if s, ok := spans[rr]; ok && s != nil && rr.File != nil && rr.TargetFile != rr.File.Path {
+			movedSpans[rr.File.Path] = append(movedSpans[rr.File.Path], s)
+		}
+	}
+
+	inMovedSpan := func(filePath string, off, endOff int) bool {
+		for _, s := range movedSpans[filePath] {
+			if off >= s.Start && endOff <= s.End {
+				return true
+			}
+		}
+		return false
+	}
+
 	for grp, info := range movedGroups {
 		for _, id := range grp.Idents {
 			if id.Kind != mast.Use || id.File == nil {
 				continue
 			}
 			filePath := id.File.Path
-			if sourceFiles[filePath] || targetFiles[filePath] {
+			if targetFiles[filePath] {
 				continue
 			}
-			// This ident must have a qualifier (pkg.Name) since it's a
-			// cross-package reference. Skip if not qualified.
+
+			// Unqualified same-package reference: the declaration is
+			// moving to a different package, so we need to add a
+			// package qualifier (e.g., Validate -> dst.Validate).
+			// When stubs are enabled, the aliases handle backward
+			// compatibility, so qualification is not needed.
+			if id.Qualifier == nil && !(opts != nil && opts.Stubs) {
+				identOff := ix.Fset.Position(id.Ident.Pos()).Offset
+				identEnd := identOff + len(id.Ident.Name)
+
+				if inMovedSpan(filePath, identOff, identEnd) {
+					continue // inside extracted code, handled during assembly
+				}
+
+				fe := ensureFile(filePath)
+				tgtLocalName := guessImportLocalName(info.tgtPkgPath)
+				fe.nameEdits = append(fe.nameEdits, edit{
+					Start: identOff,
+					End:   identEnd,
+					New:   tgtLocalName + "." + info.tgtName,
+				})
+				fe.addImports[info.tgtPkgPath] = true
+				continue
+			}
+
+			// Qualified cross-package consumer reference (pkg.Name).
 			if id.Qualifier == nil {
 				continue
 			}
@@ -134,7 +175,20 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		allEdits := append(fe.qualifierEdits, fe.nameEdits...)
 		allEdits = deduplicateEdits(allEdits)
 		if len(allEdits) > 0 {
-			renames.byFile[filePath] = append(renames.byFile[filePath], allEdits...)
+			// Consumer edits supersede rename edits at the same offset
+			// (e.g., a source-file qualification edit replaces a plain
+			// rename edit because it includes the qualifier prefix).
+			consumerOffsets := make(map[int]bool)
+			for _, e := range allEdits {
+				consumerOffsets[e.Start] = true
+			}
+			var kept []edit
+			for _, e := range renames.byFile[filePath] {
+				if !consumerOffsets[e.Start] {
+					kept = append(kept, e)
+				}
+			}
+			renames.byFile[filePath] = append(kept, allEdits...)
 			renames.byFile[filePath] = deduplicateEdits(renames.byFile[filePath])
 		}
 

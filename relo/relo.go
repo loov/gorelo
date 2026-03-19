@@ -67,7 +67,7 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	importChanges := computeImports(ix, resolved, spans, plan)
 
 	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).
-	computeConsumerEdits(ix, resolved, spans, renameEdits, importChanges, plan)
+	computeConsumerEdits(ix, resolved, spans, renameEdits, importChanges, opts, plan)
 
 	// Phase 8: assemble file edits.
 	assemble(ix, resolved, spans, renameEdits, importChanges, opts, plan)

@@ -39,13 +39,16 @@ func MakeWidget() *source.Widget {
 -- golden/source/source.go --
 package source
 
-import "fmt"
+import (
+	"fmt"
+	"example.com/crosstest/target"
+)
 
-func NewWidget(name string) *Widget {
-	return &Widget{Name: name}
+func NewWidget(name string) *target.Widget {
+	return &target.Widget{Name: name}
 }
 
-func PrintWidget(w *Widget) {
+func PrintWidget(w *target.Widget) {
 	fmt.Println(w.Name)
 }
 -- golden/target/target.go --

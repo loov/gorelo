@@ -1,0 +1,62 @@
+# Move functions to a different package.
+# Remaining code in the source that references moved declarations
+# should be rewritten with qualified names and imports added.
+
+Validate Sanitize -> dst/validation.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/input.go --
+package src
+
+import "strings"
+
+// Validate checks if the input is valid.
+func Validate(input string) bool {
+	return len(strings.TrimSpace(input)) > 0
+}
+
+// Sanitize cleans up the input string.
+func Sanitize(input string) string {
+	return strings.TrimSpace(strings.ToLower(input))
+}
+
+// Process processes the input (stays here).
+func Process(input string) string {
+	if !Validate(input) {
+		return ""
+	}
+	return Sanitize(input) + "_processed"
+}
+-- golden/src/input.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// Process processes the input (stays here).
+func Process(input string) string {
+	if !dst.Validate(input) {
+		return ""
+	}
+	return dst.Sanitize(input) + "_processed"
+}
+-- golden/dst/validation.go --
+package dst
+
+import (
+	"strings"
+)
+
+// Validate checks if the input is valid.
+func Validate(input string) bool {
+	return len(strings.TrimSpace(input)) > 0
+}
+
+// Sanitize cleans up the input string.
+func Sanitize(input string) string {
+	return strings.TrimSpace(strings.ToLower(input))
+}
