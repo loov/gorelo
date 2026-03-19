@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path/filepath"
 	"unicode"
 
 	"github.com/loov/gorelo/mast"
@@ -374,5 +375,5 @@ func isSamePackageDir(pkg *mast.Package, targetFile string) bool {
 	if len(pkg.Files) == 0 {
 		return false
 	}
-	return dirOf(pkg.Files[0].Path) == dirOf(targetFile)
+	return filepath.Dir(pkg.Files[0].Path) == filepath.Dir(targetFile)
 }

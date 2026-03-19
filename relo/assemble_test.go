@@ -2,6 +2,7 @@ package relo
 
 import (
 	"go/ast"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -417,9 +418,9 @@ func TestAssemble_SourceTargetOverlap(t *testing.T) {
 	}
 
 	// Build the target paths using the actual temp directory.
-	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
-	bPath := joinPath(pkgDir, "b.go")
-	cPath := joinPath(pkgDir, "c.go")
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
+	bPath := filepath.Join(pkgDir, "b.go")
+	cPath := filepath.Join(pkgDir, "c.go")
 
 	plan, err := Compile(ix, []Relo{
 		{Ident: identX, MoveTo: bPath},

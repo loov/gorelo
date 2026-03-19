@@ -3,7 +3,9 @@ package relo
 import (
 	"go/ast"
 	"go/token"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,7 +45,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 
 	// For each target file, collect imports needed by moved declarations.
 	for targetFile, rrs := range byTarget {
-		targetDir := dirOf(targetFile)
+		targetDir := filepath.Dir(targetFile)
 
 		// Collect imports used by declarations being moved to this target.
 		neededImports := make(map[string]*ast.ImportSpec) // importPath -> spec
@@ -214,7 +216,7 @@ func findFileInIndex(ix *mast.Index, path string) *mast.File {
 func findPkgForDir(ix *mast.Index, dir string) *mast.Package {
 	for _, pkg := range ix.Pkgs {
 		for _, f := range pkg.Files {
-			if dirOf(f.Path) == dir {
+			if filepath.Dir(f.Path) == dir {
 				return pkg
 			}
 		}
@@ -284,15 +286,15 @@ func guessImportPath(dir string) string {
 	for {
 		modPath := readModulePath(d)
 		if modPath != "" {
-			rel, err := relPath(d, dir)
+			rel, err := filepath.Rel(d, dir)
 			if err == nil {
 				if rel == "." {
 					return modPath
 				}
-				return modPath + "/" + toSlash(rel)
+				return modPath + "/" + filepath.ToSlash(rel)
 			}
 		}
-		parent := dirOf(d)
+		parent := filepath.Dir(d)
 		if parent == d {
 			break
 		}
@@ -303,7 +305,7 @@ func guessImportPath(dir string) string {
 
 // readModulePath reads the module path from a go.mod file in dir.
 func readModulePath(dir string) string {
-	data, err := readFile(joinPath(dir, "go.mod"))
+	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
 		return ""
 	}

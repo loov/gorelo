@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -104,7 +106,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			edits := computeExtractedRenames(ix, rr, s, resolved)
 
 			// Apply self-import unqualification.
-			targetDir := dirOf(targetPath)
+			targetDir := filepath.Dir(targetPath)
 			targetImportPath := guessImportPath(targetDir)
 			if targetImportPath != "" {
 				edits = append(edits, collectSelfImportEdits(ix, rr, s, targetImportPath)...)
@@ -199,7 +201,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		newDecls := declsBuf.String()
 
 		// Check if target file already exists.
-		existing, err := readFile(targetPath)
+		existing, err := os.ReadFile(targetPath)
 		if err == nil && len(existing) > 0 {
 			// Append to existing file.
 			content := string(existing)
@@ -428,8 +430,8 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				if rr.TargetFile == sourcePath || rr.File == nil {
 					continue
 				}
-				targetDir := dirOf(rr.TargetFile)
-				srcDir := dirOf(rr.File.Path)
+				targetDir := filepath.Dir(rr.TargetFile)
+				srcDir := filepath.Dir(rr.File.Path)
 				if targetDir != srcDir {
 					crossByDir[targetDir] = append(crossByDir[targetDir], rr)
 				}
@@ -539,7 +541,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			continue
 		}
 
-		src, err := readFile(filePath)
+		src, err := os.ReadFile(filePath)
 		if err != nil {
 			plan.Warnings.Addf("cannot read %s for rename edits: %v", filePath, err)
 			continue
@@ -576,7 +578,7 @@ func computeCrossTargetEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved
 		return nil, nil
 	}
 
-	targetDir := dirOf(rr.TargetFile)
+	targetDir := filepath.Dir(rr.TargetFile)
 
 	// Build a map of groups being moved to other target directories.
 	type crossInfo struct {
@@ -588,11 +590,11 @@ func computeCrossTargetEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved
 		if r.File == nil {
 			continue
 		}
-		rDir := dirOf(r.TargetFile)
+		rDir := filepath.Dir(r.TargetFile)
 		if rDir == targetDir {
 			continue // same target directory, no qualification needed
 		}
-		srcDir := dirOf(r.File.Path)
+		srcDir := filepath.Dir(r.File.Path)
 		if srcDir == targetDir {
 			continue // declaration is already in our target package
 		}
@@ -753,8 +755,8 @@ func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImpor
 func determineTargetPkgName(rrs []*resolvedRelo) string {
 	for _, rr := range rrs {
 		if rr.File != nil {
-			srcDir := dirOf(rr.File.Path)
-			targetDir := dirOf(rr.TargetFile)
+			srcDir := filepath.Dir(rr.File.Path)
+			targetDir := filepath.Dir(rr.TargetFile)
 			if srcDir == targetDir {
 				return rr.File.Syntax.Name.Name
 			}
@@ -762,7 +764,7 @@ func determineTargetPkgName(rrs []*resolvedRelo) string {
 	}
 	// Guess from directory name.
 	if len(rrs) > 0 {
-		return guessPackageName(dirOf(rrs[0].TargetFile))
+		return guessPackageName(filepath.Dir(rrs[0].TargetFile))
 	}
 	return "pkg"
 }
@@ -1039,7 +1041,7 @@ func sourceFileIsEmpty(src string) bool {
 
 // guessPackageName derives a package name from a directory path.
 func guessPackageName(dir string) string {
-	base := baseName(dir)
+	base := filepath.Base(dir)
 	base = strings.ReplaceAll(base, "-", "")
 	base = strings.ReplaceAll(base, ".", "")
 	if base == "" {

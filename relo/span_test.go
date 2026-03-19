@@ -3,6 +3,7 @@ package relo
 import (
 	"go/ast"
 	"go/parser"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -180,12 +181,12 @@ func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
 		}
 	}
 
-	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
 	rr := &resolvedRelo{
 		Group:      grp,
 		DefIdent:   defIdent,
 		File:       defIdent.File,
-		TargetFile: joinPath(pkgDir, "target.go"),
+		TargetFile: filepath.Join(pkgDir, "target.go"),
 		TargetName: "X",
 	}
 
@@ -209,15 +210,15 @@ const (
 `,
 	})
 
-	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
 
 	// Build a resolvedRelo for each const in the iota block, sending A and B
 	// to different target files.
 	names := []string{"A", "B", "C"}
 	targets := []string{
-		joinPath(pkgDir, "target1.go"),
-		joinPath(pkgDir, "target2.go"), // different target
-		joinPath(pkgDir, "target1.go"),
+		filepath.Join(pkgDir, "target1.go"),
+		filepath.Join(pkgDir, "target2.go"), // different target
+		filepath.Join(pkgDir, "target1.go"),
 	}
 
 	var resolved []*resolvedRelo
@@ -265,8 +266,8 @@ const (
 `,
 	})
 
-	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
-	target := joinPath(pkgDir, "target.go")
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
+	target := filepath.Join(pkgDir, "target.go")
 
 	var resolved []*resolvedRelo
 	for _, name := range []string{"A", "B", "C"} {

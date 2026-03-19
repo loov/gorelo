@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"path/filepath"
 	"sort"
 	"strconv"
 
@@ -33,8 +34,8 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		if rr.File == nil {
 			continue
 		}
-		srcDir := dirOf(rr.File.Path)
-		tgtDir := dirOf(rr.TargetFile)
+		srcDir := filepath.Dir(rr.File.Path)
+		tgtDir := filepath.Dir(rr.TargetFile)
 		if srcDir == tgtDir {
 			continue // same-package move, no consumer rewriting needed
 		}

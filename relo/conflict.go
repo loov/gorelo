@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -75,7 +76,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		if rr.Group.Kind == mast.Method || rr.Group.Kind == mast.Field {
 			continue
 		}
-		dir := dirOf(rr.TargetFile)
+		dir := filepath.Dir(rr.TargetFile)
 		tag := ""
 		if rr.File != nil {
 			tag = rr.File.BuildTag
@@ -124,7 +125,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 				movedFromGroups[rr.Group] = true
 				// Only mark the name as vacated when moving to a different
 				// package. Same-package moves keep the name in the package.
-				if dirOf(rr.TargetFile) != dir {
+				if filepath.Dir(rr.TargetFile) != dir {
 					movedFromNames[rr.Group.Name] = true
 				}
 			}
@@ -134,7 +135,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		// (cross-package moves). These vacate their names.
 		leavingGroups := make(map[*mast.Group]bool)
 		for _, rr := range resolved {
-			if rr.File != nil && rr.File.Pkg == targetPkg && dirOf(rr.TargetFile) != dir {
+			if rr.File != nil && rr.File.Pkg == targetPkg && filepath.Dir(rr.TargetFile) != dir {
 				leavingGroups[rr.Group] = true
 			}
 		}
@@ -176,8 +177,8 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		if rr.File == nil {
 			continue
 		}
-		targetDir := dirOf(rr.TargetFile)
-		srcDir := dirOf(rr.File.Path)
+		targetDir := filepath.Dir(rr.TargetFile)
+		srcDir := filepath.Dir(rr.File.Path)
 		if targetDir == srcDir {
 			continue
 		}

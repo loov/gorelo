@@ -182,7 +182,7 @@ func TestResolve_ConstructorWarning(t *testing.T) {
 		t.Fatal("type Foo not found")
 	}
 
-	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
 	plan := &Plan{}
 	_, err := resolve(ix, []Relo{{
 		Ident:  typeIdent,
@@ -209,7 +209,7 @@ func TestResolve_MethodAutoSynthesis(t *testing.T) {
 		t.Fatal("type T not found")
 	}
 
-	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
 	plan := &Plan{}
 	resolved, err := resolve(ix, []Relo{{
 		Ident:  typeIdent,
