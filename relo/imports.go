@@ -36,11 +36,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		byFile: make(map[string]*importChange),
 	}
 
-	// Group relos by target file.
-	byTarget := make(map[string][]*resolvedRelo)
-	for _, rr := range resolved {
-		byTarget[rr.TargetFile] = append(byTarget[rr.TargetFile], rr)
-	}
+	byTarget := groupByTarget(resolved)
 
 	// For each target file, collect imports needed by moved declarations.
 	for targetFile, rrs := range byTarget {

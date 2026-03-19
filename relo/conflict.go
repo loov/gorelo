@@ -14,11 +14,7 @@ import (
 
 // checkConstraints warns about build constraint issues (phase 4).
 func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
-	// Group relos by target file.
-	byTarget := make(map[string][]*resolvedRelo)
-	for _, rr := range resolved {
-		byTarget[rr.TargetFile] = append(byTarget[rr.TargetFile], rr)
-	}
+	byTarget := groupByTarget(resolved)
 
 	sortedTargets := sortedKeys(byTarget)
 	for _, target := range sortedTargets {
@@ -337,11 +333,7 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 // file already exists, or the items mixed constrained and unconstrained
 // sources (the mixed-constraints case is already covered by checkConstraints).
 func checkSourceBuildConstraints(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) {
-	// Group relos by target file.
-	byTarget := make(map[string][]*resolvedRelo)
-	for _, rr := range resolved {
-		byTarget[rr.TargetFile] = append(byTarget[rr.TargetFile], rr)
-	}
+	byTarget := groupByTarget(resolved)
 
 	warnedFiles := make(map[string]bool)
 	for _, rr := range resolved {

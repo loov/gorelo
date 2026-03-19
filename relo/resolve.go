@@ -377,6 +377,27 @@ func enclosingFuncDecl(file *ast.File, pos token.Pos) *ast.FuncDecl {
 	return nil
 }
 
+// groupByTarget groups resolved relos by target file path.
+func groupByTarget(resolved []*resolvedRelo) map[string][]*resolvedRelo {
+	m := make(map[string][]*resolvedRelo)
+	for _, rr := range resolved {
+		m[rr.TargetFile] = append(m[rr.TargetFile], rr)
+	}
+	return m
+}
+
+// groupBySource groups resolved relos by source file path,
+// skipping relos with no source file.
+func groupBySource(resolved []*resolvedRelo) map[string][]*resolvedRelo {
+	m := make(map[string][]*resolvedRelo)
+	for _, rr := range resolved {
+		if rr.File != nil {
+			m[rr.File.Path] = append(m[rr.File.Path], rr)
+		}
+	}
+	return m
+}
+
 // isSamePackageDir checks if targetFile is in the same directory as pkg.
 func isSamePackageDir(pkg *mast.Package, targetFile string) bool {
 	if len(pkg.Files) == 0 {

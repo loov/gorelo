@@ -15,19 +15,8 @@ import (
 
 // assemble builds the final FileEdit list (phase 8).
 func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, opts *Options, plan *Plan) {
-	// Group relos by target file.
-	byTarget := make(map[string][]*resolvedRelo)
-	for _, rr := range resolved {
-		byTarget[rr.TargetFile] = append(byTarget[rr.TargetFile], rr)
-	}
-
-	// Group relos by source file.
-	bySource := make(map[string][]*resolvedRelo)
-	for _, rr := range resolved {
-		if rr.File != nil {
-			bySource[rr.File.Path] = append(bySource[rr.File.Path], rr)
-		}
-	}
+	byTarget := groupByTarget(resolved)
+	bySource := groupBySource(resolved)
 
 	// Sort target paths for deterministic output.
 	sortedTargets := sortedKeys(byTarget)
