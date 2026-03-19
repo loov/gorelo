@@ -258,13 +258,11 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 	}
 
 	// Type-check main package files (including same-package _test.go files).
-	mainErrs := typeCheckFiles(ix, mainFiles, fileMap, pkg.PkgPath, pkg.Name, depPkgs)
-	errs = append(errs, mainErrs...)
+	typeCheckFiles(ix, mainFiles, fileMap, pkg.PkgPath, pkg.Name, depPkgs)
 
 	// Type-check external test package files.
 	if len(extTestFiles) > 0 {
-		extErrs := typeCheckFiles(ix, extTestFiles, fileMap, pkg.PkgPath+"_test", extTestName, depPkgs)
-		errs = append(errs, extErrs...)
+		typeCheckFiles(ix, extTestFiles, fileMap, pkg.PkgPath+"_test", extTestName, depPkgs)
 	}
 
 	pkgs := []*Package{mpkg}
@@ -276,9 +274,8 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 
 // typeCheckFiles partitions files by build constraints and type-checks
 // each partition under the given package path and name.
-func typeCheckFiles(ix *Index, files []parsedFile, fileMap map[*ast.File]*File, pkgPath, pkgName string, depPkgs map[string]*types.Package) []error {
+func typeCheckFiles(ix *Index, files []parsedFile, fileMap map[*ast.File]*File, pkgPath, pkgName string, depPkgs map[string]*types.Package) {
 	sets := partitionFiles(files)
-	var errs []error
 
 	for _, set := range sets {
 		astFiles := make([]*ast.File, len(set))
@@ -308,7 +305,6 @@ func typeCheckFiles(ix *Index, files []parsedFile, fileMap map[*ast.File]*File, 
 		resolveInfo(ix, info, fileMap)
 	}
 
-	return errs
 }
 
 // importerFunc adapts a function to the types.Importer interface.
