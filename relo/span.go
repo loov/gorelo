@@ -20,7 +20,7 @@ type span struct {
 }
 
 // computeSpans computes byte ranges for each resolved relo (phases 2-3).
-func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) map[*resolvedRelo]*span {
+func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*resolvedRelo]*span, error) {
 	spans := make(map[*resolvedRelo]*span)
 
 	// Track const block iota warnings.
@@ -69,7 +69,9 @@ func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) map[*res
 
 				// Phase 3: iota detection for const blocks.
 				if d.Tok == token.CONST && !warnedBlocks[d] {
-					checkIotaBlock(ix, d, rr, resolved, plan)
+					if err := checkIotaBlock(ix, d, rr, resolved, plan); err != nil {
+						return nil, err
+					}
 					warnedBlocks[d] = true
 				}
 			} else {
@@ -84,7 +86,7 @@ func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) map[*res
 		spans[rr] = s
 	}
 
-	return spans
+	return spans, nil
 }
 
 // findEnclosingDecl finds the ast.Decl that contains ident.
@@ -200,10 +202,12 @@ func specByteRange(fset *token.FileSet, spec ast.Spec, file *mast.File) (int, in
 	return startOff, endOff
 }
 
-// checkIotaBlock warns if a const block using iota is being partially moved.
-func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved []*resolvedRelo, plan *Plan) {
+// checkIotaBlock returns an error if a const block using iota is being
+// partially moved, because moving individual iota-dependent specs would
+// change their values or produce invalid Go.
+func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved []*resolvedRelo, plan *Plan) error {
 	if gd.Tok != token.CONST || len(gd.Specs) <= 1 {
-		return
+		return nil
 	}
 
 	// Check if any spec in this block depends on iota.
@@ -219,7 +223,7 @@ func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved 
 		}
 	}
 	if !hasIota {
-		return
+		return nil
 	}
 
 	// Check if all specs in the block are being moved.
@@ -245,10 +249,11 @@ func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved 
 	}
 
 	if !allMoved {
-		plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+		return fmt.Errorf(
 			"const %s depends on iota — moving it without the full block will change its value",
-			rr.Group.Name))
+			rr.Group.Name)
 	}
+	return nil
 }
 
 // constSpecDependsOnIota checks whether a ValueSpec depends on iota.

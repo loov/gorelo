@@ -51,7 +51,10 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	}
 
 	// Phase 2-3: compute spans with block semantics.
-	spans := computeSpans(ix, resolved, plan)
+	spans, err := computeSpans(ix, resolved, plan)
+	if err != nil {
+		return nil, err
+	}
 
 	// Phase 4-5: check build constraints and detect conflicts.
 	checkConstraints(resolved, plan)
