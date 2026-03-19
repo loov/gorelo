@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"fmt"
 	"sort"
 )
 
@@ -39,14 +40,22 @@ func applyEdits(src []byte, edits []edit) string {
 	}
 	sorted := make([]edit, len(edits))
 	copy(sorted, edits)
-	sort.Slice(sorted, func(i, j int) bool {
+	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].Start < sorted[j].Start
 	})
 	var b []byte
 	pos := 0
 	for _, e := range sorted {
+		if e.Start < 0 || e.End < e.Start || e.Start > len(src) || e.End > len(src) {
+			panic(fmt.Sprintf("applyEdits: edit out of bounds: edit{Start:%d, End:%d, New:%q} with src length %d", e.Start, e.End, e.New, len(src)))
+		}
+		// Overlapping edits are intentionally skipped rather than treated as
+		// errors.  This can happen legitimately when a rename edit and a
+		// self-import removal edit share a boundary, or when deduplication
+		// leaves partially overlapping ranges.  The first (lower-Start) edit
+		// wins and later overlapping edits are silently dropped.
 		if e.Start < pos {
-			continue // skip overlapping
+			continue
 		}
 		b = append(b, src[pos:e.Start]...)
 		b = append(b, e.New...)

@@ -72,6 +72,72 @@ func TestDeduplicateEdits_KeepsFirst(t *testing.T) {
 	}
 }
 
+func TestApplyEdits_StableSort(t *testing.T) {
+	// Two edits at the same Start offset: SliceStable guarantees the first
+	// one in the input slice wins (after dedup, only one survives, but if
+	// both survive the order must be deterministic).
+	src := "abcdef"
+	edits := []edit{
+		{Start: 0, End: 3, New: "FIRST"},
+		{Start: 0, End: 3, New: "SECOND"},
+		{Start: 4, End: 5, New: "X"},
+	}
+	// After stable sort, FIRST comes before SECOND; SECOND overlaps and is
+	// skipped.
+	got := applyEdits([]byte(src), edits)
+	want := "FIRSTdXf"
+	if got != want {
+		t.Errorf("applyEdits stable sort: got %q, want %q", got, want)
+	}
+}
+
+func TestApplyEdits_OutOfBounds(t *testing.T) {
+	tests := []struct {
+		name  string
+		src   string
+		edits []edit
+	}{
+		{
+			name:  "Start negative",
+			src:   "hello",
+			edits: []edit{{Start: -1, End: 3, New: "x"}},
+		},
+		{
+			name:  "End before Start",
+			src:   "hello",
+			edits: []edit{{Start: 3, End: 1, New: "x"}},
+		},
+		{
+			name:  "Start beyond source",
+			src:   "hello",
+			edits: []edit{{Start: 10, End: 12, New: "x"}},
+		},
+		{
+			name:  "End beyond source",
+			src:   "hello",
+			edits: []edit{{Start: 0, End: 99, New: "x"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatal("expected panic for out-of-bounds edit, but none occurred")
+				}
+				msg, ok := r.(string)
+				if !ok {
+					t.Fatalf("expected string panic, got %T: %v", r, r)
+				}
+				if len(msg) == 0 {
+					t.Fatal("panic message is empty")
+				}
+			}()
+			applyEdits([]byte(tt.src), tt.edits)
+		})
+	}
+}
+
 func TestApplyEdits(t *testing.T) {
 	tests := []struct {
 		name  string
