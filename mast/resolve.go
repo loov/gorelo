@@ -354,8 +354,12 @@ func fieldOwnerName(field *types.Var) string {
 // to matching package-level groups. This handles cross-partition references
 // caused by build-tag partitioning: when a name is defined in one build
 // variant and used in another, the type checker in the using variant can't
-// resolve it. We walk all files and match untracked idents by name against
-// existing package-level groups, skipping definition positions.
+// resolve it.
+//
+// We use ast.File.Unresolved, which the parser populates with identifiers
+// it couldn't resolve within the file (cross-file references, built-ins).
+// After type-checking, many are resolved and tracked in groups; the ones
+// that remain untracked are cross-partition references we link here.
 func resolveUntracked(ix *Index) {
 	for _, pkg := range ix.Pkgs {
 		// Build a lookup of package-level groups by name.
@@ -370,68 +374,18 @@ func resolveUntracked(ix *Index) {
 		}
 
 		for _, file := range pkg.Files {
-			// Collect idents that are definitions (should not be linked
-			// to groups from other partitions).
-			defIdents := collectDefIdents(file.Syntax)
-
-			ast.Inspect(file.Syntax, func(n ast.Node) bool {
-				ident, ok := n.(*ast.Ident)
-				if !ok {
-					return true
-				}
+			for _, ident := range file.Syntax.Unresolved {
 				if _, tracked := ix.groups[ident]; tracked {
-					return true
-				}
-				if defIdents[ident] {
-					return true
+					continue
 				}
 				grp, ok := pkgGroups[ident.Name]
 				if !ok {
-					return true
+					continue
 				}
 				addIdent(ix, grp, ident, nil, file, Use)
-				return true
-			})
-		}
-	}
-}
-
-// collectDefIdents returns idents that are in definition positions
-// (package name, function names, type names, value names, field names,
-// labels) and should not be linked to groups from other build-tag
-// partitions.
-func collectDefIdents(f *ast.File) map[*ast.Ident]bool {
-	defs := map[*ast.Ident]bool{
-		f.Name: true, // package name
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch d := n.(type) {
-		case *ast.FuncDecl:
-			defs[d.Name] = true
-		case *ast.TypeSpec:
-			defs[d.Name] = true
-		case *ast.ValueSpec:
-			for _, name := range d.Names {
-				defs[name] = true
-			}
-		case *ast.Field:
-			for _, name := range d.Names {
-				defs[name] = true
-			}
-		case *ast.LabeledStmt:
-			defs[d.Label] = true
-		case *ast.AssignStmt:
-			if d.Tok == token.DEFINE {
-				for _, expr := range d.Lhs {
-					if id, ok := expr.(*ast.Ident); ok {
-						defs[id] = true
-					}
-				}
 			}
 		}
-		return true
-	})
-	return defs
+	}
 }
 
 // baseTypeName returns a string representation of the base type for a receiver.
