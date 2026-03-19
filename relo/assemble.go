@@ -460,14 +460,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// Add imports needed by consumer edits (e.g., source-file references
 		// to declarations that moved to a different package).
 		if ic := imports.byFile[sourcePath]; ic != nil {
-			sortedAdd := make([]importEntry, len(ic.Add))
-			copy(sortedAdd, ic.Add)
-			sort.Slice(sortedAdd, func(i, j int) bool {
-				return sortedAdd[i].Path < sortedAdd[j].Path
-			})
-			for _, entry := range sortedAdd {
-				newSrc, _ = ensureImport(newSrc, entry)
-			}
+			newSrc = applyImportEntries(newSrc, ic.Add)
 		}
 
 		// Clean up.
@@ -526,14 +519,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			if !existing.IsDelete {
 				newSrc := applyEditsToString(existing.Content, edits)
 				if ic, ok := imports.byFile[filePath]; ok {
-					sortedAdd := make([]importEntry, len(ic.Add))
-					copy(sortedAdd, ic.Add)
-					sort.Slice(sortedAdd, func(i, j int) bool {
-						return sortedAdd[i].Path < sortedAdd[j].Path
-					})
-					for _, entry := range sortedAdd {
-						newSrc, _ = ensureImport(newSrc, entry)
-					}
+					newSrc = applyImportEntries(newSrc, ic.Add)
 				}
 				newSrc = removeUnusedImportsText(newSrc)
 				plan.Edits[idx].Content = newSrc
@@ -551,14 +537,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 		// Apply import additions (e.g., from consumer rewriting).
 		if ic, ok := imports.byFile[filePath]; ok {
-			sortedAdd := make([]importEntry, len(ic.Add))
-			copy(sortedAdd, ic.Add)
-			sort.Slice(sortedAdd, func(i, j int) bool {
-				return sortedAdd[i].Path < sortedAdd[j].Path
-			})
-			for _, entry := range sortedAdd {
-				newSrc, _ = ensureImport(newSrc, entry)
-			}
+			newSrc = applyImportEntries(newSrc, ic.Add)
 		}
 
 		newSrc = removeUnusedImportsText(newSrc)
@@ -786,6 +765,19 @@ func collectBuildConstraint(rrs []*resolvedRelo) string {
 		return c
 	}
 	return ""
+}
+
+// applyImportEntries adds each import entry to src in sorted order.
+func applyImportEntries(src string, entries []importEntry) string {
+	sorted := make([]importEntry, len(entries))
+	copy(sorted, entries)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Path < sorted[j].Path
+	})
+	for _, entry := range sorted {
+		src, _ = ensureImport(src, entry)
+	}
+	return src
 }
 
 // ensureImport adds an import to the source if not already present.
