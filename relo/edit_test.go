@@ -29,20 +29,20 @@ func TestDeduplicateEdits(t *testing.T) {
 			want: 2,
 		},
 		{
-			name: "duplicate start offset",
+			name: "identical duplicates",
 			input: []edit{
 				{Start: 0, End: 3, New: "a"},
-				{Start: 0, End: 5, New: "b"},
+				{Start: 0, End: 3, New: "a"},
 				{Start: 10, End: 15, New: "c"},
 			},
 			want: 2,
 		},
 		{
-			name: "all same start",
+			name: "all identical start",
 			input: []edit{
 				{Start: 0, End: 3, New: "x"},
-				{Start: 0, End: 3, New: "y"},
-				{Start: 0, End: 3, New: "z"},
+				{Start: 0, End: 3, New: "x"},
+				{Start: 0, End: 3, New: "x"},
 			},
 			want: 1,
 		},
@@ -61,7 +61,7 @@ func TestDeduplicateEdits(t *testing.T) {
 func TestDeduplicateEdits_KeepsFirst(t *testing.T) {
 	edits := []edit{
 		{Start: 5, End: 8, New: "first"},
-		{Start: 5, End: 10, New: "second"},
+		{Start: 5, End: 8, New: "first"},
 	}
 	got := deduplicateEdits(edits)
 	if len(got) != 1 {
@@ -70,6 +70,19 @@ func TestDeduplicateEdits_KeepsFirst(t *testing.T) {
 	if got[0].New != "first" {
 		t.Errorf("expected first edit to be kept, got %q", got[0].New)
 	}
+}
+
+func TestDeduplicateEdits_ConflictPanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for conflicting edits, but none occurred")
+		}
+	}()
+	deduplicateEdits([]edit{
+		{Start: 0, End: 3, New: "a"},
+		{Start: 0, End: 5, New: "b"},
+	})
 }
 
 func TestApplyEdits_StableSort(t *testing.T) {
