@@ -3,6 +3,7 @@ package relo
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"unicode"
 
 	"github.com/loov/gorelo/mast"
@@ -65,6 +66,11 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 			return nil, fmt.Errorf("cannot relocate %q (kind %d)", grp.Name, grp.Kind)
 		}
 
+		// Validate rename target is a valid Go identifier.
+		if r.Rename != "" && !token.IsIdentifier(r.Rename) {
+			return nil, fmt.Errorf("rename target %q is not a valid Go identifier", r.Rename)
+		}
+
 		// Unexported cross-package check.
 		if r.MoveTo != "" && defIdent.File != nil {
 			srcPkg := defIdent.File.Pkg
@@ -89,7 +95,22 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 					existing.TargetName = r.Rename
 				}
 				existing.Synthesized = false
+				continue
 			}
+			// Two explicit relos for the same group: error if they conflict.
+			newTarget := r.MoveTo
+			if newTarget == "" && defIdent.File != nil {
+				newTarget = defIdent.File.Path
+			}
+			newName := r.Rename
+			if newName == "" {
+				newName = grp.Name
+			}
+			if existing.TargetFile != newTarget || existing.TargetName != newName {
+				return nil, fmt.Errorf("conflicting relos for %q: (%s, %s) vs (%s, %s)",
+					grp.Name, existing.TargetFile, existing.TargetName, newTarget, newName)
+			}
+			// Identical — silently deduplicate.
 			continue
 		}
 

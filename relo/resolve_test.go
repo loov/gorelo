@@ -240,6 +240,67 @@ func TestResolve_MethodAutoSynthesis(t *testing.T) {
 	}
 }
 
+// TestResolve_ConflictingExplicitRelos tests that two explicit relos
+// for the same group with different targets produce an error.
+func TestResolve_ConflictingExplicitRelos(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nvar X = 1\n",
+	})
+
+	varIdent := findDefIdentInIndex(ix, "X")
+	if varIdent == nil {
+		t.Fatal("var X not found")
+	}
+
+	plan := &Plan{}
+	relos := []Relo{
+		{Ident: varIdent, MoveTo: "/tmp/a.go"},
+		{Ident: varIdent, MoveTo: "/tmp/b.go"},
+	}
+	_, err := resolve(ix, relos, plan)
+	if !errContains(err, "conflicting relos") {
+		t.Fatalf("expected 'conflicting relos' error, got: %v", err)
+	}
+}
+
+// TestResolve_InvalidRenameTarget tests that invalid Go identifiers
+// are rejected as rename targets.
+func TestResolve_InvalidRenameTarget(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nvar X = 1\n",
+	})
+
+	varIdent := findDefIdentInIndex(ix, "X")
+	if varIdent == nil {
+		t.Fatal("var X not found")
+	}
+
+	tests := []struct {
+		name    string
+		rename  string
+		wantErr bool
+	}{
+		{"valid", "Y", false},
+		{"starts with digit", "123bad", true},
+		{"keyword", "func", true},
+		{"empty", "", false}, // empty means no rename
+		{"underscore", "_", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := &Plan{}
+			_, err := resolve(ix, []Relo{{Ident: varIdent, Rename: tt.rename}}, plan)
+			if tt.wantErr && !errContains(err, "not a valid Go identifier") {
+				t.Errorf("expected 'not a valid Go identifier' error, got: %v", err)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 // loadTestIndex creates a temporary Go module from the given files,
 // loads it with mast.Load, and returns the index.
 func loadTestIndex(t *testing.T, files map[string]string) *mast.Index {
