@@ -527,7 +527,7 @@ func relativePath(base, full string) string {
 	if err != nil {
 		return full
 	}
-	return rel
+	return filepath.ToSlash(rel)
 }
 
 func objectKindString(k mast.ObjectKind) string {
