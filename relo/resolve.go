@@ -193,7 +193,17 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 	}
 
 	// For each moved type, find and auto-add its methods.
+	// Methods must be in the same package as the receiver type.
+	movedPkgs := make(map[string]bool)
+	for _, rr := range resolved {
+		if rr.Group.Kind == mast.TypeName {
+			movedPkgs[rr.Group.Pkg] = true
+		}
+	}
 	for _, pkg := range ix.Pkgs {
+		if !movedPkgs[pkg.Path] {
+			continue
+		}
 		for _, file := range pkg.Files {
 			for _, decl := range file.Syntax.Decls {
 				fd, ok := decl.(*ast.FuncDecl)
