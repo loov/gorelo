@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -9,7 +10,6 @@ import (
 	"html"
 	"html/template"
 	"log"
-	"context"
 	"net/http"
 	"os"
 	"os/signal"
