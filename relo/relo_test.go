@@ -273,7 +273,11 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 
 	if len(expectedVet) == 0 {
 		// No @vet directives: vet must pass.
-		if vetErr != nil {
+		// When all output files have build constraints that exclude the
+		// current platform, "go vet ./..." exits with "matched no packages".
+		// This is not a real failure.
+		noPackages := vetErr != nil && strings.Contains(vetOutput, "matched no packages")
+		if vetErr != nil && !noPackages {
 			t.Errorf("go vet failed on output:\n%s", vetOutput)
 		}
 	} else {
