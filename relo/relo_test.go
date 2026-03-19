@@ -15,6 +15,8 @@ import (
 )
 
 func TestGolden(t *testing.T) {
+	t.Parallel()
+
 	var entries []string
 	err := filepath.WalkDir("testdata", func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -33,6 +35,8 @@ func TestGolden(t *testing.T) {
 		name := strings.TrimPrefix(entry, "testdata"+string(filepath.Separator))
 		name = strings.TrimSuffix(name, ".txtar")
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			runGoldenTest(t, entry)
 		})
 	}

@@ -8,6 +8,8 @@ import (
 )
 
 func TestTypeRename(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	idents := findIdents(ix, "Counter")
@@ -32,6 +34,8 @@ func TestTypeRename(t *testing.T) {
 }
 
 func TestFieldRename(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	grp := findFieldGroup(ix, "Name", "structs.go")
@@ -44,6 +48,8 @@ func TestFieldRename(t *testing.T) {
 }
 
 func TestSameNameFieldsDifferentStructs(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	userNameGrp := findFieldGroup(ix, "Name", "structs.go")
@@ -73,6 +79,8 @@ func TestSameNameFieldsDifferentStructs(t *testing.T) {
 }
 
 func TestEmbeddedField(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	typeGroup := findTypeGroup(ix, "User", "structs.go")
@@ -95,6 +103,8 @@ func TestEmbeddedField(t *testing.T) {
 }
 
 func TestPromotedFieldMultiLevel(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	userNameGrp := findFieldGroup(ix, "Name", "structs.go")
@@ -116,6 +126,8 @@ func TestPromotedFieldMultiLevel(t *testing.T) {
 }
 
 func TestFieldThroughTypeAlias(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	userNameGrp := findFieldGroup(ix, "Name", "structs.go")
@@ -137,6 +149,8 @@ func TestFieldThroughTypeAlias(t *testing.T) {
 }
 
 func TestSelectorOnReturnValue(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	userNameGrp := findFieldGroup(ix, "Name", "structs.go")
@@ -158,6 +172,8 @@ func TestSelectorOnReturnValue(t *testing.T) {
 }
 
 func TestAnonymousStructFields(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	grp := findFieldGroup(ix, "Host", "structs.go")
@@ -173,6 +189,8 @@ func TestAnonymousStructFields(t *testing.T) {
 }
 
 func TestCrossPackageFieldAccess(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	distroGrp := findFieldGroup(ix, "Distro", "linux/linux.go")
@@ -193,6 +211,8 @@ func TestCrossPackageFieldAccess(t *testing.T) {
 }
 
 func TestMethodRename(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	grp := findMethodGroup(ix, "String", "funcs.go")
@@ -205,6 +225,8 @@ func TestMethodRename(t *testing.T) {
 }
 
 func TestSameMethodNameDifferentTypes(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	userStringGrp := findMethodGroup(ix, "String", "funcs.go")
@@ -222,6 +244,8 @@ func TestSameMethodNameDifferentTypes(t *testing.T) {
 }
 
 func TestMethodExpression(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	userStringGrp := findMethodGroup(ix, "String", "funcs.go")
@@ -242,6 +266,8 @@ func TestMethodExpression(t *testing.T) {
 }
 
 func TestPointerMethodExpression(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	setEmailGrp := findMethodGroup(ix, "SetEmail", "funcs.go")
@@ -262,6 +288,8 @@ func TestPointerMethodExpression(t *testing.T) {
 }
 
 func TestGenericTypeParams(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	aIdents := findIdentsInFile(ix, "A", "types.go")
@@ -282,6 +310,8 @@ func TestGenericTypeParams(t *testing.T) {
 }
 
 func TestGenericInstantiationWithNamedTypes(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	counterGrp := findTypeGroup(ix, "Counter", "types.go")
@@ -297,6 +327,8 @@ func TestGenericInstantiationWithNamedTypes(t *testing.T) {
 }
 
 func TestTypeConversion(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	counterGrp := findTypeGroup(ix, "Counter", "types.go")
@@ -317,6 +349,8 @@ func TestTypeConversion(t *testing.T) {
 }
 
 func TestChannelTypes(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	eventGrp := findTypeGroup(ix, "Event", "channels.go")
@@ -347,6 +381,8 @@ func TestChannelTypes(t *testing.T) {
 }
 
 func TestNamedFuncType(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	grp := findTypeGroup(ix, "Predicate", "expressions.go")
@@ -359,6 +395,8 @@ func TestNamedFuncType(t *testing.T) {
 }
 
 func TestMapNamedType(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	grp := findTypeGroup(ix, "UserIndex", "expressions.go")
@@ -371,6 +409,8 @@ func TestMapNamedType(t *testing.T) {
 }
 
 func TestInterfaceEmbedding(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	stringerGrp := findTypeGroup(ix, "Stringer", "types.go")
@@ -391,6 +431,8 @@ func TestInterfaceEmbedding(t *testing.T) {
 }
 
 func TestAlternateInterfaceSameMethod(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Stringer.String and Alternate.String are separate interface methods.
@@ -422,6 +464,8 @@ func TestAlternateInterfaceSameMethod(t *testing.T) {
 }
 
 func TestInterfaceMethodVsConcreteMethod(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Find any String method group from types.go (interface method).
@@ -456,6 +500,8 @@ func TestInterfaceMethodVsConcreteMethod(t *testing.T) {
 }
 
 func TestTypeAssertionAndSwitch(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	userTypeGrp := findTypeGroup(ix, "User", "structs.go")
@@ -476,6 +522,8 @@ func TestTypeAssertionAndSwitch(t *testing.T) {
 }
 
 func TestNamedReturnValues(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// "result" in Divide and "result" in Filter are separate local vars.
@@ -508,6 +556,8 @@ func TestNamedReturnValues(t *testing.T) {
 }
 
 func TestVariadicForwarding(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	namesGrp := findFuncGroup(ix, "Names", "funcs.go")
@@ -528,6 +578,8 @@ func TestVariadicForwarding(t *testing.T) {
 }
 
 func TestLabels(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	outerIdents := findIdentsInFunc(ix, "Outer", "expressions.go", "SearchMatrix")
@@ -552,6 +604,8 @@ func TestLabels(t *testing.T) {
 }
 
 func TestAnonymousStructFieldCollision(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Server.TLS.CertFile and Database.TLS.CertFile are fields in
@@ -577,6 +631,8 @@ func TestAnonymousStructFieldCollision(t *testing.T) {
 }
 
 func TestGenericStructFieldAccess(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// p.First where p is Pair[Counter, Counter] should link to Pair.First field.
@@ -598,6 +654,8 @@ func TestGenericStructFieldAccess(t *testing.T) {
 }
 
 func TestCrossPackageTypeEmbedding(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// LinuxAdmin embeds linux.Info. The "Info" embedded field ident
@@ -621,6 +679,8 @@ func TestCrossPackageTypeEmbedding(t *testing.T) {
 }
 
 func TestCrossPackagePromotedField(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// la.Distro in LinuxAdminDistro accesses a promoted field from linux.Info.
@@ -647,6 +707,8 @@ func TestCrossPackagePromotedField(t *testing.T) {
 // packages.Load filters out imports from build-constrained files,
 // leaving depPkgs incomplete for type-checking.
 func TestCrossPackageMissingDep(t *testing.T) {
+	t.Parallel()
+
 	// Load only "." (not "./...") so sub-packages like example/linux
 	// and example/windows are NOT initial packages. They must be
 	// discovered from imports in build-constrained files.
@@ -694,6 +756,8 @@ func TestCrossPackageMissingDep(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var found bool
 			if tt.searchInFunc {
 				for _, id := range findIdentsInFunc(ix, tt.identName, tt.file, tt.funcName) {
@@ -718,6 +782,8 @@ func TestCrossPackageMissingDep(t *testing.T) {
 }
 
 func TestDeferWithMethod(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// defer s.Print() — "Print" should link to Server.Print method.
@@ -739,6 +805,8 @@ func TestDeferWithMethod(t *testing.T) {
 }
 
 func TestGoWithFunction(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// go Producer(...) — "Producer" should link to Producer function.
@@ -760,6 +828,8 @@ func TestGoWithFunction(t *testing.T) {
 }
 
 func TestSliceWithNamedElementType(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// CounterSlice is []Counter — Counter should link to Counter type.
@@ -791,6 +861,8 @@ func TestSliceWithNamedElementType(t *testing.T) {
 }
 
 func TestPointerToNamedType(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// IncrementCounter(c *Counter) — Counter in the pointer type should link.
@@ -812,6 +884,8 @@ func TestPointerToNamedType(t *testing.T) {
 }
 
 func TestSwitchCaseVariableScoping(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// SwitchScope has "name" in two different case clauses.
@@ -833,6 +907,8 @@ func TestSwitchCaseVariableScoping(t *testing.T) {
 }
 
 func TestUserDefinedTypeConstraint(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Accumulator[T Addable] uses Addable as a type constraint.
@@ -864,6 +940,8 @@ func TestUserDefinedTypeConstraint(t *testing.T) {
 }
 
 func TestRecursiveType(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Node has Children []*Node — the Node ident in the field type
@@ -901,6 +979,8 @@ func TestRecursiveType(t *testing.T) {
 }
 
 func TestEmbeddedInterfaceInStruct(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Formatted embeds Stringer (an interface, not a struct).
@@ -940,6 +1020,8 @@ func TestEmbeddedInterfaceInStruct(t *testing.T) {
 }
 
 func TestVarConst(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	for _, name := range []string{"DefaultUser", "MaxUsers", "RoleAdmin"} {

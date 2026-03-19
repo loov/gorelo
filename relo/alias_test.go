@@ -32,6 +32,8 @@ func makeRR(t *testing.T, src, identName string, kind mast.ObjectKind) *resolved
 }
 
 func TestGenerateFuncAlias_Generic(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 func Map[T any](s []T) []T { return nil }
@@ -59,6 +61,8 @@ func Map[T any](s []T) []T { return nil }
 }
 
 func TestGenerateFuncAlias_GenericMultiParam(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 func Zip[K comparable, V any](keys []K, vals []V) map[K]V { return nil }
@@ -80,6 +84,8 @@ func Zip[K comparable, V any](keys []K, vals []V) map[K]V { return nil }
 }
 
 func TestGenerateFuncAlias_NonGeneric(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 func Add(a, b int) int { return a + b }
@@ -102,6 +108,8 @@ func Add(a, b int) int { return a + b }
 }
 
 func TestGenerateVarAlias_NoGoFixInline(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 var ErrFoo = "foo"
@@ -138,6 +146,8 @@ var ErrFoo = "foo"
 }
 
 func TestGenerateFuncAlias_ParamShadowsTargetPkg(t *testing.T) {
+	t.Parallel()
+
 	// Parameter "newpkg" shadows the target package name.
 	src := `package p
 
@@ -182,6 +192,8 @@ func Send(newpkg string) error { return nil }
 }
 
 func TestGenerateFuncAlias_NoShadow(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 func Send(msg string) error { return nil }

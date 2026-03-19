@@ -8,6 +8,8 @@ import (
 )
 
 func TestLocalVariableScoping(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// "name" is a parameter in LookupUser and ValidateUser — separate groups.
@@ -28,6 +30,8 @@ func TestLocalVariableScoping(t *testing.T) {
 }
 
 func TestLocalOkVariableScoping(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	lookupOk := findIdentsInFunc(ix, "ok", "expressions.go", "LookupUser")
@@ -47,6 +51,8 @@ func TestLocalOkVariableScoping(t *testing.T) {
 }
 
 func TestLocalShadowingPackageVar(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	pkgIdents := findIdentsInFile(ix, "DefaultUser", "vars.go")
@@ -70,6 +76,8 @@ func TestLocalShadowingPackageVar(t *testing.T) {
 }
 
 func TestNestedScopeVariable(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	errIdents := findIdentsInFunc(ix, "err", "scoping.go", "NestedScopeErr")
@@ -89,6 +97,8 @@ func TestNestedScopeVariable(t *testing.T) {
 }
 
 func TestShortVarDeclReuse(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// In ShortVarDeclReuse, "err" is introduced then reused — same group.
@@ -110,6 +120,8 @@ func TestShortVarDeclReuse(t *testing.T) {
 }
 
 func TestReceiverVariable(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// "u" receiver in different methods should be separate groups.
@@ -135,6 +147,8 @@ func TestReceiverVariable(t *testing.T) {
 }
 
 func TestClosureCapture(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// count in MakeCounter: def + closure uses should be same group.
@@ -169,6 +183,8 @@ func TestClosureCapture(t *testing.T) {
 }
 
 func TestClosureSameNamedParam(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// TransformAll has outer param "x" and inner closure param "x" — separate groups.
@@ -186,6 +202,8 @@ func TestClosureSameNamedParam(t *testing.T) {
 }
 
 func TestBlankIdentifierUntracked(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	for _, file := range []string{"scoping.go", "expressions.go"} {
@@ -200,6 +218,8 @@ func TestBlankIdentifierUntracked(t *testing.T) {
 }
 
 func TestPackageNameUntracked(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	for _, pkg := range ix.Pkgs {
@@ -214,6 +234,8 @@ func TestPackageNameUntracked(t *testing.T) {
 }
 
 func TestMultipleInitFunctions(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	initIdents := findIdentsInFile(ix, "init", "scoping.go")
@@ -233,6 +255,8 @@ func TestMultipleInitFunctions(t *testing.T) {
 }
 
 func TestLocalConst(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	limitIdents := findIdentsInFunc(ix, "limit", "scoping.go", "LocalConst")
@@ -256,6 +280,8 @@ func TestLocalConst(t *testing.T) {
 }
 
 func TestRenamedImport(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	lnxIdents := findIdentsInFile(ix, "lnx", "imports.go")
@@ -285,6 +311,8 @@ func TestRenamedImport(t *testing.T) {
 }
 
 func TestSelectCaseVariableScoping(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// SelectFirst has "e" in two different select cases — each is a new variable.
@@ -305,6 +333,8 @@ func TestSelectCaseVariableScoping(t *testing.T) {
 }
 
 func TestDotImport(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// dotimport.go uses `import . "example/linux"`.
@@ -344,6 +374,8 @@ func TestDotImport(t *testing.T) {
 }
 
 func TestSideEffectImport(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// sideeffect.go uses `import _ "example/linux"`.
@@ -378,6 +410,8 @@ func TestSideEffectImport(t *testing.T) {
 }
 
 func TestImportAliasCollisionAcrossFiles(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// imports.go has `import lnx "example/linux"` (linux-tagged).

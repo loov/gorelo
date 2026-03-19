@@ -10,6 +10,8 @@ import (
 )
 
 func TestEnsureImport_GroupedBlock(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import (
@@ -29,6 +31,8 @@ func Foo() { fmt.Println() }
 }
 
 func TestEnsureImport_SingleImport(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import "fmt"
@@ -46,6 +50,8 @@ func Foo() { fmt.Println() }
 }
 
 func TestEnsureImport_NoExistingImport(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 func Foo() {}
@@ -60,6 +66,8 @@ func Foo() {}
 }
 
 func TestEnsureImport_WithAlias(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import (
@@ -75,6 +83,8 @@ func Foo() { fmt.Println() }
 }
 
 func TestEnsureImport_AlreadyExists(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import (
@@ -92,6 +102,8 @@ func Foo() { fmt.Println() }
 }
 
 func TestEnsureImport_AliasMismatchWarning(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import (
@@ -110,6 +122,8 @@ func Foo() { foo.X() }
 }
 
 func TestRemoveUnusedImportsText(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import (
@@ -129,6 +143,8 @@ func Foo() { fmt.Println() }
 }
 
 func TestRemoveUnusedImportsText_BlankImportKept(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import (
@@ -145,6 +161,8 @@ func Foo() { fmt.Println() }
 }
 
 func TestRemoveUnusedImportsText_AllUsed(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 import (
@@ -161,6 +179,8 @@ func Foo() { fmt.Println(); strings.Contains("a", "b") }
 }
 
 func TestRemoveEmptyDeclBlocks(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		src     string
@@ -194,6 +214,8 @@ func TestRemoveEmptyDeclBlocks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := removeEmptyDeclBlocks(tt.src)
 			if tt.wantNot != "" && strings.Contains(got, tt.wantNot) {
 				t.Errorf("removeEmptyDeclBlocks: should not contain %q, got:\n%s", tt.wantNot, got)
@@ -206,6 +228,8 @@ func TestRemoveEmptyDeclBlocks(t *testing.T) {
 }
 
 func TestCleanBlankLines(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		src  string
@@ -234,6 +258,8 @@ func TestCleanBlankLines(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := cleanBlankLines(tt.src)
 			if got != tt.want {
 				t.Errorf("cleanBlankLines(%q) = %q, want %q", tt.src, got, tt.want)
@@ -243,6 +269,8 @@ func TestCleanBlankLines(t *testing.T) {
 }
 
 func TestSourceFileIsEmpty(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		src  string
@@ -281,6 +309,8 @@ func TestSourceFileIsEmpty(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := sourceFileIsEmpty(tt.src)
 			if got != tt.want {
 				t.Errorf("sourceFileIsEmpty() = %v, want %v", got, tt.want)
@@ -290,6 +320,8 @@ func TestSourceFileIsEmpty(t *testing.T) {
 }
 
 func TestGuessPackageName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		dir  string
 		want string
@@ -301,6 +333,8 @@ func TestGuessPackageName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.dir, func(t *testing.T) {
+			t.Parallel()
+
 			got := guessPackageName(tt.dir)
 			if got != tt.want {
 				t.Errorf("guessPackageName(%q) = %q, want %q", tt.dir, got, tt.want)
@@ -310,6 +344,8 @@ func TestGuessPackageName(t *testing.T) {
 }
 
 func TestCollectBuildConstraint(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		tags []string
@@ -343,6 +379,8 @@ func TestCollectBuildConstraint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var rrs []*resolvedRelo
 			for _, tag := range tt.tags {
 				rrs = append(rrs, &resolvedRelo{
@@ -358,6 +396,8 @@ func TestCollectBuildConstraint(t *testing.T) {
 }
 
 func TestDetermineTargetPkgName_SameDir(t *testing.T) {
+	t.Parallel()
+
 	rrs := []*resolvedRelo{
 		{
 			File:       mastFileWithSyntax("/tmp/pkg/source.go", "mypkg"),
@@ -371,6 +411,8 @@ func TestDetermineTargetPkgName_SameDir(t *testing.T) {
 }
 
 func TestDetermineTargetPkgName_DifferentDir(t *testing.T) {
+	t.Parallel()
+
 	rrs := []*resolvedRelo{
 		{
 			File:       mastFileWithSyntax("/tmp/src/source.go", "srcpkg"),
@@ -384,6 +426,8 @@ func TestDetermineTargetPkgName_DifferentDir(t *testing.T) {
 }
 
 func TestSortedKeys(t *testing.T) {
+	t.Parallel()
+
 	m := map[string]int{
 		"cherry": 3,
 		"apple":  1,
@@ -402,6 +446,8 @@ func TestSortedKeys(t *testing.T) {
 }
 
 func TestAssemble_SourceTargetOverlap(t *testing.T) {
+	t.Parallel()
+
 	// Scenario: File B.go has declaration Y. We move X from A.go → B.go and
 	// move Y from B.go → C.go. B.go is both a source (Y leaves) and a target
 	// (X arrives). The result should be a single consistent edit for B.go that

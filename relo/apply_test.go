@@ -7,6 +7,8 @@ import (
 )
 
 func TestApplyPlan_WriteNewFile(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "new.go")
 
@@ -29,6 +31,8 @@ func TestApplyPlan_WriteNewFile(t *testing.T) {
 }
 
 func TestApplyPlan_WriteNewFileCreatesDir(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sub", "dir", "new.go")
 
@@ -47,6 +51,8 @@ func TestApplyPlan_WriteNewFileCreatesDir(t *testing.T) {
 }
 
 func TestApplyPlan_ModifyExistingFile(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "existing.go")
 	os.WriteFile(path, []byte("package old\n"), 0644)
@@ -67,6 +73,8 @@ func TestApplyPlan_ModifyExistingFile(t *testing.T) {
 }
 
 func TestApplyPlan_DeleteFile(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "todelete.go")
 	os.WriteFile(path, []byte("package p\n"), 0644)
@@ -86,6 +94,8 @@ func TestApplyPlan_DeleteFile(t *testing.T) {
 }
 
 func TestApplyPlan_DeleteNonexistent(t *testing.T) {
+	t.Parallel()
+
 	plan := &Plan{
 		Edits: []FileEdit{
 			{Path: "/tmp/relo_test_nonexistent_file.go", IsDelete: true},
@@ -98,6 +108,8 @@ func TestApplyPlan_DeleteNonexistent(t *testing.T) {
 }
 
 func TestApplyPlan_EmptyPlan(t *testing.T) {
+	t.Parallel()
+
 	plan := &Plan{}
 	if err := applyPlan(plan); err != nil {
 		t.Errorf("empty plan should not error: %v", err)
@@ -105,6 +117,8 @@ func TestApplyPlan_EmptyPlan(t *testing.T) {
 }
 
 func TestApplyPlan_MultipleEdits(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path1 := filepath.Join(dir, "a.go")
 	path2 := filepath.Join(dir, "b.go")

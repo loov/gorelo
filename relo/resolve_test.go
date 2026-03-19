@@ -10,6 +10,8 @@ import (
 )
 
 func TestReceiverTypeName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		src  string
@@ -33,6 +35,8 @@ func TestReceiverTypeName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			file, _ := parseSource(t, tt.src)
 			for _, decl := range file.Decls {
 				fd, ok := decl.(*ast.FuncDecl)
@@ -51,6 +55,8 @@ func TestReceiverTypeName(t *testing.T) {
 }
 
 func TestIsSamePackageDir(t *testing.T) {
+	t.Parallel()
+
 	pkg := &mast.Package{
 		Name: "pkg",
 		Files: []*mast.File{
@@ -69,6 +75,8 @@ func TestIsSamePackageDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.target, func(t *testing.T) {
+			t.Parallel()
+
 			got := isSamePackageDir(pkg, tt.target)
 			if got != tt.want {
 				t.Errorf("isSamePackageDir(%q) = %v, want %v", tt.target, got, tt.want)
@@ -78,6 +86,8 @@ func TestIsSamePackageDir(t *testing.T) {
 }
 
 func TestIsSamePackageDir_EmptyPackage(t *testing.T) {
+	t.Parallel()
+
 	pkg := &mast.Package{Name: "pkg"}
 	if isSamePackageDir(pkg, "/any/path.go") {
 		t.Error("expected false for empty package")
@@ -87,6 +97,8 @@ func TestIsSamePackageDir_EmptyPackage(t *testing.T) {
 // TestResolve_RejectsUntrackedIdent tests that resolve returns an error
 // for an ident not tracked by the index.
 func TestResolve_RejectsUntrackedIdent(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nvar X = 1\n",
 	})
@@ -102,6 +114,8 @@ func TestResolve_RejectsUntrackedIdent(t *testing.T) {
 
 // TestResolve_RejectsFieldMove tests that fields cannot be moved.
 func TestResolve_RejectsFieldMove(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\ntype T struct { F int }\n",
 	})
@@ -121,6 +135,8 @@ func TestResolve_RejectsFieldMove(t *testing.T) {
 
 // TestResolve_FieldRenameAllowed tests that fields can be renamed.
 func TestResolve_FieldRenameAllowed(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\ntype T struct { F int }\n",
 	})
@@ -146,6 +162,8 @@ func TestResolve_FieldRenameAllowed(t *testing.T) {
 // TestResolve_DeduplicateByGroup tests that duplicate relos for the same
 // group are deduplicated.
 func TestResolve_DeduplicateByGroup(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nvar X = 1\nfunc F() { _ = X }\n",
 	})
@@ -173,6 +191,8 @@ func TestResolve_DeduplicateByGroup(t *testing.T) {
 // TestResolve_ConstructorWarning tests that moving a type without its
 // constructor generates a warning.
 func TestResolve_ConstructorWarning(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\ntype Foo struct{}\n\nfunc NewFoo() *Foo { return &Foo{} }\n",
 	})
@@ -200,6 +220,8 @@ func TestResolve_ConstructorWarning(t *testing.T) {
 // TestResolve_MethodAutoSynthesis tests that moving a type automatically
 // adds its methods.
 func TestResolve_MethodAutoSynthesis(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\ntype T struct{}\n\nfunc (t T) M() {}\n\nfunc (t *T) N() {}\n",
 	})
@@ -243,6 +265,8 @@ func TestResolve_MethodAutoSynthesis(t *testing.T) {
 // TestResolve_ConflictingExplicitRelos tests that two explicit relos
 // for the same group with different targets produce an error.
 func TestResolve_ConflictingExplicitRelos(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nvar X = 1\n",
 	})
@@ -266,6 +290,8 @@ func TestResolve_ConflictingExplicitRelos(t *testing.T) {
 // TestResolve_InvalidRenameTarget tests that invalid Go identifiers
 // are rejected as rename targets.
 func TestResolve_InvalidRenameTarget(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nvar X = 1\n",
 	})
@@ -289,6 +315,8 @@ func TestResolve_InvalidRenameTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			plan := &Plan{}
 			_, err := resolve(ix, []Relo{{Ident: varIdent, Rename: tt.rename}}, plan)
 			if tt.wantErr && !errContains(err, "not a valid Go identifier") {
@@ -303,6 +331,8 @@ func TestResolve_InvalidRenameTarget(t *testing.T) {
 
 // TestResolve_NilIdent tests that resolve returns a clear error for nil Ident.
 func TestResolve_NilIdent(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nvar X = 1\n",
 	})
@@ -317,6 +347,8 @@ func TestResolve_NilIdent(t *testing.T) {
 // TestResolve_RenameInitWarning tests that renaming an init function
 // produces a warning about losing auto-execution semantics.
 func TestResolve_RenameInitWarning(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nfunc init() {}\n",
 	})
@@ -339,6 +371,8 @@ func TestResolve_RenameInitWarning(t *testing.T) {
 // TestResolve_RenameToInitWarning tests that renaming a function to "init"
 // produces a warning about gaining auto-execution semantics.
 func TestResolve_RenameToInitWarning(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nfunc Setup() {}\n",
 	})
@@ -361,6 +395,8 @@ func TestResolve_RenameToInitWarning(t *testing.T) {
 // TestResolve_RenameMainWarning tests that renaming the main function in a
 // main package produces a warning about losing entry-point semantics.
 func TestResolve_RenameMainWarning(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package main\n\nfunc main() {}\n",
 	})
@@ -383,6 +419,8 @@ func TestResolve_RenameMainWarning(t *testing.T) {
 // TestResolve_RenameToMainWarning tests that renaming a function to "main"
 // in a main package produces a warning about gaining entry-point semantics.
 func TestResolve_RenameToMainWarning(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package main\n\nfunc Run() {}\n",
 	})
@@ -405,6 +443,8 @@ func TestResolve_RenameToMainWarning(t *testing.T) {
 // TestResolve_SynthesizedUnexportedMethodCrossPackage tests that synthesized
 // unexported methods are skipped with a warning when moving cross-package.
 func TestResolve_SynthesizedUnexportedMethodCrossPackage(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\ntype T struct{}\n\nfunc (t T) Exported() {}\n\nfunc (t T) helper() {}\n",
 	})

@@ -6,6 +6,8 @@ import (
 )
 
 func TestRelativePath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		base, full string
 		want       string

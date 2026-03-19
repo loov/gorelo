@@ -9,6 +9,8 @@ import (
 )
 
 func TestPlatformSpecificType(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	fileIdents := findIdents(ix, "File")
@@ -43,6 +45,8 @@ func TestPlatformSpecificType(t *testing.T) {
 }
 
 func TestPlatformSpecificTypeMethod(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	grp := findMethodGroup(ix, "PrintName", "platform_common.go")
@@ -55,6 +59,8 @@ func TestPlatformSpecificTypeMethod(t *testing.T) {
 }
 
 func TestPlatformSpecificCommonField(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var fieldGroup *mast.Group
@@ -82,6 +88,8 @@ func TestPlatformSpecificCommonField(t *testing.T) {
 }
 
 func TestPlatformSpecificUniqueFields(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	fdGrp := findFieldGroup(ix, "FD", "platform_linux.go")
@@ -100,6 +108,8 @@ func TestPlatformSpecificUniqueFields(t *testing.T) {
 }
 
 func TestCrossFilePlatformName(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	idents := findIdents(ix, "PlatformName")
@@ -123,6 +133,8 @@ func TestCrossFilePlatformName(t *testing.T) {
 }
 
 func TestCrossPackage(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var subpkgName, platformFile string
@@ -162,6 +174,8 @@ func TestCrossPackage(t *testing.T) {
 }
 
 func TestCompoundBuildTags(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	hasAmd64 := false
@@ -213,6 +227,8 @@ func TestCompoundBuildTags(t *testing.T) {
 }
 
 func TestOrBuildTag(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var found bool
@@ -237,6 +253,8 @@ func TestOrBuildTag(t *testing.T) {
 }
 
 func TestNegatedBuildTag(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var found bool
@@ -261,6 +279,8 @@ func TestNegatedBuildTag(t *testing.T) {
 }
 
 func TestCustomBuildTag(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var found bool
@@ -291,6 +311,8 @@ func TestCustomBuildTag(t *testing.T) {
 }
 
 func TestBuildIgnoreFile(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var found bool

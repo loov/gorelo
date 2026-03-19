@@ -173,6 +173,8 @@ func findFuncGroup(ix *mast.Index, funcName, pathFragment string) *mast.Group {
 }
 
 func TestLoad(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	if len(ix.Pkgs) == 0 {
@@ -207,6 +209,8 @@ func TestLoad(t *testing.T) {
 }
 
 func TestAllPackagesLoaded(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	paths := map[string]bool{}
@@ -222,6 +226,8 @@ func TestAllPackagesLoaded(t *testing.T) {
 }
 
 func TestTestFilesLoaded(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var hasSamePkg, hasExtPkg bool
@@ -250,6 +256,8 @@ func TestTestFilesLoaded(t *testing.T) {
 }
 
 func TestSamePackageTestIdents(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Server is used in example_test.go (same-package test).
@@ -278,6 +286,8 @@ func TestSamePackageTestIdents(t *testing.T) {
 }
 
 func TestExternalTestIdents(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Counter is used in example_ext_test.go (external test package).
@@ -305,6 +315,8 @@ func TestExternalTestIdents(t *testing.T) {
 }
 
 func TestFilePkg(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	for _, pkg := range ix.Pkgs {
@@ -317,6 +329,8 @@ func TestFilePkg(t *testing.T) {
 }
 
 func TestIdentPkg(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Server defined in structs.go should have File.Pkg.Path == "example".
@@ -352,6 +366,8 @@ func TestIdentPkg(t *testing.T) {
 }
 
 func TestQualifier(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// In example_ext_test.go, "example.Counter" is a qualified reference.
@@ -385,6 +401,8 @@ func TestQualifier(t *testing.T) {
 }
 
 func TestQualifierAbsentForLocal(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Server is used in structs.go without a package qualifier.
@@ -404,6 +422,8 @@ func TestQualifierAbsentForLocal(t *testing.T) {
 }
 
 func TestEmptyFile(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	var found bool
@@ -420,6 +440,8 @@ func TestEmptyFile(t *testing.T) {
 }
 
 func TestGroupDeduplication(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	for _, pkg := range ix.Pkgs {

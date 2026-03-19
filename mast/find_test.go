@@ -8,6 +8,8 @@ import (
 )
 
 func TestFindDef(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	tests := []struct {
@@ -50,6 +52,8 @@ func TestFindDef(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			id := ix.FindDef(tt.name, tt.source)
 			if tt.want == "" {
 				if id != nil {
@@ -76,6 +80,8 @@ func TestFindDef(t *testing.T) {
 }
 
 func TestFindDefSourcePackage(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// "Info" exists in example/linux but not in the root example package.
@@ -95,6 +101,8 @@ func TestFindDefSourcePackage(t *testing.T) {
 }
 
 func TestFindDefSourceFile(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// "User" is defined in structs.go.
@@ -111,6 +119,8 @@ func TestFindDefSourceFile(t *testing.T) {
 }
 
 func TestFindDefSubpackageFunc(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// "Name" exists in example/linux.
@@ -126,6 +136,8 @@ func TestFindDefSubpackageFunc(t *testing.T) {
 }
 
 func TestFindDefReturnsDefIdent(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// The returned ident must be the definition, not a use.
@@ -153,6 +165,8 @@ func TestFindDefReturnsDefIdent(t *testing.T) {
 }
 
 func TestFindDefSourceFileWithDir(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// A forward-slash directory-qualified source must match even on Windows,
@@ -173,6 +187,8 @@ func TestFindDefSourceFileWithDir(t *testing.T) {
 }
 
 func TestFindFieldDefSourceFileWithDir(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Directory-qualified source with forward slashes.
@@ -189,6 +205,8 @@ func TestFindFieldDefSourceFileWithDir(t *testing.T) {
 }
 
 func TestFindFieldDef(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	tests := []struct {
@@ -231,6 +249,8 @@ func TestFindFieldDef(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+
 			id := ix.FindFieldDef(tt.typeName, tt.fieldPath, tt.source)
 			if tt.wantNil {
 				if id != nil {
@@ -256,6 +276,8 @@ func TestFindFieldDef(t *testing.T) {
 }
 
 func TestFindFieldDefSourceFilter(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// User.Name is in structs.go.
@@ -284,6 +306,8 @@ func TestFindFieldDefSourceFilter(t *testing.T) {
 }
 
 func TestFindFieldDefReturnsDefIdent(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	id := ix.FindFieldDef("User", "Email", "")
@@ -309,6 +333,8 @@ func TestFindFieldDefReturnsDefIdent(t *testing.T) {
 }
 
 func TestFindFieldDefInterface(t *testing.T) {
+	t.Parallel()
+
 	dir, err := filepath.Abs("testdata/iface")
 	if err != nil {
 		t.Fatal(err)
@@ -327,6 +353,8 @@ func TestFindFieldDefInterface(t *testing.T) {
 }
 
 func TestFindFieldDefInterfaceExisting(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestdata(t)
 
 	// Stringer interface in types.go defines a String() method.

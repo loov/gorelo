@@ -10,6 +10,8 @@ import (
 )
 
 func TestConstraintsMayOverlap(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		a, b string
 		want bool
@@ -66,6 +68,8 @@ func TestConstraintsMayOverlap(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.a+"_vs_"+tt.b, func(t *testing.T) {
+			t.Parallel()
+
 			got := constraintsMayOverlap(tt.a, tt.b)
 			if got != tt.want {
 				t.Errorf("constraintsMayOverlap(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
@@ -75,6 +79,8 @@ func TestConstraintsMayOverlap(t *testing.T) {
 }
 
 func TestExtractConstraintTag(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input string
 		want  string
@@ -89,6 +95,8 @@ func TestExtractConstraintTag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+
 			got := extractConstraintTag(tt.input)
 			if got != tt.want {
 				t.Errorf("extractConstraintTag(%q) = %q, want %q", tt.input, got, tt.want)
@@ -98,6 +106,8 @@ func TestExtractConstraintTag(t *testing.T) {
 }
 
 func TestNameConflicts(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 type Foo struct{}
@@ -123,6 +133,8 @@ const Qux = "hello"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			for _, decl := range file.Decls {
 				if nameConflicts(decl, tt.name) {
 					if !tt.want {
@@ -139,6 +151,8 @@ const Qux = "hello"
 }
 
 func TestNameConflicts_Method(t *testing.T) {
+	t.Parallel()
+
 	file, _ := parseSource(t, "package p\n\ntype T struct{}\nfunc (t T) M() {}\n")
 
 	// Methods should not conflict (they have receivers).
@@ -150,6 +164,8 @@ func TestNameConflicts_Method(t *testing.T) {
 }
 
 func TestHasDirective(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		src       string
@@ -201,6 +217,8 @@ func Foo() {}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			file, fset := parseSource(t, tt.src)
 
 			// Find the first non-import decl.
@@ -220,6 +238,8 @@ func Foo() {}
 }
 
 func TestCheckConstraints_MixedWarning(t *testing.T) {
+	t.Parallel()
+
 	plan := &Plan{}
 
 	pkg := &mast.Package{Name: "p", Path: "example.com/p"}
@@ -242,6 +262,8 @@ func TestCheckConstraints_MixedWarning(t *testing.T) {
 }
 
 func TestCheckConstraints_NoWarningForSameConstraint(t *testing.T) {
+	t.Parallel()
+
 	plan := &Plan{}
 
 	pkg := &mast.Package{Name: "p", Path: "example.com/p"}
@@ -275,6 +297,8 @@ func testResolvedRelo(grp *mast.Group, targetFile, targetName string, file *mast
 }
 
 func TestDetectConflicts_InterReloCollision(t *testing.T) {
+	t.Parallel()
+
 	// Two relos with the same TargetName going to the same directory
 	// from different groups should produce an error.
 	grpA := &mast.Group{Name: "Foo", Kind: mast.TypeName, Pkg: "example.com/a"}
@@ -299,6 +323,8 @@ func TestDetectConflicts_InterReloCollision(t *testing.T) {
 }
 
 func TestDetectConflicts_InterReloCollision_NonOverlappingConstraints(t *testing.T) {
+	t.Parallel()
+
 	// Two relos with the same TargetName but non-overlapping build constraints
 	// should NOT produce an error.
 	grpA := &mast.Group{Name: "Foo", Kind: mast.TypeName, Pkg: "example.com/a"}
@@ -323,6 +349,8 @@ func TestDetectConflicts_InterReloCollision_NonOverlappingConstraints(t *testing
 }
 
 func TestCheckConstraints_NoWarningForUnconstrained(t *testing.T) {
+	t.Parallel()
+
 	plan := &Plan{}
 
 	pkg := &mast.Package{Name: "p", Path: "example.com/p"}
@@ -345,6 +373,8 @@ func TestCheckConstraints_NoWarningForUnconstrained(t *testing.T) {
 }
 
 func TestDetectConflicts_CircularImport_NewTargetFile(t *testing.T) {
+	t.Parallel()
+
 	// E3: When the target file doesn't exist yet, the circular import
 	// check should still work by looking up the package from the target
 	// directory via findPkgForDir.

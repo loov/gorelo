@@ -6,6 +6,8 @@ import (
 )
 
 func TestParseForward(t *testing.T) {
+	t.Parallel()
+
 	input := `Server ServerOption -> server.go`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -24,6 +26,8 @@ func TestParseForward(t *testing.T) {
 }
 
 func TestParseReverse(t *testing.T) {
+	t.Parallel()
+
 	input := `server.go <- Server ServerOption`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -42,6 +46,8 @@ func TestParseReverse(t *testing.T) {
 }
 
 func TestParseMultilineTab(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go\t<-\n\tServer\n\tServerOption"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -60,6 +66,8 @@ func TestParseMultilineTab(t *testing.T) {
 }
 
 func TestParseMultiline(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\n\tServer\n\tServerOption"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -78,6 +86,8 @@ func TestParseMultiline(t *testing.T) {
 }
 
 func TestParseMultilineIndentedComment(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\n\tServer\n\t# a comment\n\tHandler"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -96,6 +106,8 @@ func TestParseMultilineIndentedComment(t *testing.T) {
 }
 
 func TestParseRenames(t *testing.T) {
+	t.Parallel()
+
 	input := `Server=Core ServerOptions=Options -> server/core.go`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -114,6 +126,8 @@ func TestParseRenames(t *testing.T) {
 }
 
 func TestParseFieldRenames(t *testing.T) {
+	t.Parallel()
+
 	input := "server/core.go <-\n\tServerOptions=Options\n\tServerOptions#Listen=Address"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -132,6 +146,8 @@ func TestParseFieldRenames(t *testing.T) {
 }
 
 func TestParseAnonymousFieldRename(t *testing.T) {
+	t.Parallel()
+
 	input := "server/core.go <-\n\tServerOptions#Limits.min=Min"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -149,6 +165,8 @@ func TestParseAnonymousFieldRename(t *testing.T) {
 }
 
 func TestParseSourceFile(t *testing.T) {
+	t.Parallel()
+
 	input := "server/core_linux.go <-\n\tserver_linux.go:File"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -166,6 +184,8 @@ func TestParseSourceFile(t *testing.T) {
 }
 
 func TestParseSourceFilePath(t *testing.T) {
+	t.Parallel()
+
 	input := "server/core_linux.go <-\n\t./util/file_linux.go:File"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -183,6 +203,8 @@ func TestParseSourceFilePath(t *testing.T) {
 }
 
 func TestParseSourcePackage(t *testing.T) {
+	t.Parallel()
+
 	input := "server/core_linux.go <-\n\t./util.File"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -200,6 +222,8 @@ func TestParseSourcePackage(t *testing.T) {
 }
 
 func TestParseComments(t *testing.T) {
+	t.Parallel()
+
 	input := "# Move server types\nServer -> server.go\n# Done"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -215,6 +239,8 @@ func TestParseComments(t *testing.T) {
 }
 
 func TestParseInlineComment(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- Server # move it"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -230,6 +256,8 @@ func TestParseInlineComment(t *testing.T) {
 }
 
 func TestParseMultipleRules(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- Server\n\nhandler.go <- Handler"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -245,6 +273,8 @@ func TestParseMultipleRules(t *testing.T) {
 }
 
 func TestParseMultilineMultipleRules(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\n\tServer\n\nhandler.go <-\n\tHandler"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -260,6 +290,8 @@ func TestParseMultilineMultipleRules(t *testing.T) {
 }
 
 func TestParseEmpty(t *testing.T) {
+	t.Parallel()
+
 	file, err := Parse("test", []byte(""))
 	if err != nil {
 		t.Fatal(err)
@@ -271,6 +303,8 @@ func TestParseEmpty(t *testing.T) {
 }
 
 func TestParseCommentsOnly(t *testing.T) {
+	t.Parallel()
+
 	file, err := Parse("test", []byte("# just a comment\n# another"))
 	if err != nil {
 		t.Fatal(err)
@@ -282,6 +316,8 @@ func TestParseCommentsOnly(t *testing.T) {
 }
 
 func TestParseRenameOnly(t *testing.T) {
+	t.Parallel()
+
 	input := `Foo=Bar`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -296,6 +332,8 @@ func TestParseRenameOnly(t *testing.T) {
 }
 
 func TestParseFieldRenameOnly(t *testing.T) {
+	t.Parallel()
+
 	input := "Config#Host=Hostname\nConfig#Port=ListenPort"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -311,6 +349,8 @@ func TestParseFieldRenameOnly(t *testing.T) {
 }
 
 func TestParseFieldWithoutRenameNoArrow(t *testing.T) {
+	t.Parallel()
+
 	// A bare field reference without rename is valid (no-op field selection).
 	input := `Server#Listen`
 	file, err := Parse("test", []byte(input))
@@ -326,6 +366,8 @@ func TestParseFieldWithoutRenameNoArrow(t *testing.T) {
 }
 
 func TestParseErrors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -343,6 +385,8 @@ func TestParseErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := Parse("test", []byte(tt.input))
 			if err == nil {
 				t.Fatalf("expected error for input %q", tt.input)
@@ -352,6 +396,8 @@ func TestParseErrors(t *testing.T) {
 }
 
 func TestParseFieldWithoutRename(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- Server#Listen"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -369,6 +415,8 @@ func TestParseFieldWithoutRename(t *testing.T) {
 }
 
 func TestParseDirectiveEquals(t *testing.T) {
+	t.Parallel()
+
 	input := `@stubs=true`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -381,6 +429,8 @@ func TestParseDirectiveEquals(t *testing.T) {
 }
 
 func TestParseDirectiveSpace(t *testing.T) {
+	t.Parallel()
+
 	input := `@fmt goimports`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -393,6 +443,8 @@ func TestParseDirectiveSpace(t *testing.T) {
 }
 
 func TestParseDirectiveNoValue(t *testing.T) {
+	t.Parallel()
+
 	input := `@verbose`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -405,6 +457,8 @@ func TestParseDirectiveNoValue(t *testing.T) {
 }
 
 func TestParseDirectiveWithRules(t *testing.T) {
+	t.Parallel()
+
 	input := "@fmt goimports\n@stubs=true\nServer -> server.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -425,6 +479,8 @@ func TestParseDirectiveWithRules(t *testing.T) {
 }
 
 func TestParseDirectiveIndented(t *testing.T) {
+	t.Parallel()
+
 	input := "  @fmt goimports"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -437,6 +493,8 @@ func TestParseDirectiveIndented(t *testing.T) {
 }
 
 func TestParseDirectiveBreaksMultiline(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\n\tServer\n@fmt goimports\nhandler.go <- Handler"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -454,6 +512,8 @@ func TestParseDirectiveBreaksMultiline(t *testing.T) {
 }
 
 func TestParseComplex(t *testing.T) {
+	t.Parallel()
+
 	input := `# Move server types to their own file:
 Server ServerOption -> server.go
 
@@ -524,6 +584,8 @@ server/core_linux.go <-
 }
 
 func TestParseCRLF(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\r\n\tServer\r\n\tHandler\r\n"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -542,6 +604,8 @@ func TestParseCRLF(t *testing.T) {
 }
 
 func TestParseCR(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- Server\rhandler.go <- Handler\r"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -553,6 +617,8 @@ func TestParseCR(t *testing.T) {
 }
 
 func TestParseDirectiveTab(t *testing.T) {
+	t.Parallel()
+
 	input := "@fmt\tgoimports"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -565,6 +631,8 @@ func TestParseDirectiveTab(t *testing.T) {
 }
 
 func TestParseDirectiveEmptyKeyIsError(t *testing.T) {
+	t.Parallel()
+
 	// "@" alone, "@=value", and "@ " are not valid directives or rules.
 	for _, input := range []string{"@", "@=value", "@ "} {
 		_, err := Parse("test", []byte(input))
@@ -575,6 +643,8 @@ func TestParseDirectiveEmptyKeyIsError(t *testing.T) {
 }
 
 func TestParseMultilineNoItems(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\n\n"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -589,6 +659,8 @@ func TestParseMultilineNoItems(t *testing.T) {
 }
 
 func TestParseMultilineContinuesWithoutBlank(t *testing.T) {
+	t.Parallel()
+
 	// A non-indented rule line ends the previous multiline block.
 	input := "server.go <-\n\tServer\nhandler.go <- Handler"
 	file, err := Parse("test", []byte(input))
@@ -607,6 +679,8 @@ func TestParseMultilineContinuesWithoutBlank(t *testing.T) {
 }
 
 func TestParseSourceWithRename(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- file.go:Server=Core"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -624,6 +698,8 @@ func TestParseSourceWithRename(t *testing.T) {
 }
 
 func TestParseSourceWithFieldRename(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- ./util.Server#Listen=Address"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -641,6 +717,8 @@ func TestParseSourceWithFieldRename(t *testing.T) {
 }
 
 func TestParseAbsolutePackage(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- github.com/loov/gorelo.Server"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -658,6 +736,8 @@ func TestParseAbsolutePackage(t *testing.T) {
 }
 
 func TestParseAbsolutePackageWithRename(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- github.com/loov/gorelo.Server=Core"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -675,6 +755,8 @@ func TestParseAbsolutePackageWithRename(t *testing.T) {
 }
 
 func TestParseAbsolutePackageWithFieldRename(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <- github.com/loov/gorelo.Server#Listen=Address"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -692,6 +774,8 @@ func TestParseAbsolutePackageWithFieldRename(t *testing.T) {
 }
 
 func TestParseAbsolutePackageMultiline(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\n\tgithub.com/loov/gorelo.Server\n\tgithub.com/loov/gorelo.Handler"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -710,6 +794,8 @@ func TestParseAbsolutePackageMultiline(t *testing.T) {
 }
 
 func TestParseMultipleItemsOnMultilineLine(t *testing.T) {
+	t.Parallel()
+
 	// An indented line can contain multiple space-separated items.
 	input := "server.go <-\n\tServer Handler"
 	file, err := Parse("test", []byte(input))
@@ -722,6 +808,8 @@ func TestParseMultipleItemsOnMultilineLine(t *testing.T) {
 }
 
 func TestParseFieldRenameInMoveBlock(t *testing.T) {
+	t.Parallel()
+
 	input := "server.go <-\n\tServer\n\tServerOptions#Listen=Address"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
@@ -740,6 +828,8 @@ func TestParseFieldRenameInMoveBlock(t *testing.T) {
 }
 
 func TestParseFieldRenameInForwardBlock(t *testing.T) {
+	t.Parallel()
+
 	input := "Server ServerOptions#Listen=Address -> server.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {

@@ -11,6 +11,8 @@ import (
 )
 
 func TestGuessImportLocalName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		path string
 		want string
@@ -29,6 +31,8 @@ func TestGuessImportLocalName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+
 			got := guessImportLocalName(tt.path)
 			if got != tt.want {
 				t.Errorf("guessImportLocalName(%q) = %q, want %q", tt.path, got, tt.want)
@@ -38,6 +42,8 @@ func TestGuessImportLocalName(t *testing.T) {
 }
 
 func TestParentPrefixedName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		path string
 		want string
@@ -51,6 +57,8 @@ func TestParentPrefixedName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+
 			got := parentPrefixedName(tt.path)
 			if got != tt.want {
 				t.Errorf("parentPrefixedName(%q) = %q, want %q", tt.path, got, tt.want)
@@ -60,6 +68,8 @@ func TestParentPrefixedName(t *testing.T) {
 }
 
 func TestGuessImportPath(t *testing.T) {
+	t.Parallel()
+
 	// Create a temp directory with a go.mod.
 	dir := t.TempDir()
 	modContent := "module example.com/mymod\n\ngo 1.21\n"
@@ -85,6 +95,8 @@ func TestGuessImportPath(t *testing.T) {
 }
 
 func TestGuessImportPath_NoGoMod(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	got := guessImportPath(dir)
 	if got != "" {
@@ -93,6 +105,8 @@ func TestGuessImportPath_NoGoMod(t *testing.T) {
 }
 
 func TestReadModulePath(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	// No go.mod.
@@ -113,6 +127,8 @@ func TestReadModulePath(t *testing.T) {
 }
 
 func TestResolveCollisions_FirstKeepsShortName(t *testing.T) {
+	t.Parallel()
+
 	// B10: When two imports share a localName, only the second (and later)
 	// should be aliased. The first keeps its short name.
 	infos := []importInfo{
@@ -141,6 +157,8 @@ func TestResolveCollisions_FirstKeepsShortName(t *testing.T) {
 }
 
 func TestResolveCollisions_NumericSuffixWhenParentPrefixUsed(t *testing.T) {
+	t.Parallel()
+
 	// B5: When parentPrefixedName is already in usedNames, a numeric suffix
 	// should be generated.
 	infos := []importInfo{
@@ -171,6 +189,8 @@ func TestResolveCollisions_NumericSuffixWhenParentPrefixUsed(t *testing.T) {
 }
 
 func TestResolveCollisions_NoCollision(t *testing.T) {
+	t.Parallel()
+
 	infos := []importInfo{
 		{path: "encoding/json", localName: "json"},
 		{path: "fmt", localName: "fmt"},
@@ -188,6 +208,8 @@ func TestResolveCollisions_NoCollision(t *testing.T) {
 }
 
 func TestBlankImportWarning(t *testing.T) {
+	t.Parallel()
+
 	// E5: Blank imports (import _ "pkg") should emit a warning.
 	dir := t.TempDir()
 	pkgDir := filepath.Join(dir, "pkg")

@@ -5,6 +5,8 @@ import (
 )
 
 func TestDeduplicateEdits(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input []edit
@@ -50,6 +52,8 @@ func TestDeduplicateEdits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := deduplicateEdits(tt.input)
 			if len(got) != tt.want {
 				t.Errorf("deduplicateEdits returned %d edits, want %d", len(got), tt.want)
@@ -59,6 +63,8 @@ func TestDeduplicateEdits(t *testing.T) {
 }
 
 func TestDeduplicateEdits_KeepsFirst(t *testing.T) {
+	t.Parallel()
+
 	edits := []edit{
 		{Start: 5, End: 8, New: "first"},
 		{Start: 5, End: 8, New: "first"},
@@ -73,6 +79,8 @@ func TestDeduplicateEdits_KeepsFirst(t *testing.T) {
 }
 
 func TestDeduplicateEdits_ConflictPanics(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		r := recover()
 		if r == nil {
@@ -86,6 +94,8 @@ func TestDeduplicateEdits_ConflictPanics(t *testing.T) {
 }
 
 func TestApplyEdits_StableSort(t *testing.T) {
+	t.Parallel()
+
 	// Two edits at the same Start offset: SliceStable guarantees the first
 	// one in the input slice wins (after dedup, only one survives, but if
 	// both survive the order must be deterministic).
@@ -105,6 +115,8 @@ func TestApplyEdits_StableSort(t *testing.T) {
 }
 
 func TestApplyEdits_OutOfBounds(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		src   string
@@ -133,6 +145,8 @@ func TestApplyEdits_OutOfBounds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			defer func() {
 				r := recover()
 				if r == nil {
@@ -152,6 +166,8 @@ func TestApplyEdits_OutOfBounds(t *testing.T) {
 }
 
 func TestApplyEdits(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		src   string
@@ -219,6 +235,8 @@ func TestApplyEdits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := applyEdits([]byte(tt.src), tt.edits)
 			if got != tt.want {
 				t.Errorf("applyEdits(%q, ...) = %q, want %q", tt.src, got, tt.want)

@@ -11,6 +11,8 @@ import (
 )
 
 func TestFindEnclosingDecl(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 type Foo struct{}
@@ -33,6 +35,8 @@ var X = 1
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ident := findIdentByName(file, tt.identName)
 			if ident == nil {
 				t.Fatalf("ident %q not found", tt.identName)
@@ -56,6 +60,8 @@ var X = 1
 }
 
 func TestFindEnclosingDecl_NotFound(t *testing.T) {
+	t.Parallel()
+
 	file, _ := parseSource(t, "package p\nvar X = 1\n")
 	fake := &ast.Ident{Name: "fake"}
 	decl := findEnclosingDecl(file, fake)
@@ -65,6 +71,8 @@ func TestFindEnclosingDecl_NotFound(t *testing.T) {
 }
 
 func TestFindSpecForIdent(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 const (
@@ -97,6 +105,8 @@ const (
 }
 
 func TestExprListUsesIota(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		src  string
 		want bool
@@ -110,6 +120,8 @@ func TestExprListUsesIota(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.src, func(t *testing.T) {
+			t.Parallel()
+
 			expr, err := parser.ParseExpr(tt.src)
 			if err != nil {
 				t.Fatal(err)
@@ -123,6 +135,8 @@ func TestExprListUsesIota(t *testing.T) {
 }
 
 func TestConstSpecDependsOnIota(t *testing.T) {
+	t.Parallel()
+
 	src := `package p
 
 const (
@@ -147,6 +161,8 @@ const (
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			for _, spec := range gd.Specs {
 				vs := spec.(*ast.ValueSpec)
 				if vs.Names[0].Name == tt.name {
@@ -163,6 +179,8 @@ const (
 }
 
 func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": "package p\n\nvar X, Y = 1, 2\n",
 	})
@@ -199,6 +217,8 @@ func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
 }
 
 func TestCheckIotaBlock_DifferentTargets(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": `package p
 
@@ -255,6 +275,8 @@ const (
 }
 
 func TestCheckIotaBlock_SameTarget(t *testing.T) {
+	t.Parallel()
+
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": `package p
 
@@ -300,6 +322,8 @@ const (
 }
 
 func TestSpecByteRange_AdjacentSpecs_NoBoundaryOverlap(t *testing.T) {
+	t.Parallel()
+
 	src := "package p\n\nconst (\n\tA = 1\n\tB = 2\n\tC = 3\n)\n"
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": src,
@@ -349,6 +373,8 @@ func TestSpecByteRange_AdjacentSpecs_NoBoundaryOverlap(t *testing.T) {
 }
 
 func TestSpecByteRange_BlankLineBetweenSpecs(t *testing.T) {
+	t.Parallel()
+
 	src := "package p\n\nconst (\n\tA = 1\n\n\tB = 2\n)\n"
 	ix := loadTestIndex(t, map[string]string{
 		"main.go": src,
@@ -377,6 +403,8 @@ func TestSpecByteRange_BlankLineBetweenSpecs(t *testing.T) {
 }
 
 func TestDedentBlock(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -410,6 +438,8 @@ func TestDedentBlock(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := dedentBlock(tt.input)
 			if got != tt.want {
 				t.Errorf("dedentBlock(%q) = %q, want %q", tt.input, got, tt.want)
@@ -419,6 +449,8 @@ func TestDedentBlock(t *testing.T) {
 }
 
 func TestPrependKeyword(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		text    string
@@ -452,6 +484,8 @@ func TestPrependKeyword(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := prependKeyword(tt.text, tt.keyword)
 			if got != tt.want {
 				t.Errorf("prependKeyword(%q, %q) = %q, want %q", tt.text, tt.keyword, got, tt.want)
