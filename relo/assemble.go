@@ -211,7 +211,6 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			}
 			targetNewDecls[targetPath] = newDecls
 			content += newDecls
-			content = removeUnusedImportsText(content)
 			plan.Edits = append(plan.Edits, FileEdit{
 				Path:    targetPath,
 				Content: content,
@@ -253,11 +252,10 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			}
 
 			b.WriteString(newDecls)
-			content := removeUnusedImportsText(b.String())
 			plan.Edits = append(plan.Edits, FileEdit{
 				Path:    targetPath,
 				IsNew:   true,
-				Content: content,
+				Content: b.String(),
 			})
 		}
 	}
@@ -452,7 +450,6 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// Clean up.
 		newSrc = removeEmptyDeclBlocks(newSrc)
 		newSrc = cleanBlankLines(newSrc)
-		newSrc = removeUnusedImportsText(newSrc)
 
 		if sourceFileIsEmpty(newSrc) {
 			if existingIdx >= 0 {
@@ -509,7 +506,6 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				if ic, ok := imports.byFile[filePath]; ok {
 					newSrc = applyImportEntries(newSrc, ic.Add)
 				}
-				newSrc = removeUnusedImportsText(newSrc)
 				plan.Edits[idx].Content = newSrc
 			}
 			continue
@@ -528,11 +524,18 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			newSrc = applyImportEntries(newSrc, ic.Add)
 		}
 
-		newSrc = removeUnusedImportsText(newSrc)
 		plan.Edits = append(plan.Edits, FileEdit{
 			Path:    filePath,
 			Content: newSrc,
 		})
+	}
+
+	// Final pass: remove unused imports from all emitted files.
+	for i := range plan.Edits {
+		if plan.Edits[i].IsDelete {
+			continue
+		}
+		plan.Edits[i].Content = removeUnusedImportsText(plan.Edits[i].Content)
 	}
 }
 
