@@ -174,9 +174,20 @@ func typeHasEmbeddedUses(ix *mast.Index, grp *mast.Group) bool {
 				if t == id.Ident {
 					found = true
 				}
-			case *ast.StarExpr:
-				if ti, ok := t.X.(*ast.Ident); ok && ti == id.Ident {
+			case *ast.SelectorExpr:
+				if t.Sel == id.Ident {
 					found = true
+				}
+			case *ast.StarExpr:
+				switch x := t.X.(type) {
+				case *ast.Ident:
+					if x == id.Ident {
+						found = true
+					}
+				case *ast.SelectorExpr:
+					if x.Sel == id.Ident {
+						found = true
+					}
 				}
 			}
 			return !found
