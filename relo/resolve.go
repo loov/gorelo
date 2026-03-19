@@ -211,7 +211,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 				if !ok || fd.Recv == nil {
 					continue
 				}
-				recvType := receiverTypeName(fd.Recv)
+				recvType := mast.ReceiverTypeName(fd.Recv)
 				if recvType == "" {
 					continue
 				}
@@ -339,32 +339,7 @@ func findMethodReceiverType(rr *resolvedRelo) string {
 			continue
 		}
 		if fd.Name == rr.DefIdent.Ident {
-			return receiverTypeName(fd.Recv)
-		}
-	}
-	return ""
-}
-
-// receiverTypeName extracts the type name from a method receiver field list.
-func receiverTypeName(recv *ast.FieldList) string {
-	if recv == nil || len(recv.List) == 0 {
-		return ""
-	}
-	t := recv.List[0].Type
-	if star, ok := t.(*ast.StarExpr); ok {
-		t = star.X
-	}
-	if ident, ok := t.(*ast.Ident); ok {
-		return ident.Name
-	}
-	if idx, ok := t.(*ast.IndexExpr); ok {
-		if ident, ok := idx.X.(*ast.Ident); ok {
-			return ident.Name
-		}
-	}
-	if idx, ok := t.(*ast.IndexListExpr); ok {
-		if ident, ok := idx.X.(*ast.Ident); ok {
-			return ident.Name
+			return mast.ReceiverTypeName(fd.Recv)
 		}
 	}
 	return ""

@@ -121,7 +121,7 @@ func (ix *Index) FindFieldDef(typeName, fieldPath, source string) *ast.Ident {
 				if !ok || fd.Recv == nil {
 					continue
 				}
-				recvType := receiverTypeName(fd.Recv)
+				recvType := ReceiverTypeName(fd.Recv)
 				if recvType != typeName {
 					continue
 				}
@@ -136,8 +136,8 @@ func (ix *Index) FindFieldDef(typeName, fieldPath, source string) *ast.Ident {
 	return nil
 }
 
-// receiverTypeName extracts the type name from a method receiver field list.
-func receiverTypeName(recv *ast.FieldList) string {
+// ReceiverTypeName extracts the type name from a method receiver field list.
+func ReceiverTypeName(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
 	}

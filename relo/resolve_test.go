@@ -39,9 +39,9 @@ func TestReceiverTypeName(t *testing.T) {
 				if !ok {
 					continue
 				}
-				got := receiverTypeName(fd.Recv)
+				got := mast.ReceiverTypeName(fd.Recv)
 				if got != tt.want {
-					t.Errorf("receiverTypeName = %q, want %q", got, tt.want)
+					t.Errorf("ReceiverTypeName = %q, want %q", got, tt.want)
 				}
 				return
 			}
