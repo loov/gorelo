@@ -36,6 +36,9 @@ gorelo -r "server.go <- Server Client" -v     # reverse notation, verbose
 gorelo -dry -f gorelo.rules                   # preview without writing
 ```
 
+See [EXAMPLE.md](EXAMPLE.md) for a walkthrough of splitting a flat package
+into subpackages (`server/`, `db/`, `service/`) with private-to-public renames.
+
 ## Rules syntax
 
 ### Moving declarations
