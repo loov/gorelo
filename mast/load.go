@@ -359,13 +359,13 @@ func discoverGoFiles(dir string) ([]string, error) {
 // It checks both //go:build directives and filename-based constraints.
 func extractBuildTag(path string, src []byte) string {
 	// Check for //go:build directive.
-	for _, line := range strings.Split(string(src), "\n") {
+	for line := range strings.SplitSeq(string(src), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if strings.HasPrefix(line, "//go:build ") {
-			return strings.TrimPrefix(line, "//go:build ")
+		if after, ok := strings.CutPrefix(line, "//go:build "); ok {
+			return after
 		}
 		if strings.HasPrefix(line, "package ") {
 			break
@@ -468,7 +468,7 @@ func hasConflictingDefinitions(tagGroups map[string][]parsedFile, tagOrder []str
 		groupNames[tag] = names
 	}
 
-	for i := 0; i < len(tagOrder); i++ {
+	for i := range tagOrder {
 		for j := i + 1; j < len(tagOrder); j++ {
 			a, b := groupNames[tagOrder[i]], groupNames[tagOrder[j]]
 			for name := range a {
@@ -566,7 +566,7 @@ func ReadModulePath(dir string) string {
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "module"))

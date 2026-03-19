@@ -188,7 +188,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				declsBuf.WriteString("\n")
 				declsBuf.WriteString(e.keyword + " (\n")
 				for k := i; k < j; k++ {
-					for _, line := range strings.Split(extracted[k].text, "\n") {
+					for line := range strings.SplitSeq(extracted[k].text, "\n") {
 						declsBuf.WriteString("\t")
 						declsBuf.WriteString(line)
 						declsBuf.WriteString("\n")

@@ -325,8 +325,7 @@ func fieldOwnerName(field *types.Var) string {
 		if !ok {
 			continue
 		}
-		for i := 0; i < st.NumFields(); i++ {
-			f := st.Field(i)
+		for f := range st.Fields() {
 			if f == field {
 				return tn.Name()
 			}

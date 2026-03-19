@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"strings"
 
 	"github.com/loov/gorelo/mast"
@@ -111,10 +112,8 @@ func findEnclosingDecl(file *ast.File, ident *ast.Ident) ast.Decl {
 						return d
 					}
 				case *ast.ValueSpec:
-					for _, n := range s.Names {
-						if n == ident {
-							return d
-						}
+					if slices.Contains(s.Names, ident) {
+						return d
 					}
 				}
 			}
@@ -132,10 +131,8 @@ func findSpecForIdent(gd *ast.GenDecl, ident *ast.Ident) ast.Spec {
 				return s
 			}
 		case *ast.ValueSpec:
-			for _, n := range s.Names {
-				if n == ident {
-					return s
-				}
+			if slices.Contains(s.Names, ident) {
+				return s
 			}
 		}
 	}

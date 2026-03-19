@@ -3,6 +3,7 @@ package relo
 import (
 	"go/ast"
 	"go/token"
+	"maps"
 	"path"
 	"path/filepath"
 	"sort"
@@ -141,9 +142,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 				if ic.Aliases == nil {
 					ic.Aliases = make(map[string]string)
 				}
-				for impPath, alias := range aliases {
-					ic.Aliases[impPath] = alias
-				}
+				maps.Copy(ic.Aliases, aliases)
 			}
 		}
 	}

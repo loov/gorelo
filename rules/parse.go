@@ -103,9 +103,9 @@ func parseLine(line string) (dest string, items []Item, err error) {
 // splitArrow finds the first " -> " or " <- " (or trailing " <-"/"<-") in line.
 func splitArrow(line string) (left, right, arrow string, ok bool) {
 	for _, op := range []string{" -> ", " <- "} {
-		if idx := strings.Index(line, op); idx >= 0 {
-			return strings.TrimSpace(line[:idx]),
-				strings.TrimSpace(line[idx+len(op):]),
+		if before, after, ok0 := strings.Cut(line, op); ok0 {
+			return strings.TrimSpace(before),
+				strings.TrimSpace(after),
 				strings.TrimSpace(op),
 				true
 		}
@@ -143,10 +143,10 @@ func parseItem(tok string) (Item, error) {
 
 	rest := tok
 	// Extract source prefix.
-	if idx := strings.Index(tok, ":"); idx >= 0 {
+	if before, after, ok := strings.Cut(tok, ":"); ok {
 		// Explicit file source: "path:Name".
-		item.Source = tok[:idx]
-		rest = tok[idx+1:]
+		item.Source = before
+		rest = after
 	} else if strings.Contains(tok, "/") {
 		// Package reference (relative or absolute): split on last "."
 		// after last "/" to separate package path from declaration name.
@@ -165,15 +165,15 @@ func parseItem(tok string) (Item, error) {
 	}
 
 	// Split field path from name.
-	if hashIdx := strings.Index(rest, "#"); hashIdx >= 0 {
-		item.Name = rest[:hashIdx]
-		fieldSpec := rest[hashIdx+1:]
+	if before, after, ok := strings.Cut(rest, "#"); ok {
+		item.Name = before
+		fieldSpec := after
 		if fieldSpec == "" {
 			return Item{}, fmt.Errorf("missing field name after '#' in %q", tok)
 		}
-		if eqIdx := strings.Index(fieldSpec, "="); eqIdx >= 0 {
-			item.Field = fieldSpec[:eqIdx]
-			item.FieldRename = fieldSpec[eqIdx+1:]
+		if before, after, ok := strings.Cut(fieldSpec, "="); ok {
+			item.Field = before
+			item.FieldRename = after
 			if item.Field == "" {
 				return Item{}, fmt.Errorf("missing field name before '=' in %q", tok)
 			}
@@ -183,9 +183,9 @@ func parseItem(tok string) (Item, error) {
 		} else {
 			item.Field = fieldSpec
 		}
-	} else if eqIdx := strings.Index(rest, "="); eqIdx >= 0 {
-		item.Name = rest[:eqIdx]
-		item.Rename = rest[eqIdx+1:]
+	} else if before, after, ok := strings.Cut(rest, "="); ok {
+		item.Name = before
+		item.Rename = after
 		if item.Rename == "" {
 			return Item{}, fmt.Errorf("missing rename after '=' in %q", tok)
 		}
