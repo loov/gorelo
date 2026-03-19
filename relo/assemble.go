@@ -457,7 +457,12 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// Add imports needed by consumer edits (e.g., source-file references
 		// to declarations that moved to a different package).
 		if ic := imports.byFile[sourcePath]; ic != nil {
-			for _, entry := range ic.Add {
+			sortedAdd := make([]importEntry, len(ic.Add))
+			copy(sortedAdd, ic.Add)
+			sort.Slice(sortedAdd, func(i, j int) bool {
+				return sortedAdd[i].Path < sortedAdd[j].Path
+			})
+			for _, entry := range sortedAdd {
 				newSrc, _ = ensureImport(newSrc, entry)
 			}
 		}
@@ -518,7 +523,12 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			if !existing.IsDelete {
 				newSrc := applyEditsToString(existing.Content, edits)
 				if ic, ok := imports.byFile[filePath]; ok {
-					for _, entry := range ic.Add {
+					sortedAdd := make([]importEntry, len(ic.Add))
+					copy(sortedAdd, ic.Add)
+					sort.Slice(sortedAdd, func(i, j int) bool {
+						return sortedAdd[i].Path < sortedAdd[j].Path
+					})
+					for _, entry := range sortedAdd {
 						newSrc, _ = ensureImport(newSrc, entry)
 					}
 				}
@@ -538,7 +548,12 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 		// Apply import additions (e.g., from consumer rewriting).
 		if ic, ok := imports.byFile[filePath]; ok {
-			for _, entry := range ic.Add {
+			sortedAdd := make([]importEntry, len(ic.Add))
+			copy(sortedAdd, ic.Add)
+			sort.Slice(sortedAdd, func(i, j int) bool {
+				return sortedAdd[i].Path < sortedAdd[j].Path
+			})
+			for _, entry := range sortedAdd {
 				newSrc, _ = ensureImport(newSrc, entry)
 			}
 		}
@@ -799,10 +814,21 @@ func ensureImport(src string, entry importEntry) (string, Warning) {
 
 	lines := strings.Split(src, "\n")
 
-	// Look for grouped import block.
+	// Look for grouped import block — insert before closing ")".
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "import (" {
+			// Find the closing ")".
+			for j := i + 1; j < len(lines); j++ {
+				if strings.TrimSpace(lines[j]) == ")" {
+					newLines := make([]string, 0, len(lines)+1)
+					newLines = append(newLines, lines[:j]...)
+					newLines = append(newLines, importLine)
+					newLines = append(newLines, lines[j:]...)
+					return strings.Join(newLines, "\n"), Warning{}
+				}
+			}
+			// No closing ")" found; insert after "import (" as fallback.
 			newLines := make([]string, 0, len(lines)+1)
 			newLines = append(newLines, lines[:i+1]...)
 			newLines = append(newLines, importLine)

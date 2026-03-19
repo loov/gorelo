@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"sort"
 	"strconv"
 
 	"github.com/loov/gorelo/mast"
@@ -170,7 +171,10 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	}
 
 	// Merge consumer edits into the rename set and import set.
-	for filePath, fe := range byFile {
+	// Process files in sorted order for deterministic output.
+	sortedConsumerFiles := sortedKeys(byFile)
+	for _, filePath := range sortedConsumerFiles {
+		fe := byFile[filePath]
 		// Merge qualifier and name edits into renames.
 		allEdits := append(fe.qualifierEdits, fe.nameEdits...)
 		allEdits = deduplicateEdits(allEdits)
@@ -192,8 +196,9 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			renames.byFile[filePath] = deduplicateEdits(renames.byFile[filePath])
 		}
 
-		// Add target imports.
-		for tgtPath := range fe.addImports {
+		// Add target imports in sorted order for deterministic output.
+		sortedImports := sortedKeys(fe.addImports)
+		for _, tgtPath := range sortedImports {
 			ic := imports.ensureFile(filePath)
 
 			// Check if the target import already exists in the file.
@@ -215,10 +220,11 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			ic.Add = append(ic.Add, importEntry{Path: tgtPath})
 		}
 
-		// Mark source imports for potential removal. The actual removal
-		// is handled by removeUnusedImportsText in the assembly phase,
-		// which checks whether any references remain.
-		// We don't explicitly remove here because other symbols from
-		// the source package may still be used.
+		// Sort added imports for deterministic output.
+		if ic := imports.byFile[filePath]; ic != nil {
+			sort.Slice(ic.Add, func(i, j int) bool {
+				return ic.Add[i].Path < ic.Add[j].Path
+			})
+		}
 	}
 }

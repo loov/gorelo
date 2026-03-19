@@ -55,8 +55,8 @@ const ErrTimeout = "timeout"
 package src
 
 import (
-	"example.com/test/errors"
 	"example.com/test/config"
+	"example.com/test/errors"
 )
 
 func OtherFunc() int {

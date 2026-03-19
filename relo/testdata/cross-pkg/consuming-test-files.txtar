@@ -44,8 +44,8 @@ func Use() string { return dst.Hello() }
 package consumer
 
 import (
-	"example.com/test/dst"
 	"testing"
+	"example.com/test/dst"
 )
 
 func TestHello(t *testing.T) {
