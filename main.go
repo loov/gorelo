@@ -24,6 +24,51 @@ func main() {
 		return nil
 	})
 
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `gorelo — move and rename Go declarations across files and packages.
+
+Gorelo loads all Go packages in the current module (including all build
+constraints), applies the requested moves and renames, and rewrites every
+file that references the affected declarations.
+
+Usage:
+  gorelo [flags]
+
+Flags:
+`)
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, `
+Rules can come from a file (-f, default "gorelo.rules") and/or from
+inline -r flags. Both sources are merged.
+
+Examples:
+  gorelo                                          # apply gorelo.rules
+  gorelo -f refactor.rules                        # use a different rules file
+  gorelo -r "Server -> server.go"                 # inline rule
+  gorelo -r "server.go <- Server Client" -v       # reverse notation, verbose
+  gorelo -dry -f gorelo.rules                     # preview without writing
+
+Rule syntax:
+  Server -> server.go                  # move declaration to file (forward)
+  server.go <- Server Client           # move declarations to file (reverse)
+  server.go <-                         # multiline reverse block
+      Server
+      Client
+
+  OldName=NewName -> target.go         # move and rename
+  Type#Field=NewField                  # rename a struct field
+  Type#Outer.Inner=NewInner            # rename nested anonymous struct field
+
+  file.go:Server -> target.go          # disambiguate by source file
+  ./pkg.Name -> target.go              # disambiguate by relative package
+  github.com/x/y.Name -> target.go    # disambiguate by full package path
+
+Directives (in rules files):
+  @fmt goimports                       # run formatter on modified files
+  @stubs=true                          # generate //go:fix backward-compat stubs
+`)
+	}
+
 	flag.Parse()
 
 	if err := run(*verbose, *dryRun, *rulesFile, *stubs, inlineRules); err != nil {
