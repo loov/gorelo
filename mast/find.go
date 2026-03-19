@@ -231,10 +231,15 @@ func (ix *Index) findFieldByPath(expr ast.Expr, fieldPath string) *ast.Ident {
 }
 
 // fileMatchesSource reports whether the file path ends with the given source
-// fragment. It normalises path separators so that a forward-slash source like
-// "sub/file.go" matches a Windows path like "C:\proj\sub\file.go".
+// fragment at a path boundary. It normalises path separators so that a
+// forward-slash source like "sub/file.go" matches a Windows path like
+// "C:\proj\sub\file.go", but "bar.go" does not match "foobar.go".
 func fileMatchesSource(filePath, source string) bool {
-	return strings.HasSuffix(filePath, filepath.FromSlash(source))
+	suffix := filepath.FromSlash(source)
+	if filePath == suffix {
+		return true
+	}
+	return strings.HasSuffix(filePath, string(filepath.Separator)+suffix)
 }
 
 // valueSpecHasName reports whether the ValueSpec declares a name matching target.
