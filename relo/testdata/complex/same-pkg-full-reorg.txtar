@@ -1,0 +1,119 @@
+# Large same-package reorganization: types, functions, consts, and
+# vars scattered from three source files to three target files, with
+# type renames, field renames, and cross-references between moved items.
+
+# Networking types and helpers to network.go
+Server Server#Addr=Address NewServer Listen -> network.go
+
+# Data types to models.go
+Record=Entry Record#Data=Payload NewRecord -> models.go
+
+# Constants and config to settings.go
+MaxRetries DefaultTimeout -> settings.go
+
+@warn renaming type Record to Entry will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/types.go --
+package pkg
+
+type Server struct {
+	Addr string
+	Port int
+}
+
+type Record struct {
+	ID   int
+	Data string
+}
+-- input/funcs.go --
+package pkg
+
+import "fmt"
+
+func NewServer(addr string, port int) *Server {
+	return &Server{Addr: addr, Port: port}
+}
+
+func Listen(s *Server) {
+	fmt.Printf("Listening on %s:%d\n", s.Addr, s.Port)
+}
+
+func NewRecord(id int, data string) *Record {
+	return &Record{ID: id, Data: data}
+}
+
+func Process(s *Server, r *Record) {
+	fmt.Printf("Server %s processing record %d: %s\n", s.Addr, r.ID, r.Data)
+}
+-- input/consts.go --
+package pkg
+
+import "time"
+
+const MaxRetries = 3
+
+var DefaultTimeout = 30 * time.Second
+
+func RetryConfig() (int, time.Duration) {
+	return MaxRetries, DefaultTimeout
+}
+-- golden/network.go --
+package pkg
+
+import (
+	"fmt"
+)
+
+func NewServer(addr string, port int) *Server {
+	return &Server{Address: addr, Port: port}
+}
+
+func Listen(s *Server) {
+	fmt.Printf("Listening on %s:%d\n", s.Address, s.Port)
+}
+
+type Server struct {
+	Address string
+	Port int
+}
+-- golden/models.go --
+package pkg
+
+func NewRecord(id int, data string) *Entry {
+	return &Entry{ID: id, Payload: data}
+}
+
+type Entry struct {
+	ID   int
+	Payload string
+}
+-- golden/settings.go --
+package pkg
+
+import (
+	"time"
+)
+
+const MaxRetries = 3
+
+var DefaultTimeout = 30 * time.Second
+-- golden/funcs.go --
+package pkg
+
+import "fmt"
+
+func Process(s *Server, r *Entry) {
+	fmt.Printf("Server %s processing record %d: %s\n", s.Address, r.ID, r.Payload)
+}
+-- golden/consts.go --
+package pkg
+
+import "time"
+
+func RetryConfig() (int, time.Duration) {
+	return MaxRetries, DefaultTimeout
+}

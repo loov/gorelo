@@ -1,0 +1,101 @@
+# Move items from one source to two different destination packages.
+# A consumer uses items from both destinations and needs both new
+# imports. Source retains a function that references items in both
+# destinations.
+
+Config NewConfig -> dstA/config.go
+Handler NewHandler -> dstB/handler.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/code.go --
+package src
+
+import "fmt"
+
+type Config struct {
+	Host string
+}
+
+func NewConfig(host string) *Config {
+	return &Config{Host: host}
+}
+
+type Handler struct {
+	Path   string
+	Config *Config
+}
+
+func NewHandler(path string, cfg *Config) *Handler {
+	return &Handler{Path: path, Config: cfg}
+}
+
+func Setup() {
+	cfg := NewConfig("localhost")
+	h := NewHandler("/api", cfg)
+	fmt.Println(h.Path, h.Config.Host)
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Run() {
+	cfg := src.NewConfig("localhost")
+	h := src.NewHandler("/api", cfg)
+	_ = h.Config.Host
+}
+-- golden/dstA/config.go --
+package dstA
+
+type Config struct {
+	Host string
+}
+
+func NewConfig(host string) *Config {
+	return &Config{Host: host}
+}
+-- golden/dstB/handler.go --
+package dstB
+
+import (
+	"example.com/test/dstA"
+)
+
+type Handler struct {
+	Path   string
+	Config *dstA.Config
+}
+
+func NewHandler(path string, cfg *dstA.Config) *Handler {
+	return &Handler{Path: path, Config: cfg}
+}
+-- golden/src/code.go --
+package src
+
+import (
+	"fmt"
+	"example.com/test/dstA"
+	"example.com/test/dstB"
+)
+
+func Setup() {
+	cfg := dstA.NewConfig("localhost")
+	h := dstB.NewHandler("/api", cfg)
+	fmt.Println(h.Path, h.Config.Host)
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dstA"
+	"example.com/test/dstB"
+)
+
+func Run() {
+	cfg := dstA.NewConfig("localhost")
+	h := dstB.NewHandler("/api", cfg)
+	_ = h.Config.Host
+}

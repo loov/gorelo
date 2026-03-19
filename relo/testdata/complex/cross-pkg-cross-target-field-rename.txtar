@@ -1,0 +1,67 @@
+# Move two types to different target packages where they reference
+# each other. One type has a field rename. The extracted code in
+# each target must correctly qualify cross-target references and
+# apply the field rename.
+
+Config -> pkg1/config.go
+Config#Host=Address
+Server NewServer -> pkg2/server.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/types.go --
+package src
+
+import "fmt"
+
+type Config struct {
+	Host string
+	Port int
+}
+
+type Server struct {
+	Cfg *Config
+}
+
+func NewServer(cfg *Config) *Server {
+	return &Server{Cfg: cfg}
+}
+
+func (s *Server) Addr() string {
+	return fmt.Sprintf("%s:%d", s.Cfg.Host, s.Cfg.Port)
+}
+
+func Remaining() {}
+-- golden/pkg1/config.go --
+package pkg1
+
+type Config struct {
+	Address string
+	Port int
+}
+-- golden/pkg2/server.go --
+package pkg2
+
+import (
+	"example.com/test/pkg1"
+	"fmt"
+)
+
+type Server struct {
+	Cfg *pkg1.Config
+}
+
+func NewServer(cfg *pkg1.Config) *Server {
+	return &Server{Cfg: cfg}
+}
+
+func (s *Server) Addr() string {
+	return fmt.Sprintf("%s:%d", s.Cfg.Address, s.Cfg.Port)
+}
+-- golden/src/types.go --
+package src
+
+
+func Remaining() {}

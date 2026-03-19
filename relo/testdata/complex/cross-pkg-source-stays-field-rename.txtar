@@ -1,0 +1,92 @@
+# Cross-package move with field renames where remaining source code
+# uses the moved type in composite literals, selectors, and function
+# parameters. All references must be updated with both the new package
+# qualifier and the renamed field names.
+
+Config NewConfig -> dst/config.go
+Config#Host=Address
+Config#Port=ListenPort
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+import "fmt"
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func NewConfig(host string, port int) *Config {
+	return &Config{Host: host, Port: port}
+}
+
+func DefaultConfig() *Config {
+	return &Config{
+		Host: "localhost",
+		Port: 8080,
+	}
+}
+
+func PrintConfig(c *Config) {
+	fmt.Printf("%s:%d\n", c.Host, c.Port)
+}
+
+func CloneConfig(c *Config) *Config {
+	return &Config{Host: c.Host, Port: c.Port}
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Setup() *src.Config {
+	return src.NewConfig("0.0.0.0", 443)
+}
+-- golden/dst/config.go --
+package dst
+
+type Config struct {
+	Address string
+	ListenPort int
+}
+
+func NewConfig(host string, port int) *Config {
+	return &Config{Address: host, ListenPort: port}
+}
+-- golden/src/config.go --
+package src
+
+import (
+	"fmt"
+	"example.com/test/dst"
+)
+
+func DefaultConfig() *dst.Config {
+	return &dst.Config{
+		Address: "localhost",
+		ListenPort: 8080,
+	}
+}
+
+func PrintConfig(c *dst.Config) {
+	fmt.Printf("%s:%d\n", c.Address, c.ListenPort)
+}
+
+func CloneConfig(c *dst.Config) *dst.Config {
+	return &dst.Config{Address: c.Address, ListenPort: c.ListenPort}
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func Setup() *dst.Config {
+	return dst.NewConfig("0.0.0.0", 443)
+}
