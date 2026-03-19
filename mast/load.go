@@ -132,6 +132,13 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 		}
 	}
 
+	ix.FilesByPath = make(map[string]*File, len(ix.Pkgs)*4)
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			ix.FilesByPath[f.Path] = f
+		}
+	}
+
 	return ix, nil
 }
 

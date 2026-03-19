@@ -201,14 +201,7 @@ func resolveCollisions(infos []importInfo, usedNames map[string]bool) map[string
 
 // findFileInIndex finds a mast.File by path in the index.
 func findFileInIndex(ix *mast.Index, path string) *mast.File {
-	for _, pkg := range ix.Pkgs {
-		for _, f := range pkg.Files {
-			if f.Path == path {
-				return f
-			}
-		}
-	}
-	return nil
+	return ix.FilesByPath[path]
 }
 
 // findPkgForDir returns the package whose files reside in dir, or nil.

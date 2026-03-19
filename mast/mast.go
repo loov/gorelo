@@ -13,9 +13,10 @@ type Config struct {
 
 // Index holds the result of loading and linking identifiers.
 type Index struct {
-	Fset   *token.FileSet
-	Pkgs   []*Package
-	Errors []error
+	Fset        *token.FileSet
+	Pkgs        []*Package
+	Errors      []error
+	FilesByPath map[string]*File // populated after loading
 
 	groups      map[*ast.Ident]*Group
 	groupsByKey map[objectKey]*Group
