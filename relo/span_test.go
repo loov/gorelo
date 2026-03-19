@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"testing"
+
+	"github.com/loov/gorelo/mast"
 )
 
 func TestFindEnclosingDecl(t *testing.T) {
@@ -155,6 +157,42 @@ const (
 			}
 			t.Fatalf("spec %q not found", tt.name)
 		})
+	}
+}
+
+func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nvar X, Y = 1, 2\n",
+	})
+
+	ident := findDefIdentInIndex(ix, "X")
+	if ident == nil {
+		t.Fatal("var X not found")
+	}
+
+	grp := ix.Group(ident)
+	var defIdent *mast.Ident
+	for _, id := range grp.Idents {
+		if id.Kind == mast.Def {
+			defIdent = id
+			break
+		}
+	}
+
+	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+	rr := &resolvedRelo{
+		Group:      grp,
+		DefIdent:   defIdent,
+		File:       defIdent.File,
+		TargetFile: joinPath(pkgDir, "target.go"),
+		TargetName: "X",
+	}
+
+	plan := &Plan{}
+	computeSpans(ix, []*resolvedRelo{rr}, plan)
+
+	if !hasWarning(plan, "multi-name declaration") {
+		t.Errorf("expected multi-name warning, got: %v", plan.Warnings)
 	}
 }
 
