@@ -41,6 +41,24 @@ func TestParseReverse(t *testing.T) {
 	}
 }
 
+func TestParseMultilineTab(t *testing.T) {
+	input := "server.go\t<-\n\tServer\n\tServerOption"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "ServerOption"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
 func TestParseMultiline(t *testing.T) {
 	input := "server.go <-\n\tServer\n\tServerOption"
 	file, err := Parse("test", []byte(input))

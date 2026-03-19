@@ -108,7 +108,7 @@ func splitArrow(line string) (left, right, arrow string, ok bool) {
 	}
 	// Handle trailing "<-" for multiline rules (e.g. "dest <-" or "dest\t<-").
 	if strings.HasSuffix(line, " <-") || strings.HasSuffix(line, "\t<-") {
-		return strings.TrimSpace(line[:len(line)-2]), "", "<-", true
+		return strings.TrimSpace(line[:len(line)-3]), "", "<-", true
 	}
 	return "", "", "", false
 }
