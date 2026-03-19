@@ -3,6 +3,7 @@ package relo
 import (
 	"go/ast"
 	"go/token"
+	"path/filepath"
 	"testing"
 
 	"github.com/loov/gorelo/mast"
@@ -357,7 +358,7 @@ func TestDetectConflicts_CircularImport_NewTargetFile(t *testing.T) {
 	targetPkg := &mast.Package{
 		Name:  "target",
 		Path:  "example.com/target",
-		Files: []*mast.File{{Path: "/proj/target/existing.go", Syntax: targetSyntax}},
+		Files: []*mast.File{{Path: filepath.FromSlash("/proj/target/existing.go"), Syntax: targetSyntax}},
 	}
 	targetPkg.Files[0].Pkg = targetPkg
 
@@ -365,20 +366,20 @@ func TestDetectConflicts_CircularImport_NewTargetFile(t *testing.T) {
 	srcPkg := &mast.Package{
 		Name:  "src",
 		Path:  "example.com/src",
-		Files: []*mast.File{{Path: "/proj/src/src.go", Syntax: srcSyntax}},
+		Files: []*mast.File{{Path: filepath.FromSlash("/proj/src/src.go"), Syntax: srcSyntax}},
 	}
 	srcPkg.Files[0].Pkg = srcPkg
 
 	ix.Pkgs = []*mast.Package{targetPkg, srcPkg}
 
 	// Verify findPkgForDir finds the package by directory.
-	found := findPkgForDir(ix, "/proj/target")
+	found := findPkgForDir(ix, filepath.FromSlash("/proj/target"))
 	if found != targetPkg {
 		t.Fatalf("findPkgForDir did not find target package")
 	}
 
 	// Verify it returns nil for unknown dirs.
-	if findPkgForDir(ix, "/proj/unknown") != nil {
+	if findPkgForDir(ix, filepath.FromSlash("/proj/unknown")) != nil {
 		t.Fatalf("findPkgForDir should return nil for unknown dir")
 	}
 }

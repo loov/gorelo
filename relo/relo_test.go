@@ -30,7 +30,7 @@ func TestGolden(t *testing.T) {
 	}
 
 	for _, entry := range entries {
-		name := strings.TrimPrefix(entry, "testdata/")
+		name := strings.TrimPrefix(entry, "testdata"+string(filepath.Separator))
 		name = strings.TrimSuffix(name, ".txtar")
 		t.Run(name, func(t *testing.T) {
 			runGoldenTest(t, entry)
@@ -191,6 +191,7 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		relPath = filepath.ToSlash(relPath)
 		if fe.IsDelete {
 			delete(actual, relPath)
 		} else {
