@@ -18,7 +18,9 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 		byTarget[rr.TargetFile] = append(byTarget[rr.TargetFile], rr)
 	}
 
-	for target, rrs := range byTarget {
+	sortedTargets := sortedKeys(byTarget)
+	for _, target := range sortedTargets {
+		rrs := byTarget[target]
 		constraints := make(map[string]bool)
 		for _, rr := range rrs {
 			if rr.File != nil {
@@ -29,10 +31,7 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 		// Check for mixed constraints.
 		delete(constraints, "")
 		if len(constraints) > 1 {
-			var cs []string
-			for c := range constraints {
-				cs = append(cs, c)
-			}
+			cs := sortedKeys(constraints)
 			plan.Warnings.Addf(
 				"mixed build constraints (%s) going to %s",
 				strings.Join(cs, "; "), target)
