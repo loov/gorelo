@@ -21,13 +21,10 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 
 	// Build the set of groups being renamed and their new names.
 	renamedGroups := make(map[*mast.Group]string)
-	// Also track moved groups (for cross-package qualification).
-	movedGroups := make(map[*mast.Group]*resolvedRelo)
 	// Track which files contain moved declarations (for filtering edits).
 	movedSpans := make(map[string][]*span) // filePath -> spans being removed
 
 	for _, rr := range resolved {
-		movedGroups[rr.Group] = rr
 		if rr.TargetName != rr.Group.Name {
 			renamedGroups[rr.Group] = rr.TargetName
 		}
@@ -80,25 +77,13 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			}
 
 			// This is a use-site in non-moved code that needs renaming.
-			// For qualified references (pkg.Name), we need to handle the
-			// qualifier too if the package changes.
-			if id.Qualifier != nil {
-				// This is a qualified reference like pkg.Name.
-				// If the declaration is being moved cross-package, the
-				// qualifier might need changing too, but that's handled
-				// by the imports phase.
-				rs.byFile[id.File.Path] = append(rs.byFile[id.File.Path], edit{
-					Start: off,
-					End:   endOff,
-					New:   newName,
-				})
-			} else {
-				rs.byFile[id.File.Path] = append(rs.byFile[id.File.Path], edit{
-					Start: off,
-					End:   endOff,
-					New:   newName,
-				})
-			}
+			// For qualified references (pkg.Name), the qualifier might
+			// need changing too, but that's handled by the imports phase.
+			rs.byFile[id.File.Path] = append(rs.byFile[id.File.Path], edit{
+				Start: off,
+				End:   endOff,
+				New:   newName,
+			})
 		}
 	}
 

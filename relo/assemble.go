@@ -710,26 +710,43 @@ func removeUnusedImportsText(src string) string {
 
 // removeEmptyDeclBlocks removes empty declaration blocks like "import (\n)".
 func removeEmptyDeclBlocks(src string) string {
+	lines := strings.Split(src, "\n")
 	for _, keyword := range []string{"import", "const", "var", "type"} {
-		for {
-			pattern := keyword + " (\n)"
-			idx := strings.Index(src, pattern)
-			if idx < 0 {
-				break
+		prefix := keyword + " ("
+		var out []string
+		i := 0
+		for i < len(lines) {
+			trimmed := strings.TrimSpace(lines[i])
+			if trimmed == prefix {
+				// Scan forward for the closing ")".
+				j := i + 1
+				empty := true
+				for j < len(lines) {
+					inner := strings.TrimSpace(lines[j])
+					if inner == ")" {
+						break
+					}
+					if inner != "" {
+						empty = false
+					}
+					j++
+				}
+				if empty && j < len(lines) && strings.TrimSpace(lines[j]) == ")" {
+					// Skip the entire empty block.
+					i = j + 1
+					// Also skip surrounding blank lines.
+					for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+						i++
+					}
+					continue
+				}
 			}
-			// Remove the entire block including surrounding blank lines.
-			start := idx
-			end := idx + len(pattern)
-			for start > 0 && src[start-1] == '\n' {
-				start--
-			}
-			for end < len(src) && src[end] == '\n' {
-				end++
-			}
-			src = src[:start] + "\n" + src[end:]
+			out = append(out, lines[i])
+			i++
 		}
+		lines = out
 	}
-	return src
+	return strings.Join(lines, "\n")
 }
 
 // cleanBlankLines collapses runs of more than one blank line.
