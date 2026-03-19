@@ -16,7 +16,6 @@ import (
 // importChange describes import modifications needed for a file.
 type importChange struct {
 	Add     []importEntry     // imports to add
-	Remove  []string          // import paths to remove
 	Aliases map[string]string // importPath -> alias (from collision resolution)
 }
 
