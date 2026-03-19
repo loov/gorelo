@@ -77,6 +77,12 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 						rr.Group.Name, imp.Path.Value)
 					continue
 				}
+				if localName == "_" {
+					plan.Warnings.AddAtf(rr, ix,
+						"moved decl %s has blank import %s for side effects which cannot be automatically transferred",
+						rr.Group.Name, imp.Path.Value)
+					continue
+				}
 				if usedIdents[localName] {
 					neededImports[impPath] = imp
 				}
@@ -103,11 +109,6 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		}
 
 		// First pass: collect all local names.
-		type importInfo struct {
-			path      string
-			localName string
-			spec      *ast.ImportSpec
-		}
 		var infos []importInfo
 		for impPath, spec := range neededImports {
 			localName := importLocalName(spec, impPath)
@@ -119,29 +120,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		})
 
 		// Detect and resolve collisions.
-		byLocal := make(map[string][]int)
-		for i, info := range infos {
-			byLocal[info.localName] = append(byLocal[info.localName], i)
-		}
-
-		aliases := make(map[string]string) // importPath -> alias
-		for _, indices := range byLocal {
-			if len(indices) < 2 {
-				continue
-			}
-			for _, idx := range indices {
-				info := infos[idx]
-				alias := parentPrefixedName(info.path)
-				if alias == info.localName || usedNames[alias] {
-					base := alias
-					for j := 2; usedNames[alias]; j++ {
-						alias = base + strconv.Itoa(j)
-					}
-				}
-				usedNames[alias] = true
-				aliases[info.path] = alias
-			}
-		}
+		aliases := resolveCollisions(infos, usedNames)
 
 		for _, info := range infos {
 			entry := importEntry{Path: info.path}
@@ -169,6 +148,45 @@ func (is *importSet) ensureFile(path string) *importChange {
 		is.byFile[path] = ic
 	}
 	return ic
+}
+
+// importInfo describes a single needed import during collision resolution.
+type importInfo struct {
+	path      string
+	localName string
+	spec      *ast.ImportSpec
+}
+
+// resolveCollisions assigns aliases to imports that share the same localName.
+// The first import (by sorted order) in each collision group keeps its
+// localName; subsequent ones get a parentPrefixed alias or numeric suffix.
+// usedNames is updated in place.
+func resolveCollisions(infos []importInfo, usedNames map[string]bool) map[string]string {
+	byLocal := make(map[string][]int)
+	for i, info := range infos {
+		byLocal[info.localName] = append(byLocal[info.localName], i)
+	}
+
+	aliases := make(map[string]string) // importPath -> alias
+	for _, indices := range byLocal {
+		if len(indices) < 2 {
+			continue
+		}
+		// The first import keeps its short localName; only subsequent ones get aliased.
+		for _, idx := range indices[1:] {
+			info := infos[idx]
+			alias := parentPrefixedName(info.path)
+			if alias == info.localName || usedNames[alias] {
+				base := alias
+				for j := 2; usedNames[alias]; j++ {
+					alias = base + strconv.Itoa(j)
+				}
+			}
+			usedNames[alias] = true
+			aliases[info.path] = alias
+		}
+	}
+	return aliases
 }
 
 // findFileInIndex finds a mast.File by path in the index.
