@@ -1,7 +1,6 @@
 package relo
 
 import (
-	"fmt"
 	"go/ast"
 
 	"github.com/loov/gorelo/mast"
@@ -30,18 +29,13 @@ type FileEdit struct {
 
 // Options controls optional behaviors of Compile.
 type Options struct {
-	Stubs            bool   // generate //go:fix inline alias stubs
-	RewriteConsumers bool   // walk module tree to rewrite importers
-	ModuleRoot       string // auto-detected if empty
+	Stubs bool // generate //go:fix inline alias stubs
 }
 
 // Compile builds a Plan from a set of Relo instructions against a mast.Index.
 func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	if opts == nil {
 		opts = &Options{}
-	}
-	if opts.RewriteConsumers {
-		return nil, fmt.Errorf("RewriteConsumers is not yet implemented")
 	}
 	plan := &Plan{}
 
@@ -71,6 +65,9 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 
 	// Phase 7: compute import changes.
 	importChanges := computeImports(ix, resolved, spans, plan)
+
+	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).
+	computeConsumerEdits(ix, resolved, spans, renameEdits, importChanges, plan)
 
 	// Phase 8: assemble file edits.
 	assemble(ix, resolved, spans, renameEdits, importChanges, opts, plan)

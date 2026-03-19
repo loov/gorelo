@@ -479,6 +479,11 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			existing := plan.Edits[idx]
 			if !existing.IsDelete {
 				newSrc := applyEditsToString(existing.Content, edits)
+				if ic, ok := imports.byFile[filePath]; ok {
+					for _, entry := range ic.Add {
+						newSrc, _ = ensureImport(newSrc, entry)
+					}
+				}
 				newSrc = removeUnusedImportsText(newSrc)
 				plan.Edits[idx].Content = newSrc
 			}
@@ -492,6 +497,14 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		}
 
 		newSrc := applyEdits(src, edits)
+
+		// Apply import additions (e.g., from consumer rewriting).
+		if ic, ok := imports.byFile[filePath]; ok {
+			for _, entry := range ic.Add {
+				newSrc, _ = ensureImport(newSrc, entry)
+			}
+		}
+
 		newSrc = removeUnusedImportsText(newSrc)
 		plan.Edits = append(plan.Edits, FileEdit{
 			Path:    filePath,

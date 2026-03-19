@@ -12,17 +12,6 @@ import (
 	"github.com/loov/gorelo/relo"
 )
 
-func TestRewriteConsumersNotImplemented(t *testing.T) {
-	_, err := relo.Compile(nil, nil, &relo.Options{RewriteConsumers: true})
-	if err == nil {
-		t.Fatal("expected error when RewriteConsumers is true, got nil")
-	}
-	want := "RewriteConsumers is not yet implemented"
-	if err.Error() != want {
-		t.Fatalf("got error %q, want %q", err.Error(), want)
-	}
-}
-
 func TestGolden(t *testing.T) {
 	entries, err := os.ReadDir("testdata")
 	if err != nil {
@@ -57,8 +46,8 @@ func runGoldenTest(t *testing.T, testDir string) {
 	pkgDir := filepath.Join(tmpDir, "pkg")
 	copyDir(t, inputDir, pkgDir)
 
-	// Load the package.
-	ix, err := mast.Load(&mast.Config{Dir: pkgDir}, ".")
+	// Load all packages in the test module.
+	ix, err := mast.Load(&mast.Config{Dir: pkgDir}, "./...")
 	if err != nil {
 		t.Fatal("loading package:", err)
 	}
