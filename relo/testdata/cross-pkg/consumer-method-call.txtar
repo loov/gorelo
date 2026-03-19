@@ -1,0 +1,85 @@
+# Move a type with methods to a different package.
+# Consumer code that calls methods on instances of the moved type
+# should NOT have the method calls qualified with the package name.
+# Method calls like svc.Start() must remain as svc.Start(), not
+# become svc.dst.Start().
+
+Server -> dst/server.go
+
+@warn constructor NewServer exists but is not being moved with type Server
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+import "fmt"
+
+type Server struct {
+	Addr string
+}
+
+func (s *Server) Start() {
+	fmt.Println("starting", s.Addr)
+}
+
+func (s *Server) Stop() {
+	fmt.Println("stopping", s.Addr)
+}
+
+func NewServer(addr string) *Server {
+	return &Server{Addr: addr}
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Run() {
+	svc := src.NewServer("localhost:8080")
+	svc.Start()
+	svc.Stop()
+}
+-- golden/dst/server.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type Server struct {
+	Addr string
+}
+
+func (s *Server) Start() {
+	fmt.Println("starting", s.Addr)
+}
+
+func (s *Server) Stop() {
+	fmt.Println("stopping", s.Addr)
+}
+-- golden/src/server.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func NewServer(addr string) *dst.Server {
+	return &dst.Server{Addr: addr}
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/src"
+	"example.com/test/dst"
+)
+
+func Run() {
+	svc := src.NewServer("localhost:8080")
+	svc.Start()
+	svc.Stop()
+}
