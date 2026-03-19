@@ -45,20 +45,8 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 
 	// Collect all dependency packages for the importer.
 	depPkgs := map[string]*types.Package{}
-	var collectDeps func(pkg *packages.Package)
-	collectDeps = func(pkg *packages.Package) {
-		for _, imp := range pkg.Imports {
-			if _, ok := depPkgs[imp.PkgPath]; ok {
-				continue
-			}
-			if imp.Types != nil {
-				depPkgs[imp.PkgPath] = imp.Types
-			}
-			collectDeps(imp)
-		}
-	}
 	for _, pkg := range initial {
-		collectDeps(pkg)
+		collectTypeDeps(pkg, depPkgs)
 	}
 
 	// Register all initial packages' types before processing,
@@ -210,23 +198,11 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 	if len(missingImports) > 0 {
 		extraPkgs, loadErr := packages.Load(cfg, missingImports...)
 		if loadErr == nil {
-			var collectDeps func(p *packages.Package)
-			collectDeps = func(p *packages.Package) {
-				for _, imp := range p.Imports {
-					if _, ok := depPkgs[imp.PkgPath]; ok {
-						continue
-					}
-					if imp.Types != nil {
-						depPkgs[imp.PkgPath] = imp.Types
-					}
-					collectDeps(imp)
-				}
-			}
 			for _, ep := range extraPkgs {
 				if ep.PkgPath != "" && ep.Types != nil {
 					depPkgs[ep.PkgPath] = ep.Types
 				}
-				collectDeps(ep)
+				collectTypeDeps(ep, depPkgs)
 			}
 		}
 	}
@@ -606,4 +582,18 @@ func readModulePath(dir string) (modPath, modDir string) {
 		d = parent
 	}
 	return "", ""
+}
+
+// collectTypeDeps recursively collects typed dependency packages from
+// a packages.Package into dst.
+func collectTypeDeps(pkg *packages.Package, dst map[string]*types.Package) {
+	for _, imp := range pkg.Imports {
+		if _, ok := dst[imp.PkgPath]; ok {
+			continue
+		}
+		if imp.Types != nil {
+			dst[imp.PkgPath] = imp.Types
+		}
+		collectTypeDeps(imp, dst)
+	}
 }
