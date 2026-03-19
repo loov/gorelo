@@ -1,0 +1,91 @@
+# Same-package reorganization: scatter items from multiple source files
+# to multiple target files, with type renames, function renames, and
+# field renames all at once.
+#
+# User + CreateUser → user.go
+# Product (renamed Goods) + CreateProduct (renamed CreateGoods) → product.go
+# User#Name → FullName (field rename across all references)
+# Order and ProcessOrder stay behind in their original files.
+
+User CreateUser -> user.go
+Product=Goods CreateProduct=CreateGoods -> product.go
+User#Name=FullName
+
+@warn renaming type Product to Goods will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/types.go --
+package pkg
+
+type User struct {
+	Name string
+	Age  int
+}
+
+type Product struct {
+	Title string
+	Price float64
+}
+
+type Order struct {
+	Buyer   *User
+	Product *Product
+	Qty     int
+}
+-- input/funcs.go --
+package pkg
+
+import "fmt"
+
+func CreateUser(name string, age int) *User {
+	return &User{Name: name, Age: age}
+}
+
+func CreateProduct(title string, price float64) *Product {
+	return &Product{Title: title, Price: price}
+}
+
+func ProcessOrder(o *Order) {
+	fmt.Printf("Processing %d x %s for %s\n", o.Qty, o.Product.Title, o.Buyer.Name)
+}
+-- golden/user.go --
+package pkg
+
+func CreateUser(name string, age int) *User {
+	return &User{FullName: name, Age: age}
+}
+
+type User struct {
+	FullName string
+	Age  int
+}
+-- golden/product.go --
+package pkg
+
+func CreateGoods(title string, price float64) *Goods {
+	return &Goods{Title: title, Price: price}
+}
+
+type Goods struct {
+	Title string
+	Price float64
+}
+-- golden/types.go --
+package pkg
+
+type Order struct {
+	Buyer   *User
+	Product *Goods
+	Qty     int
+}
+-- golden/funcs.go --
+package pkg
+
+import "fmt"
+
+func ProcessOrder(o *Order) {
+	fmt.Printf("Processing %d x %s for %s\n", o.Qty, o.Product.Title, o.Buyer.FullName)
+}

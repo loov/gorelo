@@ -1,0 +1,141 @@
+# Cross-package move with stubs: move items from two source files to
+# two target files in a destination package. Stubs are generated in the
+# source for backward compatibility. A function that stays behind uses
+# the moved types through the stub aliases.
+#
+# Cache (+ Get/Set methods) + NewCache → dst/cache.go
+# Store (+ Lookup method) + NewStore → dst/store.go
+# Process stays in src/ using stub aliases.
+
+@stubs
+Cache NewCache -> dst/cache.go
+Store NewStore -> dst/store.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/cache.go --
+package src
+
+import "sync"
+
+type Cache struct {
+	mu    sync.Mutex
+	items map[string]string
+}
+
+func (c *Cache) Get(key string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.items[key]
+}
+
+func (c *Cache) Set(key, value string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items[key] = value
+}
+
+func NewCache() *Cache {
+	return &Cache{items: make(map[string]string)}
+}
+-- input/src/store.go --
+package src
+
+import "fmt"
+
+type Store struct {
+	Name  string
+	Cache *Cache
+}
+
+func (s *Store) Lookup(key string) string {
+	return s.Cache.Get(key)
+}
+
+func NewStore(name string, c *Cache) *Store {
+	return &Store{
+		Name:  name,
+		Cache: c,
+	}
+}
+
+func Process(s *Store) {
+	fmt.Println(s.Lookup("key"))
+}
+-- golden/dst/cache.go --
+package dst
+
+import (
+	"sync"
+)
+
+type Cache struct {
+	mu    sync.Mutex
+	items map[string]string
+}
+
+func (c *Cache) Get(key string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.items[key]
+}
+
+func (c *Cache) Set(key, value string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items[key] = value
+}
+
+func NewCache() *Cache {
+	return &Cache{items: make(map[string]string)}
+}
+-- golden/dst/store.go --
+package dst
+
+type Store struct {
+	Name  string
+	Cache *Cache
+}
+
+func (s *Store) Lookup(key string) string {
+	return s.Cache.Get(key)
+}
+
+func NewStore(name string, c *Cache) *Store {
+	return &Store{
+		Name:  name,
+		Cache: c,
+	}
+}
+-- golden/src/cache.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+
+//go:fix inline
+type Cache = dst.Cache
+
+//go:fix inline
+func NewCache() *Cache { return dst.NewCache() }
+-- golden/src/store.go --
+package src
+
+import (
+	"fmt"
+	"example.com/test/dst"
+)
+
+func Process(s *Store) {
+	fmt.Println(s.Lookup("key"))
+}
+
+//go:fix inline
+type Store = dst.Store
+
+//go:fix inline
+func NewStore(name string, c *Cache) *Store { return dst.NewStore(name, c) }

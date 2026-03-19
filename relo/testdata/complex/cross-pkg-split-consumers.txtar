@@ -1,0 +1,144 @@
+# Cross-package move: split items from one source package to multiple
+# target files in a destination package. Two consumer packages reference
+# the moved items and must have their imports rewritten. One item stays
+# behind in the source package.
+#
+# Service + NewService → dst/service.go
+# Handler + NewHandler + Middleware → dst/http.go
+# Utility stays in src/
+
+Service NewService -> dst/service.go
+Handler NewHandler Middleware -> dst/http.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/code.go --
+package src
+
+import "fmt"
+
+type Service struct {
+	Name string
+	Port int
+}
+
+func NewService(name string, port int) *Service {
+	return &Service{Name: name, Port: port}
+}
+
+type Handler struct {
+	Path string
+}
+
+func NewHandler(path string) *Handler {
+	return &Handler{Path: path}
+}
+
+func Middleware(next func()) func() {
+	return func() {
+		fmt.Println("before")
+		next()
+		fmt.Println("after")
+	}
+}
+
+func Utility() string {
+	return "util"
+}
+-- input/app/app.go --
+package app
+
+import "example.com/test/src"
+
+func Run() *src.Service {
+	svc := src.NewService("api", 8080)
+
+	_ = src.NewHandler("/health")
+
+	wrapped := src.Middleware(func() {})
+	wrapped()
+
+	_ = src.Utility()
+
+	return svc
+}
+-- input/cli/cli.go --
+package cli
+
+import "example.com/test/src"
+
+func Main() *src.Service {
+	return src.NewService("cli", 9090)
+}
+-- golden/dst/service.go --
+package dst
+
+type Service struct {
+	Name string
+	Port int
+}
+
+func NewService(name string, port int) *Service {
+	return &Service{Name: name, Port: port}
+}
+-- golden/dst/http.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type Handler struct {
+	Path string
+}
+
+func NewHandler(path string) *Handler {
+	return &Handler{Path: path}
+}
+
+func Middleware(next func()) func() {
+	return func() {
+		fmt.Println("before")
+		next()
+		fmt.Println("after")
+	}
+}
+-- golden/src/code.go --
+package src
+
+
+func Utility() string {
+	return "util"
+}
+-- golden/app/app.go --
+package app
+
+import (
+	"example.com/test/src"
+	"example.com/test/dst"
+)
+
+func Run() *dst.Service {
+	svc := dst.NewService("api", 8080)
+
+	_ = dst.NewHandler("/health")
+
+	wrapped := dst.Middleware(func() {})
+	wrapped()
+
+	_ = src.Utility()
+
+	return svc
+}
+-- golden/cli/cli.go --
+package cli
+
+import (
+	"example.com/test/dst"
+)
+
+func Main() *dst.Service {
+	return dst.NewService("cli", 9090)
+}
