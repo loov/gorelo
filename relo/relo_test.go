@@ -238,6 +238,8 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 }
 
 // lineDiff produces a unified-style diff between two strings.
+// Carriage returns are rendered as literal \r so that CRLF
+// vs LF differences are visible in test output.
 func lineDiff(want, got string) string {
 	wantLines := strings.Split(want, "\n")
 	gotLines := strings.Split(got, "\n")
@@ -255,10 +257,10 @@ func lineDiff(want, got string) string {
 		haveW := i < len(wantLines)
 		haveG := i < len(gotLines)
 		if haveW {
-			wl = wantLines[i]
+			wl = showCR(wantLines[i])
 		}
 		if haveG {
-			gl = gotLines[i]
+			gl = showCR(gotLines[i])
 		}
 		switch {
 		case haveW && haveG && wl == gl:
@@ -273,6 +275,11 @@ func lineDiff(want, got string) string {
 		}
 	}
 	return b.String()
+}
+
+// showCR replaces \r with the literal string \r so it is visible.
+func showCR(s string) string {
+	return strings.ReplaceAll(s, "\r", `\r`)
 }
 
 // parseRules parses the txtar comment section using rules.Parse and
