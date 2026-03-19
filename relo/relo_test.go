@@ -1,7 +1,6 @@
 package relo_test
 
 import (
-	"go/ast"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/loov/gorelo/mast"
 	"github.com/loov/gorelo/relo"
+	"github.com/loov/gorelo/rules"
 )
 
 func TestGolden(t *testing.T) {
@@ -30,12 +30,15 @@ func TestGolden(t *testing.T) {
 
 // runGoldenTest runs a single txtar-based golden test.
 //
-// The txtar comment section contains relo instructions (same format as before):
+// The txtar comment section contains rules in the same format as gorelo
+// rules files (parsed by rules.Parse):
 //
-//	Name -> target.go
-//	Name => NewName
-//	Name -> target.go => NewName
+//	Name -> target.go          # move
+//	Name=NewName               # rename only
+//	Name=NewName -> target.go  # move and rename
+//	Type#Field=NewField        # field rename
 //
+// Lines starting with "warn:" declare expected warnings.
 // Lines starting with # are comments.
 //
 // The archive files are split by prefix:
@@ -83,8 +86,8 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 		t.Fatal("loading package:", err)
 	}
 
-	// Parse relo instructions from the txtar comment.
-	relos := parseReloLines(t, string(ar.Comment), ix, pkgDir)
+	// Parse rules and relo instructions from the txtar comment.
+	f, relos := parseRules(t, string(ar.Comment), ix, pkgDir)
 
 	// Compile.
 	plan, err := relo.Compile(ix, relos, nil)
@@ -92,13 +95,11 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 		t.Fatal("compile:", err)
 	}
 
-	// Check warnings against expected list.
-	// Lines starting with "warn:" in the txtar comment are expected warnings.
+	// Check warnings against expected list from #@warn directives.
 	var expectedWarnings []string
-	for _, line := range strings.Split(string(ar.Comment), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "warn:") {
-			expectedWarnings = append(expectedWarnings, strings.TrimSpace(strings.TrimPrefix(line, "warn:")))
+	for _, d := range f.Directives {
+		if d.Key == "warn" {
+			expectedWarnings = append(expectedWarnings, d.Value)
 		}
 	}
 	var actualWarnings []string
@@ -186,72 +187,20 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 	}
 }
 
-// parseReloLines parses relo instructions from text (the txtar comment section).
-func parseReloLines(t *testing.T, text string, ix *mast.Index, pkgDir string) []relo.Relo {
+// parseRules parses the txtar comment section using rules.Parse and
+// resolves items to relo.Relo via relo.FromRules. Returns the parsed
+// file (for directive access) and the resolved relos.
+func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rules.File, []relo.Relo) {
 	t.Helper()
-	var relos []relo.Relo
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "warn:") {
-			continue
-		}
 
-		var name, moveTo, rename string
-
-		if idx := strings.Index(line, " -> "); idx >= 0 {
-			name = strings.TrimSpace(line[:idx])
-			rest := strings.TrimSpace(line[idx+4:])
-			if idx2 := strings.Index(rest, " => "); idx2 >= 0 {
-				moveTo = strings.TrimSpace(rest[:idx2])
-				rename = strings.TrimSpace(rest[idx2+4:])
-			} else {
-				moveTo = rest
-			}
-		} else if idx := strings.Index(line, " => "); idx >= 0 {
-			name = strings.TrimSpace(line[:idx])
-			rename = strings.TrimSpace(line[idx+4:])
-		} else {
-			t.Fatalf("invalid relo line: %q", line)
-		}
-
-		// Field rename: Type#Field => NewFieldName
-		var ident *ast.Ident
-		if hashIdx := strings.Index(name, "#"); hashIdx >= 0 {
-			typeName := name[:hashIdx]
-			fieldName := name[hashIdx+1:]
-			ident = findFieldDefIdent(t, ix, typeName, fieldName)
-		} else {
-			ident = findDefIdent(t, ix, name)
-		}
-
-		r := relo.Relo{Ident: ident}
-		if moveTo != "" {
-			r.MoveTo = filepath.Join(pkgDir, moveTo)
-		}
-		if rename != "" {
-			r.Rename = rename
-		}
-		relos = append(relos, r)
+	f, err := rules.Parse("test", []byte(text))
+	if err != nil {
+		t.Fatal("parsing rules:", err)
 	}
-	return relos
-}
 
-// findFieldDefIdent finds a field definition *ast.Ident within a struct type.
-func findFieldDefIdent(t *testing.T, ix *mast.Index, typeName, fieldName string) *ast.Ident {
-	t.Helper()
-	id := ix.FindFieldDef(typeName, fieldName, "")
-	if id == nil {
-		t.Fatalf("field %s#%s not found", typeName, fieldName)
+	relos, err := relo.FromRules(ix, f.Rules, pkgDir)
+	if err != nil {
+		t.Fatal("resolving rules:", err)
 	}
-	return id
-}
-
-// findDefIdent finds a definition *ast.Ident with the given name.
-func findDefIdent(t *testing.T, ix *mast.Index, name string) *ast.Ident {
-	t.Helper()
-	id := ix.FindDef(name, "")
-	if id == nil {
-		t.Fatalf("definition ident %q not found", name)
-	}
-	return id
+	return f, relos
 }

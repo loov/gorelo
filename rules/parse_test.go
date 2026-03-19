@@ -245,6 +245,50 @@ func TestParseCommentsOnly(t *testing.T) {
 	}
 }
 
+func TestParseRenameOnly(t *testing.T) {
+	input := `Foo=Bar`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Items: []Item{{Name: "Foo", Rename: "Bar"}},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseFieldRenameOnly(t *testing.T) {
+	input := "Config#Host=Hostname\nConfig#Port=ListenPort"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{
+		{Items: []Item{{Name: "Config", Field: "Host", FieldRename: "Hostname"}}},
+		{Items: []Item{{Name: "Config", Field: "Port", FieldRename: "ListenPort"}}},
+	}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseFieldWithoutRenameNoArrow(t *testing.T) {
+	// A bare field reference without rename is valid (no-op field selection).
+	input := `Server#Listen`
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Items: []Item{{Name: "Server", Field: "Listen"}},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -663,6 +707,9 @@ func FuzzParse(f *testing.F) {
 		"server.go <- github.com/loov/gorelo.Server",
 		"server.go <- github.com/loov/gorelo.Server=Core",
 		"server.go <- github.com/loov/gorelo.Server#F=G",
+		"Foo=Bar",
+		"Server#Listen=Address",
+		"Server#Listen",
 		"A B C -> x.go",
 		"x.go <- A=B C#D=E",
 		"# comment\nServer -> server.go\n# end",
@@ -682,9 +729,6 @@ func FuzzParse(f *testing.F) {
 
 		// Validate invariants on successfully parsed output.
 		for ri, r := range file.Rules {
-			if r.Dest == "" {
-				t.Fatalf("rule %d: empty destination", ri)
-			}
 			for ii, item := range r.Items {
 				if item.Name == "" {
 					t.Fatalf("rule %d item %d: empty name", ri, ii)

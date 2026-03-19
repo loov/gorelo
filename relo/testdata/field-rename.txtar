@@ -1,7 +1,7 @@
 # Rename a struct field.
 # All references (definition, selectors, composite literals) should be updated.
 
-Server#Addr => Address
+Server#Addr=Address
 
 -- input/go.mod --
 module example.com/pkg

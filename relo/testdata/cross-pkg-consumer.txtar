@@ -4,7 +4,7 @@
 
 Widget -> target/target.go
 
-warn: constructor NewWidget exists but is not being moved with type Widget
+#@warn constructor NewWidget exists but is not being moved with type Widget
 
 -- input/go.mod --
 module example.com/crosstest

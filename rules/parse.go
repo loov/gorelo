@@ -56,10 +56,18 @@ func Parse(filename string, data []byte) (*File, error) {
 }
 
 // parseLine parses a single non-indented rule line.
+//
+// Lines with an arrow ("->" or "<-") are move rules. Lines without an
+// arrow are parsed as rename-only items with an empty destination.
 func parseLine(line string) (dest string, items []Item, err error) {
 	left, right, arrow, ok := splitArrow(line)
 	if !ok {
-		return "", nil, fmt.Errorf("expected '->' or '<-'")
+		// No arrow: rename-only items (e.g. "Foo=Bar" or "T#Field=NewField").
+		if !strings.ContainsAny(line, "=#") {
+			return "", nil, fmt.Errorf("expected '->' or '<-'")
+		}
+		items, err = parseItems(line)
+		return "", items, err
 	}
 
 	switch arrow {

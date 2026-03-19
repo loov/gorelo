@@ -1,7 +1,7 @@
 # Rename a field inside a nested anonymous struct.
 # All selector expressions through the parent field should be updated.
 
-Server#TLS.CertFile => Certificate
+Server#TLS.CertFile=Certificate
 
 -- input/go.mod --
 module example.com/pkg

@@ -1,8 +1,8 @@
 # Rename multiple fields across files in the same package.
 # Selector expressions in other files should be updated.
 
-Config#Host => Hostname
-Config#Port => ListenPort
+Config#Host=Hostname
+Config#Port=ListenPort
 
 -- input/go.mod --
 module example.com/pkg

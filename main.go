@@ -82,37 +82,9 @@ func run(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []s
 	}
 
 	// Convert rules to relos.
-	var warnings relo.Warnings
-	var relos []relo.Relo
-	for _, rule := range merged.Rules {
-		for _, item := range rule.Items {
-			if item.Field != "" {
-				fieldIdent := ix.FindFieldDef(item.Name, item.Field, item.Source)
-				if fieldIdent == nil {
-					return fmt.Errorf("could not find field %q in struct %q", item.Field, item.Name)
-				}
-				relos = append(relos, relo.Relo{
-					Ident:  fieldIdent,
-					Rename: item.FieldRename,
-				})
-				continue
-			}
-
-			ident := ix.FindDef(item.Name, item.Source)
-			if ident == nil {
-				src := ""
-				if item.Source != "" {
-					src = " in " + item.Source
-				}
-				return fmt.Errorf("could not find definition for %q%s", item.Name, src)
-			}
-
-			relos = append(relos, relo.Relo{
-				Ident:  ident,
-				MoveTo: rule.Dest,
-				Rename: item.Rename,
-			})
-		}
+	relos, err := relo.FromRules(ix, merged.Rules, ".")
+	if err != nil {
+		return err
 	}
 
 	// Compile plan.
@@ -121,11 +93,8 @@ func run(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []s
 		return fmt.Errorf("compiling plan: %w", err)
 	}
 
-	// Merge warnings.
-	warnings.Add(plan.Warnings...)
-
 	// Print warnings to stderr (always).
-	for _, w := range warnings {
+	for _, w := range plan.Warnings {
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
 
