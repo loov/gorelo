@@ -1,0 +1,28 @@
+# When a type is moved cross-package, unexported methods that can't follow
+# are left in the source defining methods on a now-non-local type. The moved
+# code that calls those methods breaks. gorelo should move the unexported
+# methods too (exporting them only when called from outside the type's own
+# methods) since leaving them behind produces invalid Go.
+
+Foo Foo#x=X -> pkg1/foo.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/main.go --
+package src
+
+type Foo struct{ x int }
+
+func (f *Foo) Public() int { return f.helper() }
+
+func (f *Foo) helper() int { return f.x }
+-- golden/pkg1/foo.go --
+package pkg1
+
+type Foo struct{ X int }
+
+func (f *Foo) Public() int { return f.helper() }
+
+func (f *Foo) helper() int { return f.X }

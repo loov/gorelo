@@ -232,13 +232,19 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 					continue
 				}
 
-				// Unexported cross-package check for synthesized methods.
+				// Auto-export unexported methods that have external callers
+				// when moving cross-package. Methods only called from
+				// sibling methods of the same type stay unexported.
+				targetName := grp.Name
+				var rename string
 				if defIdent.File != nil && defIdent.File.Pkg != nil &&
 					!isSamePackageDir(defIdent.File.Pkg, typeRelo.TargetFile) {
-					if len(grp.Name) > 0 && !unicode.IsUpper(rune(grp.Name[0])) {
-						plan.Warnings.AddAtf(&resolvedRelo{DefIdent: defIdent, File: defIdent.File}, ix,
-							"unexported method %q cannot be moved cross-package; skipping synthesis", grp.Name)
-						continue
+					if len(grp.Name) > 0 && !unicode.IsUpper(rune(grp.Name[0])) &&
+						methodHasExternalUses(grp, recvType) {
+						runes := []rune(grp.Name)
+						runes[0] = unicode.ToUpper(runes[0])
+						targetName = string(runes)
+						rename = targetName
 					}
 				}
 
@@ -246,12 +252,13 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 					Relo: Relo{
 						Ident:  fd.Name,
 						MoveTo: typeRelo.TargetFile,
+						Rename: rename,
 					},
 					Group:       grp,
 					DefIdent:    defIdent,
 					File:        defIdent.File,
 					TargetFile:  typeRelo.TargetFile,
-					TargetName:  grp.Name,
+					TargetName:  targetName,
 					Synthesized: true,
 				}
 				seen[seenKey{Group: grp}] = rr
@@ -333,6 +340,41 @@ func findMethodReceiverType(rr *resolvedRelo) string {
 		}
 	}
 	return ""
+}
+
+// methodHasExternalUses reports whether grp (a method on recvType) has any
+// Use idents that are NOT inside another method of the same receiver type.
+// If all uses are within sibling methods (which move together), returning
+// false means the method does not need to be exported.
+func methodHasExternalUses(grp *mast.Group, recvType string) bool {
+	for _, id := range grp.Idents {
+		if id.Kind != mast.Use || id.File == nil {
+			continue
+		}
+		enclosing := enclosingFuncDecl(id.File.Syntax, id.Ident.Pos())
+		if enclosing == nil || enclosing.Recv == nil {
+			return true
+		}
+		if mast.ReceiverTypeName(enclosing.Recv) != recvType {
+			return true
+		}
+	}
+	return false
+}
+
+// enclosingFuncDecl returns the FuncDecl containing the given token.Pos,
+// or nil if none.
+func enclosingFuncDecl(file *ast.File, pos token.Pos) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if !ok || fd.Body == nil {
+			continue
+		}
+		if pos >= fd.Pos() && pos < fd.End() {
+			return fd
+		}
+	}
+	return nil
 }
 
 // isSamePackageDir checks if targetFile is in the same directory as pkg.

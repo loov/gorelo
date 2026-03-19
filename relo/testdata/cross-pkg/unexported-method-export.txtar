@@ -1,0 +1,36 @@
+# When a type is moved cross-package and an unexported method is called
+# from a standalone function (not a sibling method), the method must be
+# exported so the call site remains valid.
+
+Foo -> pkg1/foo.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/main.go --
+package src
+
+type Foo struct{ Name string }
+
+func (f *Foo) Public() string { return f.greet() }
+
+func (f *Foo) greet() string { return "hello " + f.Name }
+
+func CallGreet(f *Foo) string { return f.greet() }
+-- golden/pkg1/foo.go --
+package pkg1
+
+type Foo struct{ Name string }
+
+func (f *Foo) Public() string { return f.Greet() }
+
+func (f *Foo) Greet() string { return "hello " + f.Name }
+-- golden/src/main.go --
+package src
+
+import (
+	"example.com/test/pkg1"
+)
+
+func CallGreet(f *pkg1.Foo) string { return f.Greet() }

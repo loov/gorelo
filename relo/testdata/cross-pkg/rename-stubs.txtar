@@ -7,9 +7,7 @@ config=Config newConfig=NewConfig -> dst/config.go
 profiles=Profiles summary=Summary showProfile=ShowProfile -> dst/display.go
 status=Status writeReport=WriteReport -> dst/report.go
 
-@warn unexported method "validate" cannot be moved cross-package
 @warn renaming type config to Config will also change embedded field names
-@vet cannot define new methods on non-local type
 
 -- input/go.mod --
 module example.com/test
@@ -107,6 +105,14 @@ type Config struct {
 	Port int
 }
 
+// validate checks the config.
+func (c *Config) validate() error {
+	if c.Name == "" {
+		return nil
+	}
+	return nil
+}
+
 // newConfig creates a config.
 func NewConfig(name string) *Config {
 	return &Config{Name: name, Port: 8080}
@@ -180,14 +186,6 @@ package src
 import (
 	"example.com/test/dst"
 )
-
-// validate checks the config.
-func (c *config) validate() error {
-	if c.Name == "" {
-		return nil
-	}
-	return nil
-}
 
 // Remaining stays.
 func Remaining() {}

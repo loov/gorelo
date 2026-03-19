@@ -2,15 +2,13 @@
 # all at once. The source package gets stub aliases for the renamed
 # type, and remaining source code uses the renamed fields through
 # the stub type alias. Consumer packages keep using source stubs.
-# The unexported method endpoint() cannot move cross-package and
-# stays in the source using the type alias.
+# The unexported method endpoint() is auto-exported and moved with
+# the type.
 
 @stubs
 config=Config config#host=Host config#port=Port newConfig=NewConfig -> dst/config.go
 
 @warn renaming type config to Config will also change embedded field names
-@warn unexported method "endpoint" cannot be moved cross-package
-@vet cannot define new methods on non-local type
 
 -- input/go.mod --
 module example.com/test
@@ -49,9 +47,17 @@ func Setup() {
 -- golden/dst/config.go --
 package dst
 
+import (
+	"fmt"
+)
+
 type Config struct {
 	Host string
 	Port int
+}
+
+func (c *Config) endpoint() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
 func NewConfig(host string, port int) *Config {
@@ -64,10 +70,6 @@ import (
 	"fmt"
 	"example.com/test/dst"
 )
-
-func (c *config) endpoint() string {
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
-}
 
 func UseConfig() {
 	c := newConfig("localhost", 8080)

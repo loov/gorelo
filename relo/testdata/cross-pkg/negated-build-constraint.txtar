@@ -1,0 +1,23 @@
+# Move a function from a negated build-constrained file cross-package.
+# The negated build constraint should propagate without escaping.
+
+Helper -> dst/helper.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/helper.go --
+//go:build !special
+
+package src
+
+// Helper is a shared helper function.
+func Helper() string { return "help" }
+-- golden/dst/helper.go --
+//go:build !special
+
+package dst
+
+// Helper is a shared helper function.
+func Helper() string { return "help" }

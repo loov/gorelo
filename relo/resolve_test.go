@@ -441,12 +441,14 @@ func TestResolve_RenameToMainWarning(t *testing.T) {
 }
 
 // TestResolve_SynthesizedUnexportedMethodCrossPackage tests that synthesized
-// unexported methods are skipped with a warning when moving cross-package.
+// unexported methods are moved with the type cross-package. Methods with no
+// external callers stay unexported; methods called from outside the type's
+// own methods are auto-exported.
 func TestResolve_SynthesizedUnexportedMethodCrossPackage(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestIndex(t, map[string]string{
-		"main.go": "package p\n\ntype T struct{}\n\nfunc (t T) Exported() {}\n\nfunc (t T) helper() {}\n",
+		"main.go": "package p\n\ntype T struct{}\n\nfunc (t T) Exported() {}\n\nfunc (t T) helper() {}\n\nfunc CallHelper(v T) { v.helper() }\n",
 	})
 
 	typeIdent := findDefIdentInIndex(ix, "T")
@@ -464,16 +466,56 @@ func TestResolve_SynthesizedUnexportedMethodCrossPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Exported method should be synthesized, unexported should be skipped.
+	// helper is called from CallHelper (a standalone func, not a sibling
+	// method), so it should be auto-exported.
+	found := false
 	for _, rr := range resolved {
 		if rr.Group.Name == "helper" {
-			t.Errorf("unexported method 'helper' should not have been synthesized for cross-package move")
+			found = true
+			if rr.TargetName != "Helper" {
+				t.Errorf("unexported method 'helper' should be auto-exported to 'Helper', got %q", rr.TargetName)
+			}
 		}
 	}
-
-	if !hasWarning(plan, "unexported method") {
-		t.Errorf("expected warning about unexported method, got: %v", plan.Warnings)
+	if !found {
+		t.Errorf("unexported method 'helper' should have been synthesized for cross-package move")
 	}
+}
+
+// TestResolve_SynthesizedUnexportedMethodNoExternalUse tests that an
+// unexported method with no callers outside the type stays unexported.
+func TestResolve_SynthesizedUnexportedMethodNoExternalUse(t *testing.T) {
+	t.Parallel()
+
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\ntype T struct{}\n\nfunc (t T) Exported() { t.helper() }\n\nfunc (t T) helper() {}\n",
+	})
+
+	typeIdent := findDefIdentInIndex(ix, "T")
+	if typeIdent == nil {
+		t.Fatal("type T not found")
+	}
+
+	plan := &Plan{}
+	resolved, err := resolve(ix, []Relo{{
+		Ident:  typeIdent,
+		MoveTo: "/tmp/otherpkg/target.go",
+	}}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// helper is only called from Exported (a sibling method), so it
+	// should stay unexported.
+	for _, rr := range resolved {
+		if rr.Group.Name == "helper" {
+			if rr.TargetName != "helper" {
+				t.Errorf("unexported method 'helper' should stay unexported, got %q", rr.TargetName)
+			}
+			return
+		}
+	}
+	t.Errorf("unexported method 'helper' should have been synthesized")
 }
 
 // loadTestIndex creates a temporary Go module from the given files,
