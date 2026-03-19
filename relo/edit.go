@@ -27,6 +27,11 @@ func deduplicateEdits(edits []edit) []edit {
 	return out
 }
 
+// applyEditsToString is like applyEdits but accepts a string source.
+func applyEditsToString(src string, edits []edit) string {
+	return applyEdits([]byte(src), edits)
+}
+
 // applyEdits applies non-overlapping edits to src, returning the result.
 func applyEdits(src []byte, edits []edit) string {
 	if len(edits) == 0 {

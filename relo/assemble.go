@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -227,6 +228,14 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 	}
 
 	// Process source files: remove moved declarations.
+	// Build an index of target edits already emitted, so when a file is both
+	// a source and a target we update the existing edit rather than creating a
+	// conflicting duplicate.
+	targetEditIdx := make(map[string]int) // path -> index in plan.Edits
+	for i, fe := range plan.Edits {
+		targetEditIdx[fe.Path] = i
+	}
+
 	sortedSources := sortedKeys(bySource)
 	for _, sourcePath := range sortedSources {
 		rrs := bySource[sourcePath]
@@ -243,7 +252,16 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			}
 		}
 
-		src := fileContent(rrs[0].File)
+		// If a target edit was already emitted for this path, use its
+		// content as the base instead of re-reading from disk.
+		var src []byte
+		existingIdx := -1
+		if idx, ok := targetEditIdx[sourcePath]; ok {
+			src = []byte(plan.Edits[idx].Content)
+			existingIdx = idx
+		} else {
+			src = fileContent(rrs[0].File)
+		}
 		if src == nil {
 			continue
 		}
@@ -255,11 +273,34 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				continue
 			}
 			newSrc := applyEdits(src, edits)
-			plan.Edits = append(plan.Edits, FileEdit{
-				Path:    sourcePath,
-				Content: newSrc,
-			})
+			if existingIdx >= 0 {
+				plan.Edits[existingIdx].Content = newSrc
+			} else {
+				plan.Edits = append(plan.Edits, FileEdit{
+					Path:    sourcePath,
+					Content: newSrc,
+				})
+			}
 			continue
+		}
+
+		// When we are working on the already-emitted target content (which
+		// had new declarations appended), we must not remove those newly
+		// appended declarations.  The spans were computed against the
+		// original on-disk content, so they remain valid only if we apply
+		// them to the original bytes.  For the source-also-target case we
+		// therefore still use the original on-disk source for removal and
+		// then re-append the new declarations that were added by the target
+		// phase.
+		var newDeclSuffix string
+		if existingIdx >= 0 {
+			origSrc := fileContent(rrs[0].File)
+			if origSrc != nil {
+				// The target phase appended declarations after the original
+				// content.  Capture that suffix so we can re-append it.
+				newDeclSuffix = string(src)[len(origSrc):]
+				src = origSrc
+			}
 		}
 
 		// Collect byte ranges to remove.
@@ -275,8 +316,6 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				continue
 			}
 
-			// For grouped specs, we remove the individual spec.
-			// For whole decls, we remove the entire decl.
 			start, end := s.Start, s.End
 			key := [2]int{start, end}
 			if !seen[key] {
@@ -331,38 +370,75 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 		newSrc := applyEdits(src, allEdits)
 
+		// Re-append declarations that were added by the target phase.
+		if newDeclSuffix != "" {
+			newSrc += newDeclSuffix
+		}
+
 		// Clean up.
 		newSrc = removeEmptyDeclBlocks(newSrc)
 		newSrc = cleanBlankLines(newSrc)
 		newSrc = removeUnusedImportsText(newSrc)
 
 		if sourceFileIsEmpty(newSrc) {
-			plan.Edits = append(plan.Edits, FileEdit{
-				Path:     sourcePath,
-				IsDelete: true,
-			})
+			if existingIdx >= 0 {
+				plan.Edits[existingIdx] = FileEdit{
+					Path:     sourcePath,
+					IsDelete: true,
+				}
+			} else {
+				plan.Edits = append(plan.Edits, FileEdit{
+					Path:     sourcePath,
+					IsDelete: true,
+				})
+			}
 		} else {
-			plan.Edits = append(plan.Edits, FileEdit{
-				Path:    sourcePath,
-				Content: newSrc,
-			})
+			if existingIdx >= 0 {
+				plan.Edits[existingIdx] = FileEdit{
+					Path:    sourcePath,
+					Content: newSrc,
+				}
+			} else {
+				plan.Edits = append(plan.Edits, FileEdit{
+					Path:    sourcePath,
+					Content: newSrc,
+				})
+			}
 		}
 	}
 
+	// Collect already-emitted paths so we can detect conflicts.
+	emittedPaths := make(map[string]int) // path -> index in plan.Edits
+	for i, fe := range plan.Edits {
+		emittedPaths[fe.Path] = i
+	}
+
 	// Apply renames to other files not involved as source/target.
-	for filePath, edits := range renames.byFile {
+	sortedRenameFiles := sortedKeys(renames.byFile)
+	for _, filePath := range sortedRenameFiles {
+		edits := renames.byFile[filePath]
 		if _, isSource := bySource[filePath]; isSource {
-			continue
-		}
-		if _, isTarget := byTarget[filePath]; isTarget {
 			continue
 		}
 		if len(edits) == 0 {
 			continue
 		}
 
+		// If this file was already emitted as a target, apply renames
+		// to the already-computed content instead of reading from disk.
+		if idx, already := emittedPaths[filePath]; already {
+			existing := plan.Edits[idx]
+			if !existing.IsDelete {
+				newSrc := applyEditsToString(existing.Content, edits)
+				newSrc = removeUnusedImportsText(newSrc)
+				plan.Edits[idx].Content = newSrc
+			}
+			continue
+		}
+
 		src, err := readFile(filePath)
 		if err != nil {
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("cannot read %s for rename edits: %v", filePath, err))
 			continue
 		}
 

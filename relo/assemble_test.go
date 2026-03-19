@@ -382,6 +382,71 @@ func TestSortedKeys(t *testing.T) {
 	}
 }
 
+func TestAssemble_SourceTargetOverlap(t *testing.T) {
+	// Scenario: File B.go has declaration Y. We move X from A.go → B.go and
+	// move Y from B.go → C.go. B.go is both a source (Y leaves) and a target
+	// (X arrives). The result should be a single consistent edit for B.go that
+	// contains X but not Y.
+	ix := loadTestIndex(t, map[string]string{
+		"a.go": "package p\n\nfunc X() {}\n",
+		"b.go": "package p\n\nfunc Y() {}\n",
+	})
+
+	identX := findDefIdentInIndex(ix, "X")
+	identY := findDefIdentInIndex(ix, "Y")
+	if identX == nil || identY == nil {
+		t.Fatal("could not find X or Y idents")
+	}
+
+	// Build the target paths using the actual temp directory.
+	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+	bPath := joinPath(pkgDir, "b.go")
+	cPath := joinPath(pkgDir, "c.go")
+
+	plan, err := Compile(ix, []Relo{
+		{Ident: identX, MoveTo: bPath},
+		{Ident: identY, MoveTo: cPath},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check that B.go has exactly one edit that contains X but not Y.
+	bEditCount := 0
+	for _, fe := range plan.Edits {
+		if fe.Path == bPath {
+			bEditCount++
+			if fe.IsDelete {
+				t.Error("B.go should not be deleted")
+				continue
+			}
+			if !strings.Contains(fe.Content, "func X()") {
+				t.Errorf("B.go should contain func X, got:\n%s", fe.Content)
+			}
+			if strings.Contains(fe.Content, "func Y()") {
+				t.Errorf("B.go should not contain func Y, got:\n%s", fe.Content)
+			}
+		}
+	}
+	if bEditCount != 1 {
+		t.Errorf("expected exactly 1 edit for B.go, got %d", bEditCount)
+	}
+
+	// Check that C.go exists and contains Y.
+	foundC := false
+	for _, fe := range plan.Edits {
+		if fe.Path == cPath {
+			foundC = true
+			if !strings.Contains(fe.Content, "func Y()") {
+				t.Errorf("C.go should contain func Y, got:\n%s", fe.Content)
+			}
+		}
+	}
+	if !foundC {
+		t.Error("expected C.go edit to be created")
+	}
+}
+
 // mastFileWithTag creates a minimal mast.File with the given build tag.
 func mastFileWithTag(tag string) *mast.File {
 	return &mast.File{BuildTag: tag}
