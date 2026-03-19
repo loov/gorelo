@@ -1,0 +1,61 @@
+# Move functions that use stdlib imports.
+# Imports follow the declarations to the target; unused imports are cleaned up.
+
+FormatTime ParseDuration -> timeutil_out.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/timeutil.go --
+package util
+
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
+// FormatTime formats a time value.
+func FormatTime(t time.Time) string {
+	return t.Format(time.RFC3339)
+}
+
+// ParseDuration parses a human-friendly duration.
+func ParseDuration(s string) (time.Duration, error) {
+	return time.ParseDuration(strings.TrimSpace(s))
+}
+
+// JoinStrings joins strings with a separator.
+func JoinStrings(sep string, parts ...string) string {
+	return fmt.Sprintf("[%s]", strings.Join(parts, sep))
+}
+-- golden/timeutil_out.go --
+package util
+
+import (
+	"strings"
+	"time"
+)
+
+// FormatTime formats a time value.
+func FormatTime(t time.Time) string {
+	return t.Format(time.RFC3339)
+}
+
+// ParseDuration parses a human-friendly duration.
+func ParseDuration(s string) (time.Duration, error) {
+	return time.ParseDuration(strings.TrimSpace(s))
+}
+-- golden/timeutil.go --
+package util
+
+import (
+	"fmt"
+	"strings"
+)
+
+// JoinStrings joins strings with a separator.
+func JoinStrings(sep string, parts ...string) string {
+	return fmt.Sprintf("[%s]", strings.Join(parts, sep))
+}

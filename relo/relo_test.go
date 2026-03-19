@@ -15,13 +15,23 @@ import (
 )
 
 func TestGolden(t *testing.T) {
-	entries, err := filepath.Glob("testdata/*.txtar")
+	var entries []string
+	err := filepath.WalkDir("testdata", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".txtar") {
+			entries = append(entries, path)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, entry := range entries {
-		name := strings.TrimSuffix(filepath.Base(entry), ".txtar")
+		name := strings.TrimPrefix(entry, "testdata/")
+		name = strings.TrimSuffix(name, ".txtar")
 		t.Run(name, func(t *testing.T) {
 			runGoldenTest(t, entry)
 		})
@@ -87,10 +97,45 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 	}
 
 	// Parse rules and relo instructions from the txtar comment.
-	f, relos := parseRules(t, string(ar.Comment), ix, pkgDir)
+	f, relos, resolveErr := parseRules(t, string(ar.Comment), ix, pkgDir)
+
+	// Build compile options from directives.
+	var opts relo.Options
+	for _, d := range f.Directives {
+		switch d.Key {
+		case "stubs":
+			opts.Stubs = true
+		}
+	}
+
+	// Check for @error directive — if present, expect an error.
+	var expectedError string
+	for _, d := range f.Directives {
+		if d.Key == "error" {
+			expectedError = d.Value
+		}
+	}
+	if expectedError != "" {
+		combinedErr := resolveErr
+		var compileErr error
+		if combinedErr == nil {
+			_, compileErr = relo.Compile(ix, relos, &opts)
+			combinedErr = compileErr
+		}
+		if combinedErr == nil {
+			t.Fatalf("expected error containing %q, but got no error", expectedError)
+		}
+		if !strings.Contains(combinedErr.Error(), expectedError) {
+			t.Fatalf("expected error containing %q, got: %s", expectedError, combinedErr)
+		}
+		return
+	}
+	if resolveErr != nil {
+		t.Fatal("resolving rules:", resolveErr)
+	}
 
 	// Compile.
-	plan, err := relo.Compile(ix, relos, nil)
+	plan, err := relo.Compile(ix, relos, &opts)
 	if err != nil {
 		t.Fatal("compile:", err)
 	}
@@ -190,7 +235,7 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 // parseRules parses the txtar comment section using rules.Parse and
 // resolves items to relo.Relo via relo.FromRules. Returns the parsed
 // file (for directive access) and the resolved relos.
-func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rules.File, []relo.Relo) {
+func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rules.File, []relo.Relo, error) {
 	t.Helper()
 
 	f, err := rules.Parse("test", []byte(text))
@@ -200,7 +245,7 @@ func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rule
 
 	relos, err := relo.FromRules(ix, f.Rules, pkgDir)
 	if err != nil {
-		t.Fatal("resolving rules:", err)
+		return f, nil, err
 	}
-	return f, relos
+	return f, relos, nil
 }

@@ -1,0 +1,249 @@
+# Cross-package move with stubs left behind via @stubs directive.
+# Stubs with //go:fix inline directives are created in the source.
+
+@stubs
+credential=Credential lookupAlias=LookupAlias deleteAlias=DeleteAlias listKeys=ListKeys VerifyAll -> dst/auth.go
+config=Config newConfig=NewConfig -> dst/config.go
+profiles=Profiles summary=Summary showProfile=ShowProfile -> dst/display.go
+status=Status writeReport=WriteReport -> dst/report.go
+
+@warn unexported method "validate" cannot be moved cross-package
+@warn renaming type config to Config will also change embedded field names
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+// config holds configuration.
+type config struct {
+	Name string
+	Port int
+}
+
+// validate checks the config.
+func (c *config) validate() error {
+	if c.Name == "" {
+		return nil
+	}
+	return nil
+}
+
+// newConfig creates a config.
+func newConfig(name string) *config {
+	return &config{Name: name, Port: 8080}
+}
+
+// Remaining stays.
+func Remaining() {}
+-- input/src/display.go --
+package src
+
+import "fmt"
+
+var profiles = map[string]string{"alice": "engineer"}
+
+func summary() string {
+	return "some details"
+}
+
+func showProfile(name string) {
+	if info, ok := profiles[name]; ok {
+		fmt.Println(info)
+	}
+}
+-- input/src/auth.go --
+package src
+
+type credential struct {
+	Name string
+}
+
+func lookupAlias(dir, id string) string {
+	return dir + "/" + id
+}
+
+func deleteAlias(dir, alias string) {
+	_ = dir + alias
+}
+
+func listKeys(dir string) []string {
+	return []string{dir}
+}
+
+// VerifyAll is already exported, no rename needed.
+func VerifyAll(dir string) {
+	var c credential
+	c.Name = lookupAlias(dir, "id")
+	deleteAlias(dir, c.Name)
+	keys := listKeys(dir)
+	_ = keys
+}
+-- input/src/report.go --
+package src
+
+import "fmt"
+
+// status returns the status string.
+func status() string {
+	return "ok"
+}
+
+// writeReport writes a report about an item.
+/* It calls status internally. */
+func writeReport(name string) {
+	s := status()
+	fmt.Printf("status for %s: %s\n", name, s)
+}
+-- golden/dst/config.go --
+package dst
+
+// config holds configuration.
+type Config struct {
+	Name string
+	Port int
+}
+
+// newConfig creates a config.
+func NewConfig(name string) *Config {
+	return &Config{Name: name, Port: 8080}
+}
+-- golden/dst/auth.go --
+package dst
+
+type Credential struct {
+	Name string
+}
+
+func LookupAlias(dir, id string) string {
+	return dir + "/" + id
+}
+
+func DeleteAlias(dir, alias string) {
+	_ = dir + alias
+}
+
+func ListKeys(dir string) []string {
+	return []string{dir}
+}
+
+// VerifyAll is already exported, no rename needed.
+func VerifyAll(dir string) {
+	var c Credential
+	c.Name = LookupAlias(dir, "id")
+	DeleteAlias(dir, c.Name)
+	keys := ListKeys(dir)
+	_ = keys
+}
+-- golden/dst/display.go --
+package dst
+
+import (
+	"fmt"
+)
+
+var Profiles = map[string]string{"alice": "engineer"}
+
+func Summary() string {
+	return "some details"
+}
+
+func ShowProfile(name string) {
+	if info, ok := Profiles[name]; ok {
+		fmt.Println(info)
+	}
+}
+-- golden/dst/report.go --
+package dst
+
+import (
+	"fmt"
+)
+
+// status returns the status string.
+func Status() string {
+	return "ok"
+}
+
+// writeReport writes a report about an item.
+/* It calls status internally. */
+func WriteReport(name string) {
+	s := Status()
+	fmt.Printf("status for %s: %s\n", name, s)
+}
+-- golden/src/config.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// validate checks the config.
+func (c *Config) validate() error {
+	if c.Name == "" {
+		return nil
+	}
+	return nil
+}
+
+// Remaining stays.
+func Remaining() {}
+
+//go:fix inline
+type config = dst.Config
+
+//go:fix inline
+func newConfig(name string) *config { return dst.NewConfig(name) }
+-- golden/src/display.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+
+// Deprecated: Use dst.Profiles instead.
+var profiles = dst.Profiles
+
+//go:fix inline
+func summary() string { return dst.Summary() }
+
+//go:fix inline
+func showProfile(name string) { dst.ShowProfile(name) }
+-- golden/src/auth.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+
+//go:fix inline
+type credential = dst.Credential
+
+//go:fix inline
+func lookupAlias(dir, id string) string { return dst.LookupAlias(dir, id) }
+
+//go:fix inline
+func deleteAlias(dir, alias string) { dst.DeleteAlias(dir, alias) }
+
+//go:fix inline
+func listKeys(dir string) []string { return dst.ListKeys(dir) }
+
+//go:fix inline
+func VerifyAll(dir string) { dst.VerifyAll(dir) }
+-- golden/src/report.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+
+//go:fix inline
+func status() string { return dst.Status() }
+
+//go:fix inline
+func writeReport(name string) { dst.WriteReport(name) }

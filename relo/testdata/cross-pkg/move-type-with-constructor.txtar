@@ -1,0 +1,78 @@
+# Move a type and its constructor to a different package.
+# A consumer in a separate package gets updated imports.
+
+Config NewConfig -> dst/config.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+import "time"
+
+// Config holds application configuration.
+type Config struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+}
+
+// NewConfig creates a Config with defaults.
+func NewConfig() *Config {
+	return &Config{
+		Host:    "localhost",
+		Port:    8080,
+		Timeout: 30 * time.Second,
+	}
+}
+
+// Other stays.
+func Other() {}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func MakeConfig() *src.Config {
+	return src.NewConfig()
+}
+-- golden/src/config.go --
+package src
+
+
+// Other stays.
+func Other() {}
+-- golden/dst/config.go --
+package dst
+
+import (
+	"time"
+)
+
+// Config holds application configuration.
+type Config struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+}
+
+// NewConfig creates a Config with defaults.
+func NewConfig() *Config {
+	return &Config{
+		Host:    "localhost",
+		Port:    8080,
+		Timeout: 30 * time.Second,
+	}
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func MakeConfig() *dst.Config {
+	return dst.NewConfig()
+}

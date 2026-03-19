@@ -1,0 +1,60 @@
+# Move a type and its methods with @fmt gofmt directive.
+
+@fmt gofmt
+Server -> server.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// Server handles HTTP requests.
+type Server struct {
+	Addr string
+	Mux  *http.ServeMux
+}
+
+// Start starts the server.
+func (s *Server) Start() error {
+	return http.ListenAndServe(s.Addr, s.Mux)
+}
+
+// Greet prints a greeting.
+func Greet(name string) {
+	fmt.Println("hello", name)
+}
+-- golden/source.go --
+package mypkg
+
+import (
+	"fmt"
+)
+
+// Greet prints a greeting.
+func Greet(name string) {
+	fmt.Println("hello", name)
+}
+-- golden/server.go --
+package mypkg
+
+import (
+	"net/http"
+)
+
+// Server handles HTTP requests.
+type Server struct {
+	Addr string
+	Mux  *http.ServeMux
+}
+
+// Start starts the server.
+func (s *Server) Start() error {
+	return http.ListenAndServe(s.Addr, s.Mux)
+}

@@ -1,0 +1,88 @@
+# Move a function from a build-constrained file.
+# The build constraint should propagate to the target file.
+
+LinuxOnly -> platform.go
+platform_default.go:GetHomeDir -> homedir.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/platform_default.go --
+//go:build !alt
+
+package mypkg
+
+// GetHomeDir returns the home directory.
+func GetHomeDir() string {
+	return "/home/user"
+}
+
+// OtherDefault stays.
+func OtherDefault() {}
+-- input/linux_only.go --
+//go:build linux
+
+package mypkg
+
+// LinuxOnly is linux-specific.
+func LinuxOnly() string {
+	return "linux"
+}
+
+// OtherLinux stays.
+func OtherLinux() string {
+	return "other"
+}
+-- input/platform_alt.go --
+//go:build alt
+
+package mypkg
+
+// GetHomeDir returns the home directory for alt platform.
+func GetHomeDir() string {
+	return "/alt/home"
+}
+-- golden/platform.go --
+linux
+
+package mypkg
+
+// LinuxOnly is linux-specific.
+func LinuxOnly() string {
+	return "linux"
+}
+-- golden/homedir.go --
+!alt
+
+package mypkg
+
+// GetHomeDir returns the home directory.
+func GetHomeDir() string {
+	return "/home/user"
+}
+-- golden/platform_alt.go --
+//go:build alt
+
+package mypkg
+
+// GetHomeDir returns the home directory for alt platform.
+func GetHomeDir() string {
+	return "/alt/home"
+}
+-- golden/linux_only.go --
+//go:build linux
+
+package mypkg
+
+// OtherLinux stays.
+func OtherLinux() string {
+	return "other"
+}
+-- golden/platform_default.go --
+//go:build !alt
+
+package mypkg
+
+// OtherDefault stays.
+func OtherDefault() {}

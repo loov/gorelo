@@ -1,0 +1,49 @@
+# Move a function into an existing target file.
+
+Greet -> existing.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/funcs.go --
+package mypkg
+
+import "fmt"
+
+// Greet greets someone.
+func Greet(greeting string) {
+	fmt.Println(greeting)
+}
+
+// Other stays.
+func Other() {}
+-- input/existing.go --
+package mypkg
+
+import "fmt"
+
+// Farewell says goodbye.
+func Farewell(name string) {
+	fmt.Println("goodbye", name)
+}
+-- golden/existing.go --
+package mypkg
+
+import "fmt"
+
+// Farewell says goodbye.
+func Farewell(name string) {
+	fmt.Println("goodbye", name)
+}
+
+// Greet greets someone.
+func Greet(greeting string) {
+	fmt.Println(greeting)
+}
+-- golden/funcs.go --
+package mypkg
+
+
+// Other stays.
+func Other() {}

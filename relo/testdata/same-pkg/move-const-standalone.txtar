@@ -1,0 +1,45 @@
+# Move standalone constants and a var to a new file.
+
+MaxRetries DefaultTimeout ErrNotFound -> config_out.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/config.go --
+package mypkg
+
+import "errors"
+
+// MaxRetries is the max number of retries.
+const MaxRetries = 3
+
+// DefaultTimeout in seconds.
+const DefaultTimeout = 30
+
+// ErrNotFound is returned when a resource is missing.
+var ErrNotFound = errors.New("not found")
+
+// InternalFlag is not moved.
+var InternalFlag = true
+-- golden/config_out.go --
+package mypkg
+
+import (
+	"errors"
+)
+
+// MaxRetries is the max number of retries.
+const MaxRetries = 3
+
+// DefaultTimeout in seconds.
+const DefaultTimeout = 30
+
+// ErrNotFound is returned when a resource is missing.
+var ErrNotFound = errors.New("not found")
+-- golden/config.go --
+package mypkg
+
+
+// InternalFlag is not moved.
+var InternalFlag = true

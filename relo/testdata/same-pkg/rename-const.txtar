@@ -1,0 +1,34 @@
+# Rename unexported constants to exported while moving.
+
+maxSize=MaxSize defaultName=DefaultName -> config.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/consts.go --
+package mypkg
+
+const (
+	maxSize     = 100
+	defaultName = "hello"
+)
+
+var maxRetries = 3
+
+// OtherConst stays.
+func OtherConst() {}
+-- golden/config.go --
+package mypkg
+
+const (
+	MaxSize     = 100
+	DefaultName = "hello"
+)
+-- golden/consts.go --
+package mypkg
+
+var maxRetries = 3
+
+// OtherConst stays.
+func OtherConst() {}

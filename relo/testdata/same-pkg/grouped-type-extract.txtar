@@ -1,0 +1,49 @@
+# Extract one type from a grouped type() block.
+
+Bar -> bar.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/types.go --
+package mypkg
+
+type (
+	// Foo is a foo.
+	Foo struct {
+		X int
+	}
+
+	// Bar is a bar.
+	Bar struct {
+		Y string
+	}
+
+	// Baz is a baz.
+	Baz struct {
+		Z bool
+	}
+)
+-- golden/bar.go --
+package mypkg
+
+// Bar is a bar.
+type Bar struct {
+	Y string
+}
+-- golden/types.go --
+package mypkg
+
+type (
+	// Foo is a foo.
+	Foo struct {
+		X int
+	}
+
+
+	// Baz is a baz.
+	Baz struct {
+		Z bool
+	}
+)

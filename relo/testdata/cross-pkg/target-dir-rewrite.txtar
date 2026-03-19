@@ -1,0 +1,42 @@
+# Move declarations to a package that already imports and uses them.
+# The tool warns about potential circular imports.
+
+Greet MaxSize -> dst/moved.go
+
+@warn may create a circular import
+@warn may create a circular import
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+func Greet() string { return "hi" }
+
+var MaxSize = 100
+-- input/dst/existing.go --
+package dst
+
+import "example.com/test/src"
+
+func Wrapper() string { return src.Greet() }
+
+var Limit = src.MaxSize
+-- golden/dst/moved.go --
+package dst
+
+func Greet() string { return "hi" }
+
+var MaxSize = 100
+-- golden/dst/existing.go --
+package dst
+
+import (
+	"example.com/test/dst"
+)
+
+func Wrapper() string { return dst.Greet() }
+
+var Limit = dst.MaxSize

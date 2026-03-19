@@ -1,0 +1,48 @@
+# Move a function, leaving an unused import behind in the source.
+# The unused import should be removed.
+
+FormatDate -> dateutil.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/dates.go --
+package util
+
+import (
+	"fmt"
+	"time"
+)
+
+// FormatDate formats a date value.
+func FormatDate(t time.Time) string {
+	return t.Format(time.DateOnly)
+}
+
+// PrintHello prints hello.
+func PrintHello() {
+	fmt.Println("hello")
+}
+-- golden/dateutil.go --
+package util
+
+import (
+	"time"
+)
+
+// FormatDate formats a date value.
+func FormatDate(t time.Time) string {
+	return t.Format(time.DateOnly)
+}
+-- golden/dates.go --
+package util
+
+import (
+	"fmt"
+)
+
+// PrintHello prints hello.
+func PrintHello() {
+	fmt.Println("hello")
+}

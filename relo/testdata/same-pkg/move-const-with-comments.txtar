@@ -1,0 +1,33 @@
+# Move constants preserving doc comments and line comments.
+
+ENONE EGEN -> errors.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/commented.go --
+package mypkg
+
+const (
+	// ENONE is success.
+	ENONE = 0 // SUCCESS
+	// EGEN is a general error.
+	EGEN  = 1 // GENERAL
+	Other = 2
+)
+-- golden/errors.go --
+package mypkg
+
+const (
+	// ENONE is success.
+	ENONE = 0 // SUCCESS
+	// EGEN is a general error.
+	EGEN  = 1 // GENERAL
+)
+-- golden/commented.go --
+package mypkg
+
+const (
+	Other = 2
+)

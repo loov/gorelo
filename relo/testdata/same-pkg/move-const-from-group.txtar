@@ -1,0 +1,35 @@
+# Extract constants from a grouped const() block.
+
+StatusActive StatusPending -> statuses.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/grouped.go --
+package mypkg
+
+const (
+	StatusActive  = "active"
+	StatusPending = "pending"
+	StatusClosed  = "closed"
+)
+
+// ResetStatus stays.
+func ResetStatus() {}
+-- golden/statuses.go --
+package mypkg
+
+const (
+	StatusActive  = "active"
+	StatusPending = "pending"
+)
+-- golden/grouped.go --
+package mypkg
+
+const (
+	StatusClosed  = "closed"
+)
+
+// ResetStatus stays.
+func ResetStatus() {}

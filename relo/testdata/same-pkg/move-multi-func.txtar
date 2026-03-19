@@ -1,0 +1,54 @@
+# Move multiple functions to a new file.
+
+Add Subtract Multiply -> math_ops.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/math.go --
+package mypkg
+
+// Add returns a + b.
+func Add(a, b int) int {
+	return a + b
+}
+
+// Subtract returns a - b.
+func Subtract(a, b int) int {
+	return a - b
+}
+
+// Multiply returns a * b.
+func Multiply(a, b int) int {
+	return a * b
+}
+
+// Divide returns a / b.
+func Divide(a, b int) int {
+	return a / b
+}
+-- golden/math_ops.go --
+package mypkg
+
+// Add returns a + b.
+func Add(a, b int) int {
+	return a + b
+}
+
+// Subtract returns a - b.
+func Subtract(a, b int) int {
+	return a - b
+}
+
+// Multiply returns a * b.
+func Multiply(a, b int) int {
+	return a * b
+}
+-- golden/math.go --
+package mypkg
+
+// Divide returns a / b.
+func Divide(a, b int) int {
+	return a / b
+}

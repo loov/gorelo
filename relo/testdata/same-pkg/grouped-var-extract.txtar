@@ -1,0 +1,56 @@
+# Extract two vars from a grouped var() block.
+
+ErrTimeout ErrCanceled -> sentinel.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/vars.go --
+package mypkg
+
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrTimeout indicates an operation timed out.
+var ErrTimeout = errors.New("timeout")
+
+// ErrCanceled indicates an operation was canceled.
+var ErrCanceled = errors.New("canceled")
+
+// ErrInternal indicates an internal error.
+var ErrInternal = errors.New("internal error")
+
+// Wrap wraps an error with a message.
+func Wrap(err error, msg string) error {
+	return fmt.Errorf("%s: %w", msg, err)
+}
+-- golden/sentinel.go --
+package mypkg
+
+import (
+	"errors"
+)
+
+// ErrTimeout indicates an operation timed out.
+var ErrTimeout = errors.New("timeout")
+
+// ErrCanceled indicates an operation was canceled.
+var ErrCanceled = errors.New("canceled")
+-- golden/vars.go --
+package mypkg
+
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrInternal indicates an internal error.
+var ErrInternal = errors.New("internal error")
+
+// Wrap wraps an error with a message.
+func Wrap(err error, msg string) error {
+	return fmt.Errorf("%s: %w", msg, err)
+}

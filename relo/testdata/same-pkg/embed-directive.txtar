@@ -1,0 +1,32 @@
+# Move a variable with a //go:embed directive.
+# The embed directive follows but the blank import stays in the source.
+
+Content -> embedded.go
+
+@warn moved decl Content has blank import "embed" for side effects
+@warn moved decl Content has a //go:embed directive
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+import _ "embed"
+
+//go:embed data.txt
+var Content string
+
+func Other() {}
+-- golden/source.go --
+package mypkg
+
+import _ "embed"
+
+func Other() {}
+-- golden/embedded.go --
+package mypkg
+
+//go:embed data.txt
+var Content string

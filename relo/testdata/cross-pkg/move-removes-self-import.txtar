@@ -1,0 +1,35 @@
+# Move a type into a package it already references.
+# The import of the target package should be removed and references simplified.
+
+Entry -> core/entry.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/core/record.go --
+package core
+
+// Record is the base type.
+type Record struct{}
+-- input/ext/entry.go --
+package ext
+
+import "example.com/test/core"
+
+// Entry wraps a Record.
+type Entry struct {
+	Record *core.Record
+}
+-- golden/core/record.go --
+package core
+
+// Record is the base type.
+type Record struct{}
+-- golden/core/entry.go --
+package core
+
+// Entry wraps a Record.
+type Entry struct {
+	Record *Record
+}

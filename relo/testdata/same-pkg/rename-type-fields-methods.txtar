@@ -1,0 +1,73 @@
+# Move a type to a new file and rename its fields.
+# The move and field renames must be in separate rules.
+
+Config -> moved.go
+Config#host=Host
+Config#port=Port
+
+@warn constructor NewConfig exists but is not being moved with type Config
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+import "fmt"
+
+// Config holds configuration.
+type Config struct {
+	host string
+	port int
+}
+
+// GetAddr returns the address.
+func (c *Config) GetAddr() string {
+	return fmt.Sprintf("%s:%d", c.host, c.port)
+}
+-- input/other.go --
+package mypkg
+
+import "fmt"
+
+// PrintConfig prints the config.
+func PrintConfig(c *Config) {
+	fmt.Println(c.host, c.port)
+}
+
+// NewConfig creates a Config.
+func NewConfig(host string, port int) Config {
+	return Config{host: host, port: port}
+}
+-- golden/moved.go --
+package mypkg
+
+import (
+	"fmt"
+)
+
+// Config holds configuration.
+type Config struct {
+	Host string
+	Port int
+}
+
+// GetAddr returns the address.
+func (c *Config) GetAddr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+-- golden/other.go --
+package mypkg
+
+import "fmt"
+
+// PrintConfig prints the config.
+func PrintConfig(c *Config) {
+	fmt.Println(c.Host, c.Port)
+}
+
+// NewConfig creates a Config.
+func NewConfig(host string, port int) Config {
+	return Config{Host: host, Port: port}
+}

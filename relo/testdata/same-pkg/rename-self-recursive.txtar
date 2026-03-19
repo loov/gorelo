@@ -1,0 +1,51 @@
+# Rename a self-recursive function.
+# References in same file and other files must update.
+
+recursive=Recursive -> selfref_moved.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/selfref.go --
+package mypkg
+
+func recursive(x int) int {
+	if x <= 0 {
+		return 0
+	}
+	return x + recursive(x-1)
+}
+
+// Caller uses recursive from the same file.
+func Caller() int {
+	return recursive(5)
+}
+-- input/caller.go --
+package mypkg
+
+func ExternalCaller() int {
+	return recursive(10)
+}
+-- golden/selfref_moved.go --
+package mypkg
+
+func Recursive(x int) int {
+	if x <= 0 {
+		return 0
+	}
+	return x + Recursive(x-1)
+}
+-- golden/selfref.go --
+package mypkg
+
+// Caller uses recursive from the same file.
+func Caller() int {
+	return Recursive(5)
+}
+-- golden/caller.go --
+package mypkg
+
+func ExternalCaller() int {
+	return Recursive(10)
+}

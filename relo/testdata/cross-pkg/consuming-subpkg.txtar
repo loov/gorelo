@@ -1,0 +1,47 @@
+# Move a function to a different package.
+# A sub-package of the source that imports it should be rewritten.
+
+MyFunc -> dst/moved.go
+
+-- input/go.mod --
+module example.com/subpkgtest
+
+go 1.21
+-- input/src/a.go --
+package src
+
+// MyFunc does something.
+func MyFunc() int { return 42 }
+
+// Keep stays.
+func Keep() int { return 0 }
+-- input/src/sub/b.go --
+package sub
+
+import "example.com/subpkgtest/src"
+
+// CallIt calls MyFunc from the parent package.
+func CallIt() int {
+	return src.MyFunc()
+}
+-- golden/src/a.go --
+package src
+
+// Keep stays.
+func Keep() int { return 0 }
+-- golden/src/sub/b.go --
+package sub
+
+import (
+	"example.com/subpkgtest/dst"
+)
+
+// CallIt calls MyFunc from the parent package.
+func CallIt() int {
+	return dst.MyFunc()
+}
+-- golden/dst/moved.go --
+package dst
+
+// MyFunc does something.
+func MyFunc() int { return 42 }

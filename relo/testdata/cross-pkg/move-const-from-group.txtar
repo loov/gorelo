@@ -1,0 +1,35 @@
+# Move constants from a grouped const() block to a different package.
+
+StatusActive StatusPending -> dst/consts.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/consts.go --
+package src
+
+const (
+	StatusActive  = "active"
+	StatusPending = "pending"
+	StatusClosed  = "closed"
+)
+
+// ResetStatus stays.
+func ResetStatus() {}
+-- golden/src/consts.go --
+package src
+
+const (
+	StatusClosed  = "closed"
+)
+
+// ResetStatus stays.
+func ResetStatus() {}
+-- golden/dst/consts.go --
+package dst
+
+const (
+	StatusActive  = "active"
+	StatusPending = "pending"
+)

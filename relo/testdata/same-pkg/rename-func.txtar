@@ -1,0 +1,47 @@
+# Rename unexported functions to exported while moving.
+
+helper=Helper greet=Greet -> public.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/funcs.go --
+package mypkg
+
+import "fmt"
+
+// helper is a private helper.
+func helper(x int) int {
+	return x * 2
+}
+
+// greet prints a greeting.
+func greet(name string) {
+	fmt.Println("hello", name)
+}
+
+// Other stays.
+func Other() {}
+-- golden/public.go --
+package mypkg
+
+import (
+	"fmt"
+)
+
+// helper is a private helper.
+func Helper(x int) int {
+	return x * 2
+}
+
+// greet prints a greeting.
+func Greet(name string) {
+	fmt.Println("hello", name)
+}
+-- golden/funcs.go --
+package mypkg
+
+
+// Other stays.
+func Other() {}

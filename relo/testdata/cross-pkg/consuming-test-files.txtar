@@ -1,0 +1,53 @@
+# Move a function to a different package.
+# Consumer test files should have their imports updated too.
+
+Hello -> dst/dst.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+func Hello() string { return "hello" }
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Use() string { return src.Hello() }
+-- input/consumer/consumer_test.go --
+package consumer
+
+import (
+	"testing"
+	"example.com/test/src"
+)
+
+func TestHello(t *testing.T) {
+	_ = src.Hello()
+}
+-- golden/dst/dst.go --
+package dst
+
+func Hello() string { return "hello" }
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string { return dst.Hello() }
+-- golden/consumer/consumer_test.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+	"testing"
+)
+
+func TestHello(t *testing.T) {
+	_ = dst.Hello()
+}

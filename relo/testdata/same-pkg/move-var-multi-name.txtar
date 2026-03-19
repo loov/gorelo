@@ -1,0 +1,25 @@
+# Move a multi-name var spec (var A, B = 1, 2).
+
+A B -> moved.go
+
+@warn A is part of a multi-name declaration
+@warn B is part of a multi-name declaration
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/multi.go --
+package mypkg
+
+var A, B = 1, 2
+
+var C = 3
+-- golden/moved.go --
+package mypkg
+
+var A, B = 1, 2
+-- golden/multi.go --
+package mypkg
+
+var C = 3

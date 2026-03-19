@@ -1,0 +1,53 @@
+# Move both functions to the same target file.
+# Their imports collide on "rand" — aliases must be added.
+
+RandBytes RandInt -> merged.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/crypto.go --
+package test
+
+import (
+	"crypto/rand"
+	"io"
+)
+
+// RandBytes returns n random bytes from crypto/rand.
+func RandBytes(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	_, err := io.ReadFull(rand.Reader, buf)
+	return buf, err
+}
+-- input/mathrand.go --
+package test
+
+import (
+	"math/rand"
+)
+
+// RandInt returns a random integer from math/rand.
+func RandInt() int {
+	return rand.Int()
+}
+-- golden/merged.go --
+package test
+
+import (
+	"crypto/rand"
+	"io"
+)
+
+// RandBytes returns n random bytes from crypto/rand.
+func RandBytes(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	_, err := io.ReadFull(rand.Reader, buf)
+	return buf, err
+}
+
+// RandInt returns a random integer from math/rand.
+func RandInt() int {
+	return rand.Int()
+}

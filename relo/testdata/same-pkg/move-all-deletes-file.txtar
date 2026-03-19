@@ -1,0 +1,24 @@
+# Move all declarations from a file, causing the source file to be deleted.
+
+X Y -> target.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/doomed.go --
+package mypkg
+
+// X does x.
+func X() {}
+
+// Y does y.
+func Y() {}
+-- golden/target.go --
+package mypkg
+
+// X does x.
+func X() {}
+
+// Y does y.
+func Y() {}

@@ -1,0 +1,46 @@
+# Rename and move unexported declarations from multiple source files
+# to multiple target packages.
+
+formatTitle=FormatTitle minRetries=MinRetries maxRetries=MaxRetries -> config/config.go
+isValid=IsValid defaults=Defaults -> validate/validate.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/validate.go --
+package src
+
+func isValid(id string) bool {
+	return len(id) > 0
+}
+
+var defaults = map[string]string{"timeout": "30s"}
+-- input/src/config.go --
+package src
+
+func formatTitle(name string) string {
+	return "Title: " + name
+}
+
+var minRetries = 5
+
+var maxRetries = 100
+-- golden/config/config.go --
+package config
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+
+var MinRetries = 5
+
+var MaxRetries = 100
+-- golden/validate/validate.go --
+package validate
+
+func IsValid(id string) bool {
+	return len(id) > 0
+}
+
+var Defaults = map[string]string{"timeout": "30s"}

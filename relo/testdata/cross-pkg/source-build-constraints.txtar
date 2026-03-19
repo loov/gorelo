@@ -1,0 +1,19 @@
+# Move a function from one package to another.
+# The source file should be deleted when empty.
+
+Helper -> dst/helper.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/common.go --
+package src
+
+// Helper is a shared helper function.
+func Helper() string { return "help" }
+-- golden/dst/helper.go --
+package dst
+
+// Helper is a shared helper function.
+func Helper() string { return "help" }

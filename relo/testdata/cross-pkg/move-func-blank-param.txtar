@@ -1,0 +1,30 @@
+# Move a function with a blank parameter to a different package.
+
+FormatLabel -> dst/format.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/format.go --
+package src
+
+// FormatLabel formats a label, ignoring the input prefix.
+func FormatLabel(_ string) string {
+	return "formatted"
+}
+
+// ParseInput stays here.
+func ParseInput() {}
+-- golden/src/format.go --
+package src
+
+// ParseInput stays here.
+func ParseInput() {}
+-- golden/dst/format.go --
+package dst
+
+// FormatLabel formats a label, ignoring the input prefix.
+func FormatLabel(_ string) string {
+	return "formatted"
+}

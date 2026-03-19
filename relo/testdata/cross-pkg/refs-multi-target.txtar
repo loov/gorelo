@@ -1,0 +1,68 @@
+# Move declarations to multiple target packages.
+# An external consumer package should have its references rewritten.
+
+FormatTitle MinRetries MaxRetries -> config/config.go
+ErrNotFound ErrTimeout -> config/errors.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+
+var MinRetries = 5
+
+var MaxRetries = 100
+-- input/src/errors.go --
+package src
+
+const ErrNotFound = "not_found"
+
+const ErrTimeout = "timeout"
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Verify(home string) {
+	name := src.FormatTitle(home)
+	_ = name
+	_ = src.MinRetries
+	_ = src.MaxRetries
+	_ = src.ErrNotFound
+}
+-- golden/config/config.go --
+package config
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+
+var MinRetries = 5
+
+var MaxRetries = 100
+-- golden/config/errors.go --
+package config
+
+const ErrNotFound = "not_found"
+
+const ErrTimeout = "timeout"
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/config"
+)
+
+func Verify(home string) {
+	name := config.FormatTitle(home)
+	_ = name
+	_ = config.MinRetries
+	_ = config.MaxRetries
+	_ = config.ErrNotFound
+}

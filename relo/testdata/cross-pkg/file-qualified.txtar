@@ -1,0 +1,42 @@
+# File-qualified cross-package move.
+# Use file qualification to select which file's declaration to move
+# when the same name exists in multiple files (different build tags).
+
+helpers.go:Helper -> dst/helper.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/helpers.go --
+package src
+
+// Helper from helpers.go.
+func Helper() string { return "default" }
+
+// Other stays.
+func Other() {}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Use() string { return src.Helper() }
+-- golden/src/helpers.go --
+package src
+
+// Other stays.
+func Other() {}
+-- golden/dst/helper.go --
+package dst
+
+// Helper from helpers.go.
+func Helper() string { return "default" }
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string { return dst.Helper() }

@@ -1,0 +1,42 @@
+# Move a single function to a new file.
+
+Hello -> greet.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/funcs.go --
+package mypkg
+
+import "fmt"
+
+// Hello prints hello.
+func Hello(name string) {
+	fmt.Println("hello", name)
+}
+
+// Goodbye prints goodbye.
+func Goodbye(name string) {
+	fmt.Println("goodbye", name)
+}
+-- golden/greet.go --
+package mypkg
+
+import (
+	"fmt"
+)
+
+// Hello prints hello.
+func Hello(name string) {
+	fmt.Println("hello", name)
+}
+-- golden/funcs.go --
+package mypkg
+
+import "fmt"
+
+// Goodbye prints goodbye.
+func Goodbye(name string) {
+	fmt.Println("goodbye", name)
+}

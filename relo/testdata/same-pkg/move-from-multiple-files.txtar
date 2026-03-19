@@ -1,0 +1,61 @@
+# Move functions from multiple source files into one target.
+
+ParseJSON FormatCSV -> convert.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/parser.go --
+package mypkg
+
+import "fmt"
+
+// ParseJSON parses JSON data.
+func ParseJSON() {
+	fmt.Println("parsing json")
+}
+
+// ReadFile stays in parser.go.
+func ReadFile() {}
+-- input/formatter.go --
+package mypkg
+
+import "strings"
+
+// FormatCSV formats data as CSV.
+func FormatCSV(s string) string {
+	return strings.ToUpper(s)
+}
+
+// WriteFile stays in formatter.go.
+func WriteFile() {}
+-- golden/convert.go --
+package mypkg
+
+import (
+	"fmt"
+	"strings"
+)
+
+// FormatCSV formats data as CSV.
+func FormatCSV(s string) string {
+	return strings.ToUpper(s)
+}
+
+// ParseJSON parses JSON data.
+func ParseJSON() {
+	fmt.Println("parsing json")
+}
+-- golden/parser.go --
+package mypkg
+
+
+// ReadFile stays in parser.go.
+func ReadFile() {}
+-- golden/formatter.go --
+package mypkg
+
+
+// WriteFile stays in formatter.go.
+func WriteFile() {}

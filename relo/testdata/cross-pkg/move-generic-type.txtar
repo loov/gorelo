@@ -1,0 +1,42 @@
+# Move a generic type with methods to a different package.
+
+Pair -> dst/pair.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/pair.go --
+package src
+
+// Pair holds two values of potentially different types.
+type Pair[A, B any] struct {
+	First  A
+	Second B
+}
+
+// Swap returns a new Pair with swapped elements.
+func (p Pair[A, B]) Swap() Pair[B, A] {
+	return Pair[B, A]{First: p.Second, Second: p.First}
+}
+
+// Other stays.
+func Other() {}
+-- golden/src/pair.go --
+package src
+
+// Other stays.
+func Other() {}
+-- golden/dst/pair.go --
+package dst
+
+// Pair holds two values of potentially different types.
+type Pair[A, B any] struct {
+	First  A
+	Second B
+}
+
+// Swap returns a new Pair with swapped elements.
+func (p Pair[A, B]) Swap() Pair[B, A] {
+	return Pair[B, A]{First: p.Second, Second: p.First}
+}

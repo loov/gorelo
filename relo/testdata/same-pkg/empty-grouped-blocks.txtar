@@ -1,0 +1,57 @@
+# Move all declarations from grouped blocks.
+# Empty const(), var(), type() blocks should be cleaned up.
+
+StatusActive StatusPending -> consts_out.go
+Width Height -> vars_out.go
+Point Rect -> types_out.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+const (
+	StatusActive  = "active"
+	StatusPending = "pending"
+)
+
+var (
+	Width  = 1
+	Height = 2
+)
+
+type (
+	Point struct{ X int }
+	Rect  struct{ W string }
+)
+
+// Render remains.
+func Render() {}
+-- golden/source.go --
+package mypkg
+
+// Render remains.
+func Render() {}
+-- golden/consts_out.go --
+package mypkg
+
+const (
+	StatusActive  = "active"
+	StatusPending = "pending"
+)
+-- golden/vars_out.go --
+package mypkg
+
+var (
+	Width  = 1
+	Height = 2
+)
+-- golden/types_out.go --
+package mypkg
+
+type (
+	Point struct{ X int }
+	Rect  struct{ W string }
+)

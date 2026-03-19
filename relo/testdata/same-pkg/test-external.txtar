@@ -1,0 +1,48 @@
+# Move a test function within an external _test package.
+
+TestHello -> greet_test.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+func Hello() string   { return "hello" }
+func Goodbye() string { return "goodbye" }
+-- input/source_test.go --
+package mypkg_test
+
+import "testing"
+
+func TestHello(t *testing.T) {
+	t.Log("hello")
+}
+
+func TestGoodbye(t *testing.T) {
+	t.Log("goodbye")
+}
+-- golden/source.go --
+package mypkg
+
+func Hello() string   { return "hello" }
+func Goodbye() string { return "goodbye" }
+-- golden/source_test.go --
+package mypkg_test
+
+import "testing"
+
+func TestGoodbye(t *testing.T) {
+	t.Log("goodbye")
+}
+-- golden/greet_test.go --
+package mypkg_test
+
+import (
+	"testing"
+)
+
+func TestHello(t *testing.T) {
+	t.Log("hello")
+}

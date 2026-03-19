@@ -1,0 +1,63 @@
+# Move with stubs into a package that already imports the source.
+# Should detect and warn about circular import.
+
+@stubs
+Helper -> dst/helper.go
+
+@warn circular import
+
+-- input/go.mod --
+module example.com/circular
+
+go 1.21
+-- input/src/a.go --
+package src
+
+// Helper is a helper function.
+func Helper() string {
+	return "help"
+}
+
+// Other stays.
+func Other() string {
+	return "other"
+}
+-- input/dst/b.go --
+package dst
+
+import "example.com/circular/src"
+
+// UsesOther calls src.Other.
+func UsesOther() string {
+	return src.Other()
+}
+-- golden/src/a.go --
+package src
+
+import (
+	"example.com/circular/dst"
+)
+
+// Other stays.
+func Other() string {
+	return "other"
+}
+
+//go:fix inline
+func Helper() string { return dst.Helper() }
+-- golden/dst/b.go --
+package dst
+
+import "example.com/circular/src"
+
+// UsesOther calls src.Other.
+func UsesOther() string {
+	return src.Other()
+}
+-- golden/dst/helper.go --
+package dst
+
+// Helper is a helper function.
+func Helper() string {
+	return "help"
+}

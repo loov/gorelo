@@ -1,0 +1,18 @@
+# Error: moving a declaration to a file that doesn't exist in the package.
+# Actually, let's test that conflicting relos produce an error.
+
+source.go:Foo -> target1.go
+source.go:Foo -> target2.go
+
+@error conflicting relos
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+func Foo() string {
+	return "from source"
+}
