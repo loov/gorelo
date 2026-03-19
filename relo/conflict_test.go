@@ -62,7 +62,7 @@ func TestExtractConstraintTag(t *testing.T) {
 		{"//go:build linux", "linux"},
 		{"//go:build !linux", "!linux"},
 		{"//go:build amd64", "amd64"},
-		{"//go:build linux && amd64", ""},   // compound
+		{"//go:build linux && amd64", ""},    // compound
 		{"//go:build linux || darwin", ""},   // compound
 		{"//go:build (linux)", ""},           // parentheses
 		{"//go:build !linux && !darwin", ""}, // compound negation
