@@ -3,6 +3,7 @@ package mast
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 )
 
@@ -31,6 +32,9 @@ func shouldSkip(obj types.Object) bool {
 // resolveInfo processes a single type-check pass's Info, building
 // and populating groups in the index.
 func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
+	// Build O(1) filename lookup for fileForIdent.
+	byName := filesByName(fileMap)
+
 	// Build a map from Sel ident to its package qualifier ident
 	// for expressions like pkg.Name.
 	qualifiers := buildQualifierMap(info, fileMap)
@@ -43,7 +47,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 		if v, ok := obj.(*types.Var); ok && v.Embedded() {
 			continue
 		}
-		file := fileForIdent(ident, fileMap)
+		file := fileForIdent(ident, ix.Fset, byName)
 		if file == nil {
 			continue
 		}
@@ -58,7 +62,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 		if shouldSkip(obj) {
 			continue
 		}
-		file := fileForIdent(ident, fileMap)
+		file := fileForIdent(ident, ix.Fset, byName)
 		if file == nil {
 			continue
 		}
@@ -74,7 +78,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 		if shouldSkip(obj) {
 			continue
 		}
-		file := fileForIdent(sel.Sel, fileMap)
+		file := fileForIdent(sel.Sel, ix.Fset, byName)
 		if file == nil {
 			continue
 		}
@@ -91,7 +95,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 		if !ok || !v.Embedded() {
 			continue
 		}
-		file := fileForIdent(ident, fileMap)
+		file := fileForIdent(ident, ix.Fset, byName)
 		if file == nil {
 			continue
 		}
@@ -191,14 +195,21 @@ func isBuiltinOrUniverse(obj types.Object) bool {
 	return isBuiltin
 }
 
-// fileForIdent finds the File that contains ident.
-func fileForIdent(ident *ast.Ident, fileMap map[*ast.File]*File) *File {
-	for astFile, file := range fileMap {
-		if astFile.FileStart <= ident.Pos() && ident.Pos() <= astFile.FileEnd {
-			return file
-		}
+// fileForIdent finds the File that contains ident using the FileSet for O(1) lookup.
+func fileForIdent(ident *ast.Ident, fset *token.FileSet, byName map[string]*File) *File {
+	if f := fset.File(ident.Pos()); f != nil {
+		return byName[f.Name()]
 	}
 	return nil
+}
+
+// filesByName builds a lookup map from filename to *File.
+func filesByName(fileMap map[*ast.File]*File) map[string]*File {
+	m := make(map[string]*File, len(fileMap))
+	for _, f := range fileMap {
+		m[f.Path] = f
+	}
+	return m
 }
 
 func findOrCreateGroup(ix *Index, key objectKey, obj types.Object) *Group {
