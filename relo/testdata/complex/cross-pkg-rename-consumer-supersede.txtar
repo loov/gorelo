@@ -1,0 +1,77 @@
+# Cross-package move with rename and consumer packages (no stubs).
+# Both computeRenames and computeConsumerEdits produce edits at the
+# same byte offset for the type name ident in consumer references
+# like src.Config. The consumer edit (src.Config -> dst.Settings)
+# must supersede the plain rename edit (Config -> Settings).
+
+Config=Settings NewConfig=NewSettings -> dst/config.go
+
+@warn renaming type Config to Settings will also change embedded field names
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+import "fmt"
+
+type Config struct {
+	Name string
+}
+
+func NewConfig(name string) *Config {
+	return &Config{Name: name}
+}
+
+func (c *Config) Print() {
+	fmt.Println(c.Name)
+}
+
+func Other() string { return "other" }
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Setup() *src.Config {
+	c := src.NewConfig("test")
+	c.Print()
+	return c
+}
+-- golden/dst/config.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type Settings struct {
+	Name string
+}
+
+func NewSettings(name string) *Settings {
+	return &Settings{Name: name}
+}
+
+func (c *Settings) Print() {
+	fmt.Println(c.Name)
+}
+-- golden/src/config.go --
+package src
+
+
+func Other() string { return "other" }
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func Setup() *dst.Settings {
+	c := dst.NewSettings("test")
+	c.Print()
+	return c
+}
