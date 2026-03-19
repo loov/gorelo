@@ -50,19 +50,25 @@ func (ix *Index) FindDef(name, source string) *ast.Ident {
 	return nil
 }
 
-// FindFieldDef searches for a field definition within a struct declaration
-// named typeName, then looks for a field named fieldPath in that struct's
-// field list. The source parameter filters the search (same rules as FindDef).
+// FindFieldDef searches for a field or method definition within a type
+// declaration named typeName. For struct types it looks for a field named
+// fieldPath in the struct's field list; for interface types it looks for a
+// method with that name in the interface's method list.
+// The source parameter filters the search (same rules as FindDef).
 //
-// The struct may be a named type (type T struct{...}) or an anonymous struct
-// used as the type or value of a variable declaration (var V struct{...} or
-// var V = struct{...}{}).
+// The type may be a named type (type T struct{...} or type T interface{...})
+// or an anonymous struct used as the type or value of a variable declaration
+// (var V struct{...} or var V = struct{...}{}).
 //
 // fieldPath may be a dotted path to reach fields in nested anonymous structs.
 // For example, "TLS.CertFile" first finds the field TLS, then looks for
-// CertFile in TLS's anonymous struct type.
+// CertFile in TLS's anonymous struct type. Interface methods must be simple
+// (non-dotted) names.
 //
-// Returns nil if the struct or field is not found, or if the field ident
+// If the field or method is not found inline, it falls back to searching for
+// a receiver-based method (FuncDecl with Recv) on the type.
+//
+// Returns nil if the type, field, or method is not found, or if the ident
 // is not tracked by the index.
 func (ix *Index) FindFieldDef(typeName, fieldPath, source string) *ast.Ident {
 	for _, pkg := range ix.Pkgs {
@@ -162,42 +168,62 @@ func ReceiverTypeName(recv *ast.FieldList) string {
 }
 
 // findFieldByPath resolves a possibly dotted field path (e.g. "TLS.CertFile")
-// within a struct type expression. For a simple name it returns the field's
-// defining ident; for a dotted path it walks through intermediate fields,
-// following anonymous struct types at each step.
+// within a struct or interface type expression. For a simple name it returns
+// the field's (or method's) defining ident; for a dotted path it walks through
+// intermediate fields, following anonymous struct types at each step.
+// Interface methods are matched only as leaf names (no dotted paths).
 func (ix *Index) findFieldByPath(expr ast.Expr, fieldPath string) *ast.Ident {
 	parts := strings.Split(fieldPath, ".")
 
 	current := expr
 	for i, part := range parts {
-		st, ok := current.(*ast.StructType)
-		if !ok || st.Fields == nil {
-			return nil
-		}
-
-		found := false
-		for _, field := range st.Fields.List {
-			for _, id := range field.Names {
-				if id.Name != part {
-					continue
+		switch t := current.(type) {
+		case *ast.StructType:
+			if t.Fields == nil {
+				return nil
+			}
+			found := false
+			for _, field := range t.Fields.List {
+				for _, id := range field.Names {
+					if id.Name != part {
+						continue
+					}
+					if i == len(parts)-1 {
+						// Last segment: this is the target field.
+						if ix.Group(id) != nil {
+							return id
+						}
+						return nil
+					}
+					// Intermediate segment: descend into the field's type.
+					current = field.Type
+					found = true
+					break
 				}
-				if i == len(parts)-1 {
-					// Last segment: this is the target field.
-					if ix.Group(id) != nil {
+				if found {
+					break
+				}
+			}
+			if !found {
+				return nil
+			}
+		case *ast.InterfaceType:
+			if t.Methods == nil {
+				return nil
+			}
+			// Interface methods are only leaf names (no dotted paths).
+			if i != len(parts)-1 {
+				return nil
+			}
+			for _, method := range t.Methods.List {
+				for _, id := range method.Names {
+					if id.Name == part && ix.Group(id) != nil {
 						return id
 					}
-					return nil
 				}
-				// Intermediate segment: descend into the field's type.
-				current = field.Type
-				found = true
-				break
 			}
-			if found {
-				break
-			}
-		}
-		if !found {
+			return nil
+		default:
 			return nil
 		}
 	}

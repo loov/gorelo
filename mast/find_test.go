@@ -1,6 +1,7 @@
 package mast_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/loov/gorelo/mast"
@@ -304,5 +305,36 @@ func TestFindFieldDefReturnsDefIdent(t *testing.T) {
 	}
 	if !found {
 		t.Error("FindFieldDef returned an ident that is not marked as Def in its group")
+	}
+}
+
+func TestFindFieldDefInterface(t *testing.T) {
+	dir, err := filepath.Abs("testdata/iface")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix, err := mast.Load(&mast.Config{Dir: dir}, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := ix.FindFieldDef("Reader", "Read", "")
+	if id == nil {
+		t.Fatal("FindFieldDef returned nil for interface method")
+	}
+	if id.Name != "Read" {
+		t.Errorf("got %q, want %q", id.Name, "Read")
+	}
+}
+
+func TestFindFieldDefInterfaceExisting(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Stringer interface in types.go defines a String() method.
+	id := ix.FindFieldDef("Stringer", "String", "")
+	if id == nil {
+		t.Fatal("FindFieldDef returned nil for interface method")
+	}
+	if id.Name != "String" {
+		t.Errorf("got %q, want %q", id.Name, "String")
 	}
 }
