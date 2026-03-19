@@ -73,10 +73,7 @@ func NewServer(addr string) *dst.Server {
 -- golden/consumer/consumer.go --
 package consumer
 
-import (
-	"example.com/test/src"
-	"example.com/test/dst"
-)
+import "example.com/test/src"
 
 func Run() {
 	svc := src.NewServer("localhost:8080")

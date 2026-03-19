@@ -159,7 +159,11 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			// package qualifier (e.g., Validate -> dst.Validate).
 			// When stubs are enabled, the aliases handle backward
 			// compatibility, so qualification is not needed.
-			if id.Qualifier == nil && !(opts != nil && opts.Stubs) {
+			//
+			// Methods and fields are accessed through instances
+			// (e.g., svc.Start()), not as bare identifiers, so they
+			// must not be package-qualified.
+			if id.Qualifier == nil && !(opts != nil && opts.Stubs) && grp.Kind != mast.Method && grp.Kind != mast.Field {
 				identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 				identEnd := identOff + len(id.Ident.Name)
 
