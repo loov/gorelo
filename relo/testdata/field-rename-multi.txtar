@@ -1,0 +1,66 @@
+# Rename multiple fields across files in the same package.
+# Selector expressions in other files should be updated.
+
+Config#Host => Hostname
+Config#Port => ListenPort
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/config.go --
+package pkg
+
+type Config struct {
+	Host string
+	Port int
+	Debug bool
+}
+
+func DefaultConfig() Config {
+	return Config{
+		Host: "localhost",
+		Port: 8080,
+		Debug: false,
+	}
+}
+-- input/use.go --
+package pkg
+
+import "fmt"
+
+func PrintConfig(c Config) {
+	fmt.Printf("%s:%d (debug=%v)\n", c.Host, c.Port, c.Debug)
+}
+
+func GetAddr(c *Config) string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+-- golden/config.go --
+package pkg
+
+type Config struct {
+	Hostname string
+	ListenPort int
+	Debug bool
+}
+
+func DefaultConfig() Config {
+	return Config{
+		Hostname: "localhost",
+		ListenPort: 8080,
+		Debug: false,
+	}
+}
+-- golden/use.go --
+package pkg
+
+import "fmt"
+
+func PrintConfig(c Config) {
+	fmt.Printf("%s:%d (debug=%v)\n", c.Hostname, c.ListenPort, c.Debug)
+}
+
+func GetAddr(c *Config) string {
+	return fmt.Sprintf("%s:%d", c.Hostname, c.ListenPort)
+}

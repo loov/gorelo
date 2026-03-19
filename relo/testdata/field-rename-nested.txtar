@@ -1,0 +1,57 @@
+# Rename a field inside a nested anonymous struct.
+# All selector expressions through the parent field should be updated.
+
+Server#TLS.CertFile => Certificate
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/server.go --
+package pkg
+
+import "fmt"
+
+type Server struct {
+	Addr string
+	TLS  struct {
+		CertFile string
+		KeyFile  string
+	}
+}
+
+func NewServer(addr, cert, key string) *Server {
+	s := &Server{Addr: addr}
+	s.TLS.CertFile = cert
+	s.TLS.KeyFile = key
+	return s
+}
+
+func PrintTLS(s *Server) {
+	fmt.Println(s.TLS.CertFile)
+	fmt.Println(s.TLS.KeyFile)
+}
+-- golden/server.go --
+package pkg
+
+import "fmt"
+
+type Server struct {
+	Addr string
+	TLS  struct {
+		Certificate string
+		KeyFile  string
+	}
+}
+
+func NewServer(addr, cert, key string) *Server {
+	s := &Server{Addr: addr}
+	s.TLS.Certificate = cert
+	s.TLS.KeyFile = key
+	return s
+}
+
+func PrintTLS(s *Server) {
+	fmt.Println(s.TLS.Certificate)
+	fmt.Println(s.TLS.KeyFile)
+}

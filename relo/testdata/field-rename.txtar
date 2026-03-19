@@ -1,0 +1,57 @@
+# Rename a struct field.
+# All references (definition, selectors, composite literals) should be updated.
+
+Server#Addr => Address
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/server.go --
+package pkg
+
+import "fmt"
+
+type Server struct {
+	Addr string
+	Port int
+}
+
+func NewServer(addr string, port int) *Server {
+	return &Server{
+		Addr: addr,
+		Port: port,
+	}
+}
+
+func (s *Server) Listen() string {
+	return fmt.Sprintf("%s:%d", s.Addr, s.Port)
+}
+
+func PrintAddr(s *Server) {
+	fmt.Println(s.Addr)
+}
+-- golden/server.go --
+package pkg
+
+import "fmt"
+
+type Server struct {
+	Address string
+	Port int
+}
+
+func NewServer(addr string, port int) *Server {
+	return &Server{
+		Address: addr,
+		Port: port,
+	}
+}
+
+func (s *Server) Listen() string {
+	return fmt.Sprintf("%s:%d", s.Address, s.Port)
+}
+
+func PrintAddr(s *Server) {
+	fmt.Println(s.Address)
+}

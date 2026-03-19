@@ -157,45 +157,55 @@ func TestFindFieldDef(t *testing.T) {
 	tests := []struct {
 		desc      string
 		typeName  string
-		fieldName string
+		fieldPath string
+		wantIdent string // expected ident name (last segment of path)
 		source    string
 		wantNil   bool
 	}{
-		{desc: "User.Name", typeName: "User", fieldName: "Name"},
-		{desc: "User.Email", typeName: "User", fieldName: "Email"},
-		{desc: "User.Age", typeName: "User", fieldName: "Age"},
-		{desc: "Server.Addr", typeName: "Server", fieldName: "Addr"},
-		{desc: "Node.Value", typeName: "Node", fieldName: "Value"},
-		{desc: "Node.Children", typeName: "Node", fieldName: "Children"},
-		{desc: "Pair.First", typeName: "Pair", fieldName: "First"},
-		{desc: "Pair.Second", typeName: "Pair", fieldName: "Second"},
-		{desc: "Admin.Permissions", typeName: "Admin", fieldName: "Permissions"},
+		{desc: "User.Name", typeName: "User", fieldPath: "Name", wantIdent: "Name"},
+		{desc: "User.Email", typeName: "User", fieldPath: "Email", wantIdent: "Email"},
+		{desc: "User.Age", typeName: "User", fieldPath: "Age", wantIdent: "Age"},
+		{desc: "Server.Addr", typeName: "Server", fieldPath: "Addr", wantIdent: "Addr"},
+		{desc: "Node.Value", typeName: "Node", fieldPath: "Value", wantIdent: "Value"},
+		{desc: "Node.Children", typeName: "Node", fieldPath: "Children", wantIdent: "Children"},
+		{desc: "Pair.First", typeName: "Pair", fieldPath: "First", wantIdent: "First"},
+		{desc: "Pair.Second", typeName: "Pair", fieldPath: "Second", wantIdent: "Second"},
+		{desc: "Admin.Permissions", typeName: "Admin", fieldPath: "Permissions", wantIdent: "Permissions"},
 
 		// Anonymous struct in var declaration.
-		{desc: "Config.Host", typeName: "Config", fieldName: "Host"},
-		{desc: "Config.Port", typeName: "Config", fieldName: "Port"},
+		{desc: "Config.Host", typeName: "Config", fieldPath: "Host", wantIdent: "Host"},
+		{desc: "Config.Port", typeName: "Config", fieldPath: "Port", wantIdent: "Port"},
+
+		// Nested field paths through anonymous struct fields.
+		{desc: "Server.TLS.CertFile", typeName: "Server", fieldPath: "TLS.CertFile", wantIdent: "CertFile"},
+		{desc: "Server.TLS.KeyFile", typeName: "Server", fieldPath: "TLS.KeyFile", wantIdent: "KeyFile"},
+		{desc: "Database.TLS.CertFile", typeName: "Database", fieldPath: "TLS.CertFile", wantIdent: "CertFile"},
+		{desc: "Database.TLS.CAFile", typeName: "Database", fieldPath: "TLS.CAFile", wantIdent: "CAFile"},
 
 		// Not found cases.
-		{desc: "User.Missing", typeName: "User", fieldName: "Missing", wantNil: true},
-		{desc: "Missing.Name", typeName: "Missing", fieldName: "Name", wantNil: true},
-		{desc: "Counter.X (not a struct)", typeName: "Counter", fieldName: "X", wantNil: true},
-		{desc: "Config.Missing", typeName: "Config", fieldName: "Missing", wantNil: true},
+		{desc: "User.Missing", typeName: "User", fieldPath: "Missing", wantNil: true},
+		{desc: "Missing.Name", typeName: "Missing", fieldPath: "Name", wantNil: true},
+		{desc: "Counter.X (not a struct)", typeName: "Counter", fieldPath: "X", wantNil: true},
+		{desc: "Config.Missing", typeName: "Config", fieldPath: "Missing", wantNil: true},
+		{desc: "Server.TLS.Missing", typeName: "Server", fieldPath: "TLS.Missing", wantNil: true},
+		{desc: "Server.Missing.CertFile", typeName: "Server", fieldPath: "Missing.CertFile", wantNil: true},
+		{desc: "Server.Addr.X (not nested struct)", typeName: "Server", fieldPath: "Addr.X", wantNil: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			id := ix.FindFieldDef(tt.typeName, tt.fieldName, tt.source)
+			id := ix.FindFieldDef(tt.typeName, tt.fieldPath, tt.source)
 			if tt.wantNil {
 				if id != nil {
-					t.Errorf("FindFieldDef(%q, %q, %q) = %s, want nil", tt.typeName, tt.fieldName, tt.source, id.Name)
+					t.Errorf("FindFieldDef(%q, %q, %q) = %s, want nil", tt.typeName, tt.fieldPath, tt.source, id.Name)
 				}
 				return
 			}
 			if id == nil {
-				t.Fatalf("FindFieldDef(%q, %q, %q) = nil", tt.typeName, tt.fieldName, tt.source)
+				t.Fatalf("FindFieldDef(%q, %q, %q) = nil", tt.typeName, tt.fieldPath, tt.source)
 			}
-			if id.Name != tt.fieldName {
-				t.Errorf("ident name = %q, want %q", id.Name, tt.fieldName)
+			if id.Name != tt.wantIdent {
+				t.Errorf("ident name = %q, want %q", id.Name, tt.wantIdent)
 			}
 			grp := ix.Group(id)
 			if grp == nil {

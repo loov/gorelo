@@ -50,19 +50,20 @@ func (ix *Index) FindDef(name, source string) *ast.Ident {
 }
 
 // FindFieldDef searches for a field definition within a struct declaration
-// named typeName, then looks for a field named fieldName in that struct's
+// named typeName, then looks for a field named fieldPath in that struct's
 // field list. The source parameter filters the search (same rules as FindDef).
 //
 // The struct may be a named type (type T struct{...}) or an anonymous struct
 // used as the type or value of a variable declaration (var V struct{...} or
 // var V = struct{...}{}).
 //
-// Only direct (non-embedded) fields are searched; nested field paths
-// (e.g. "Limits.Min") are not supported.
+// fieldPath may be a dotted path to reach fields in nested anonymous structs.
+// For example, "TLS.CertFile" first finds the field TLS, then looks for
+// CertFile in TLS's anonymous struct type.
 //
 // Returns nil if the struct or field is not found, or if the field ident
 // is not tracked by the index.
-func (ix *Index) FindFieldDef(typeName, fieldName, source string) *ast.Ident {
+func (ix *Index) FindFieldDef(typeName, fieldPath, source string) *ast.Ident {
 	for _, pkg := range ix.Pkgs {
 		pkgMatch := source == "" || pkg.Path == source
 		for _, file := range pkg.Files {
@@ -80,7 +81,7 @@ func (ix *Index) FindFieldDef(typeName, fieldName, source string) *ast.Ident {
 						if s.Name.Name != typeName {
 							continue
 						}
-						if id := ix.findFieldInStruct(s.Type, fieldName); id != nil {
+						if id := ix.findFieldByPath(s.Type, fieldPath); id != nil {
 							return id
 						}
 					case *ast.ValueSpec:
@@ -88,7 +89,7 @@ func (ix *Index) FindFieldDef(typeName, fieldName, source string) *ast.Ident {
 							continue
 						}
 						// Check explicit type: var V struct{...}
-						if id := ix.findFieldInStruct(s.Type, fieldName); id != nil {
+						if id := ix.findFieldByPath(s.Type, fieldPath); id != nil {
 							return id
 						}
 						// Check composite literal: var V = struct{...}{...}
@@ -97,7 +98,7 @@ func (ix *Index) FindFieldDef(typeName, fieldName, source string) *ast.Ident {
 							if !ok {
 								continue
 							}
-							if id := ix.findFieldInStruct(cl.Type, fieldName); id != nil {
+							if id := ix.findFieldByPath(cl.Type, fieldPath); id != nil {
 								return id
 							}
 						}
@@ -109,17 +110,44 @@ func (ix *Index) FindFieldDef(typeName, fieldName, source string) *ast.Ident {
 	return nil
 }
 
-// findFieldInStruct looks for a named field in expr if it is a *ast.StructType.
-func (ix *Index) findFieldInStruct(expr ast.Expr, fieldName string) *ast.Ident {
-	st, ok := expr.(*ast.StructType)
-	if !ok || st.Fields == nil {
-		return nil
-	}
-	for _, field := range st.Fields.List {
-		for _, id := range field.Names {
-			if id.Name == fieldName && ix.Group(id) != nil {
-				return id
+// findFieldByPath resolves a possibly dotted field path (e.g. "TLS.CertFile")
+// within a struct type expression. For a simple name it returns the field's
+// defining ident; for a dotted path it walks through intermediate fields,
+// following anonymous struct types at each step.
+func (ix *Index) findFieldByPath(expr ast.Expr, fieldPath string) *ast.Ident {
+	parts := strings.Split(fieldPath, ".")
+
+	current := expr
+	for i, part := range parts {
+		st, ok := current.(*ast.StructType)
+		if !ok || st.Fields == nil {
+			return nil
+		}
+
+		found := false
+		for _, field := range st.Fields.List {
+			for _, id := range field.Names {
+				if id.Name != part {
+					continue
+				}
+				if i == len(parts)-1 {
+					// Last segment: this is the target field.
+					if ix.Group(id) != nil {
+						return id
+					}
+					return nil
+				}
+				// Intermediate segment: descend into the field's type.
+				current = field.Type
+				found = true
+				break
 			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			return nil
 		}
 	}
 	return nil

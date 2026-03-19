@@ -1,0 +1,52 @@
+# Combine a type move with a field rename.
+# The field rename should apply in the moved output.
+# Methods follow their receiver type to the new file.
+
+Options -> options.go
+Options#Addr => Address
+
+warn: constructor NewOptions exists but is not being moved with type Options
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/main.go --
+package pkg
+
+import "fmt"
+
+type Options struct {
+	Addr string
+	Port int
+}
+
+func NewOptions(addr string) *Options {
+	return &Options{Addr: addr, Port: 80}
+}
+
+func (o *Options) String() string {
+	return fmt.Sprintf("%s:%d", o.Addr, o.Port)
+}
+-- golden/main.go --
+package pkg
+
+
+func NewOptions(addr string) *Options {
+	return &Options{Address: addr, Port: 80}
+}
+-- golden/options.go --
+package pkg
+
+import (
+	"fmt"
+)
+
+type Options struct {
+	Address string
+	Port int
+}
+
+func (o *Options) String() string {
+	return fmt.Sprintf("%s:%d", o.Address, o.Port)
+}

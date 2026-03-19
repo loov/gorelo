@@ -32,6 +32,12 @@ func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*re
 			continue
 		}
 
+		// Fields can only be renamed, not moved; they have no
+		// top-level declaration span to compute.
+		if rr.Group.Kind == mast.Field {
+			continue
+		}
+
 		// Find the enclosing declaration.
 		decl := findEnclosingDecl(file.Syntax, rr.DefIdent.Ident)
 		if decl == nil {

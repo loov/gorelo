@@ -214,7 +214,15 @@ func parseReloLines(t *testing.T, text string, ix *mast.Index, pkgDir string) []
 			t.Fatalf("invalid relo line: %q", line)
 		}
 
-		ident := findDefIdent(t, ix, name)
+		// Field rename: Type#Field => NewFieldName
+		var ident *ast.Ident
+		if hashIdx := strings.Index(name, "#"); hashIdx >= 0 {
+			typeName := name[:hashIdx]
+			fieldName := name[hashIdx+1:]
+			ident = findFieldDefIdent(t, ix, typeName, fieldName)
+		} else {
+			ident = findDefIdent(t, ix, name)
+		}
 
 		r := relo.Relo{Ident: ident}
 		if moveTo != "" {
@@ -228,36 +236,22 @@ func parseReloLines(t *testing.T, text string, ix *mast.Index, pkgDir string) []
 	return relos
 }
 
+// findFieldDefIdent finds a field definition *ast.Ident within a struct type.
+func findFieldDefIdent(t *testing.T, ix *mast.Index, typeName, fieldName string) *ast.Ident {
+	t.Helper()
+	id := ix.FindFieldDef(typeName, fieldName, "")
+	if id == nil {
+		t.Fatalf("field %s#%s not found", typeName, fieldName)
+	}
+	return id
+}
+
 // findDefIdent finds a definition *ast.Ident with the given name.
 func findDefIdent(t *testing.T, ix *mast.Index, name string) *ast.Ident {
 	t.Helper()
-	for _, pkg := range ix.Pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Syntax.Decls {
-				switch d := decl.(type) {
-				case *ast.FuncDecl:
-					if d.Name.Name == name {
-						return d.Name
-					}
-				case *ast.GenDecl:
-					for _, spec := range d.Specs {
-						switch s := spec.(type) {
-						case *ast.TypeSpec:
-							if s.Name.Name == name {
-								return s.Name
-							}
-						case *ast.ValueSpec:
-							for _, n := range s.Names {
-								if n.Name == name {
-									return n
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+	id := ix.FindDef(name, "")
+	if id == nil {
+		t.Fatalf("definition ident %q not found", name)
 	}
-	t.Fatalf("definition ident %q not found", name)
-	return nil
+	return id
 }
