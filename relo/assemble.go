@@ -13,32 +13,68 @@ import (
 	"github.com/loov/gorelo/mast"
 )
 
+// assembler holds state shared across the target, source, and rename phases.
+type assembler struct {
+	ix       *mast.Index
+	resolved []*resolvedRelo
+	spans    map[*resolvedRelo]*span
+	renames  *renameSet
+	imports  *importSet
+	opts     *Options
+	plan     *Plan
+	es       *editSet
+
+	byTarget map[string][]*resolvedRelo
+	bySource map[string][]*resolvedRelo
+
+	// targetNewDecls tracks declarations appended during the target phase.
+	// When a file is both source and target, the source phase re-appends
+	// these after performing removals on the original on-disk content.
+	targetNewDecls map[string]string
+}
+
 // assemble builds the final FileEdit list (phase 8).
 func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, opts *Options, plan *Plan) {
-	byTarget := groupByTarget(resolved)
-	bySource := groupBySource(resolved)
-	es := newEditSet()
+	a := &assembler{
+		ix:             ix,
+		resolved:       resolved,
+		spans:          spans,
+		renames:        renames,
+		imports:        imports,
+		opts:           opts,
+		plan:           plan,
+		es:             newEditSet(),
+		byTarget:       groupByTarget(resolved),
+		bySource:       groupBySource(resolved),
+		targetNewDecls: make(map[string]string),
+	}
 
-	// Sort target paths for deterministic output.
-	sortedTargets := sortedKeys(byTarget)
+	a.assembleTargets()
+	a.assembleSources()
+	a.assembleRenames()
 
-	// Track new declarations appended during the target phase, keyed by
-	// target path.  When a file is both source and target, the source phase
-	// needs to re-append these after performing removals on the original
-	// on-disk content.
-	targetNewDecls := make(map[string]string)
+	// Final pass: remove unused imports from all emitted files.
+	for i, fe := range a.es.Edits() {
+		if fe.IsDelete {
+			continue
+		}
+		a.es.edits[i].Content = removeUnusedImportsText(fe.Content)
+	}
+	plan.Edits = a.es.Edits()
+}
 
-	// Build target files.
+func (a *assembler) assembleTargets() {
+	sortedTargets := sortedKeys(a.byTarget)
 	for _, targetPath := range sortedTargets {
-		rrs := byTarget[targetPath]
+		rrs := a.byTarget[targetPath]
 		if len(rrs) == 0 {
 			continue
 		}
 
 		// Sort by source position.
 		sort.SliceStable(rrs, func(i, j int) bool {
-			pi := ix.Fset.Position(rrs[i].DefIdent.Ident.Pos())
-			pj := ix.Fset.Position(rrs[j].DefIdent.Ident.Pos())
+			pi := a.ix.Fset.Position(rrs[i].DefIdent.Ident.Pos())
+			pj := a.ix.Fset.Position(rrs[j].DefIdent.Ident.Pos())
 			if pi.Filename != pj.Filename {
 				return pi.Filename < pj.Filename
 			}
@@ -69,10 +105,10 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		crossTargetImports := make(map[string]bool)
 
 		// Get import changes for this target (used for alias edits).
-		ic := imports.byFile[targetPath]
+		ic := a.imports.byFile[targetPath]
 
 		for _, rr := range rrs {
-			s := spans[rr]
+			s := a.spans[rr]
 			if s == nil {
 				continue
 			}
@@ -93,7 +129,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			}
 
 			// Get rename and cross-target qualification edits for this span.
-			er := computeExtractedEdits(ix, rr, s, resolved)
+			er := computeExtractedEdits(a.ix, rr, s, a.resolved)
 			edits := er.edits
 			for impPath := range er.imports {
 				crossTargetImports[impPath] = true
@@ -103,11 +139,11 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			targetDir := filepath.Dir(targetPath)
 			targetImportPath := guessImportPath(targetDir)
 			if targetImportPath != "" {
-				edits = append(edits, collectSelfImportEdits(ix, rr, s, targetImportPath)...)
+				edits = append(edits, collectSelfImportEdits(a.ix, rr, s, targetImportPath)...)
 			}
 
 			// Apply import alias edits for collision resolution.
-			edits = append(edits, computeImportAliasEdits(ix, rr, s, ic)...)
+			edits = append(edits, computeImportAliasEdits(a.ix, rr, s, ic)...)
 
 			var text string
 			if len(edits) > 0 {
@@ -131,7 +167,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// Add cross-target imports to the import change set.
 		if len(crossTargetImports) > 0 {
 			if ic == nil {
-				ic = imports.ensureFile(targetPath)
+				ic = a.imports.ensureFile(targetPath)
 			}
 			for impPath := range crossTargetImports {
 				already := false
@@ -194,7 +230,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			content := string(existing)
 
 			// Apply rename edits for references in the existing content.
-			if targetRenames := renames.byFile[targetPath]; len(targetRenames) > 0 {
+			if targetRenames := a.renames.byFile[targetPath]; len(targetRenames) > 0 {
 				content = applyEditsToString(content, targetRenames)
 			}
 
@@ -203,16 +239,16 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 					var warn Warning
 					content, warn = ensureImport(content, entry)
 					if warn.Message != "" {
-						plan.Warnings.Add(warn)
+						a.plan.Warnings.Add(warn)
 					}
 				}
 			}
 			if !strings.HasSuffix(content, "\n") {
 				content += "\n"
 			}
-			targetNewDecls[targetPath] = newDecls
+			a.targetNewDecls[targetPath] = newDecls
 			content += newDecls
-			es.Set(FileEdit{Path: targetPath, Content: content})
+			a.es.Set(FileEdit{Path: targetPath, Content: content})
 		} else {
 			// New file.
 			targetPkgName := determineTargetPkgName(rrs)
@@ -250,19 +286,21 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			}
 
 			b.WriteString(newDecls)
-			es.Set(FileEdit{Path: targetPath, IsNew: true, Content: b.String()})
+			a.es.Set(FileEdit{Path: targetPath, IsNew: true, Content: b.String()})
 		}
 	}
 
-	// Process source files: remove moved declarations.
-	sortedSources := sortedKeys(bySource)
+}
+
+func (a *assembler) assembleSources() {
+	sortedSources := sortedKeys(a.bySource)
 	for _, sourcePath := range sortedSources {
-		rrs := bySource[sourcePath]
+		rrs := a.bySource[sourcePath]
 		if len(rrs) == 0 {
 			continue
 		}
 
-		// Check if all relos for this file are same-file renames.
+		// Check if all relos for this file are same-file a.renames.
 		allSameFile := true
 		for _, rr := range rrs {
 			if rr.TargetFile != sourcePath {
@@ -274,8 +312,8 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// If a target edit was already emitted for this path, use its
 		// content as the base instead of re-reading from disk.
 		var src []byte
-		alsoTarget := es.Has(sourcePath)
-		if content, ok := es.Get(sourcePath); ok {
+		alsoTarget := a.es.Has(sourcePath)
+		if content, ok := a.es.Get(sourcePath); ok {
 			src = []byte(content)
 		} else {
 			src = fileContent(rrs[0].File)
@@ -286,12 +324,12 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 		if allSameFile {
 			// Same-file renames: apply rename edits only.
-			edits := renames.byFile[sourcePath]
+			edits := a.renames.byFile[sourcePath]
 			if len(edits) == 0 {
 				continue
 			}
 			newSrc := applyEdits(src, edits)
-			es.Set(FileEdit{Path: sourcePath, Content: newSrc})
+			a.es.Set(FileEdit{Path: sourcePath, Content: newSrc})
 			continue
 		}
 
@@ -303,7 +341,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// therefore still use the original on-disk source for removal and
 		// then re-append the new declarations that were added by the target
 		// phase.
-		newDeclSuffix := targetNewDecls[sourcePath]
+		newDeclSuffix := a.targetNewDecls[sourcePath]
 		if alsoTarget {
 			origSrc := fileContent(rrs[0].File)
 			if origSrc != nil {
@@ -319,7 +357,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			if rr.TargetFile == sourcePath {
 				continue // not being moved, just renamed
 			}
-			s := spans[rr]
+			s := a.spans[rr]
 			if s == nil {
 				continue
 			}
@@ -349,7 +387,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		}
 
 		// Get rename edits for remaining code.
-		renameEdits := renames.byFile[sourcePath]
+		renameEdits := a.renames.byFile[sourcePath]
 
 		// Filter rename edits that fall inside removed ranges.
 		if len(renameEdits) > 0 {
@@ -369,7 +407,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			renameEdits = filtered
 		}
 
-		// Build edits: removals + renames.
+		// Build edits: removals + a.renames.
 		var allEdits []edit
 		for _, r := range merged {
 			allEdits = append(allEdits, edit{Start: r.start, End: r.end, New: ""})
@@ -384,7 +422,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		}
 
 		// Generate backward-compatibility stubs for cross-package moves.
-		if opts.stubsEnabled() {
+		if a.opts.stubsEnabled() {
 			// Group cross-package relos by target directory so we generate
 			// separate stub blocks (and imports) for each target package.
 			crossByDir := make(map[string][]*resolvedRelo)
@@ -402,8 +440,8 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			for _, tDir := range sortedDirs {
 				group := crossByDir[tDir]
 				targetPkgName := guessPackageName(tDir)
-				ar := generateAliases(group, targetPkgName, ix.Fset)
-				plan.Warnings.Add(ar.Warnings...)
+				ar := generateAliases(group, targetPkgName, a.ix.Fset)
+				a.plan.Warnings.Add(ar.Warnings...)
 				if len(ar.Stubs) > 0 {
 					newSrc += "\n" + strings.Join(ar.Stubs, "\n\n") + "\n"
 					// Add the import for the target package.
@@ -421,7 +459,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 		// Add imports needed by consumer edits (e.g., source-file references
 		// to declarations that moved to a different package).
-		if ic := imports.byFile[sourcePath]; ic != nil {
+		if ic := a.imports.byFile[sourcePath]; ic != nil {
 			newSrc = applyImportEntries(newSrc, ic.Add)
 		}
 
@@ -430,17 +468,19 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		newSrc = cleanBlankLines(newSrc)
 
 		if sourceFileIsEmpty(newSrc) {
-			es.Set(FileEdit{Path: sourcePath, IsDelete: true})
+			a.es.Set(FileEdit{Path: sourcePath, IsDelete: true})
 		} else {
-			es.Set(FileEdit{Path: sourcePath, Content: newSrc})
+			a.es.Set(FileEdit{Path: sourcePath, Content: newSrc})
 		}
 	}
 
-	// Apply renames to other files not involved as source/target.
-	sortedRenameFiles := sortedKeys(renames.byFile)
+}
+
+func (a *assembler) assembleRenames() {
+	sortedRenameFiles := sortedKeys(a.renames.byFile)
 	for _, filePath := range sortedRenameFiles {
-		edits := renames.byFile[filePath]
-		if _, isSource := bySource[filePath]; isSource {
+		edits := a.renames.byFile[filePath]
+		if _, isSource := a.bySource[filePath]; isSource {
 			continue
 		}
 		if len(edits) == 0 {
@@ -451,37 +491,28 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// already applied during the target phase. Only apply consumer
 		// import entries here to avoid double-applying rename edits
 		// with stale offsets.
-		if content, ok := es.Get(filePath); ok {
-			if ic, ok := imports.byFile[filePath]; ok {
-				es.Set(FileEdit{Path: filePath, Content: applyImportEntries(content, ic.Add)})
+		if content, ok := a.es.Get(filePath); ok {
+			if ic, ok := a.imports.byFile[filePath]; ok {
+				a.es.Set(FileEdit{Path: filePath, Content: applyImportEntries(content, ic.Add)})
 			}
 			continue
 		}
 
 		src, err := os.ReadFile(filePath)
 		if err != nil {
-			plan.Warnings.Addf("cannot read %s for rename edits: %v", filePath, err)
+			a.plan.Warnings.Addf("cannot read %s for rename edits: %v", filePath, err)
 			continue
 		}
 
 		newSrc := applyEdits(src, edits)
 
 		// Apply import additions (e.g., from consumer rewriting).
-		if ic, ok := imports.byFile[filePath]; ok {
+		if ic, ok := a.imports.byFile[filePath]; ok {
 			newSrc = applyImportEntries(newSrc, ic.Add)
 		}
 
-		es.Set(FileEdit{Path: filePath, Content: newSrc})
+		a.es.Set(FileEdit{Path: filePath, Content: newSrc})
 	}
-
-	// Final pass: remove unused imports from all emitted files.
-	for i, fe := range es.Edits() {
-		if fe.IsDelete {
-			continue
-		}
-		es.edits[i].Content = removeUnusedImportsText(fe.Content)
-	}
-	plan.Edits = es.Edits()
 }
 
 // computeImportAliasEdits generates edits for an extracted span to rename
