@@ -83,4 +83,53 @@
 // For embedded (anonymous) struct fields the field identifier is
 // linked to the embedded type's group, so that renaming the type also
 // renames the embedding site.
+//
+// # Limitations
+//
+// Type-checker errors are intentionally suppressed. This allows loading
+// cross-platform code that would fail to compile under the host's build
+// tags (e.g. a syscall used only on Linux), but it also means that
+// invalid code is silently accepted. Only AST definitions, uses, and
+// selections from the type-checker are retained; diagnostics are
+// discarded.
+//
+// Build-constraint partitioning uses syntactic conflict detection:
+// constrained files are type-checked together when they do not define
+// the same top-level function, type, variable, or constant names.
+// When they do conflict (e.g. the same function in _linux.go and
+// _windows.go), each constraint group is type-checked in a separate
+// pass with the unconstrained files included in every pass. This is
+// based on name equality only — indirect conflicts (A conflicts with B,
+// B conflicts with C, but not A with C) and method-level conflicts are
+// not detected and may lead to type-check failures that are silently
+// swallowed.
+//
+// Cross-partition linking relies on [go/ast.File.Unresolved]: after all
+// type-check passes, identifiers that remain untracked are matched to
+// package-scope groups by name. This only links package-level symbols
+// (not local variables, fields, or methods). If two package-scope
+// symbols share a name (which cannot happen in valid Go but can in
+// constraint-partitioned code with suppressed errors), the linking is
+// ambiguous.
+//
+// Fields in anonymous (unnamed) struct types use position-based keys,
+// so they form isolated groups that cannot be merged across build
+// constraint partitions. Named struct fields are keyed by the owning
+// type name, found by scanning the package scope; if the owner cannot
+// be determined (e.g. fields from generic type instantiations), the
+// field falls back to a position-based key. Position-based keys are
+// stable within a single load but are not meaningful across separate
+// invocations.
+//
+// Import aliases are treated as file-scoped (each gets a position-based
+// key) to prevent merging two files' aliases for different packages
+// into the same group. This means renaming one import alias does not
+// automatically rename another file's alias for the same package.
+//
+// Embedded field identifiers are linked to the embedded type's group
+// rather than a dedicated field group. [Index.EmbeddedFieldGroups]
+// returns synthetic Use-only groups for composite literal keys and
+// selectors that refer to the embedded field by name, but these groups
+// have no Def ident — the definition site is part of the type name's
+// group.
 package mast
