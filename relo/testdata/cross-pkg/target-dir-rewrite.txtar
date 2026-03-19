@@ -33,10 +33,8 @@ var MaxSize = 100
 -- golden/dst/existing.go --
 package dst
 
-import (
-	"example.com/test/dst"
-)
 
-func Wrapper() string { return dst.Greet() }
+func Wrapper() string { return Greet() }
 
-var Limit = dst.MaxSize
+var Limit = MaxSize
+

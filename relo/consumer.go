@@ -22,10 +22,20 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 
 	// Collect cross-package moves keyed by group.
 	movedGroups := make(map[*mast.Group]*moveInfo)
-	targetFiles := make(map[string]bool)
+
+	// Track target directories per group so we can skip consumer edits
+	// for files in the same package as the group's destination (where
+	// the declaration becomes local). We use per-group target dirs
+	// rather than a blanket set so that a file which is a target for
+	// one group can still receive consumer edits for a different group.
+	groupTargetDirs := make(map[*mast.Group]map[string]bool)
 
 	for _, rr := range resolved {
-		targetFiles[rr.TargetFile] = true
+		dir := filepath.Dir(rr.TargetFile)
+		if groupTargetDirs[rr.Group] == nil {
+			groupTargetDirs[rr.Group] = make(map[string]bool)
+		}
+		groupTargetDirs[rr.Group][dir] = true
 
 		if rr.File == nil {
 			continue
@@ -99,7 +109,48 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 				continue
 			}
 			filePath := id.File.Path
-			if targetFiles[filePath] {
+			inTargetPkg := groupTargetDirs[grp][filepath.Dir(filePath)]
+
+			// File is in the target package: the declaration is
+			// becoming local. Unqualify qualified references (e.g.,
+			// src.Greet -> Greet) and apply renames if needed.
+			// Unqualified references already work as-is.
+			if inTargetPkg {
+				if id.Qualifier == nil {
+					// Already unqualified; apply rename if needed.
+					if info.tgtName != grp.Name {
+						identOff := ix.Fset.Position(id.Ident.Pos()).Offset
+						identEnd := identOff + len(id.Ident.Name)
+						if inMovedSpan(filePath, identOff, identEnd) {
+							continue
+						}
+						fe := ensureFile(filePath)
+						fe.nameEdits = append(fe.nameEdits, edit{
+							Start: identOff,
+							End:   identEnd,
+							New:   info.tgtName,
+						})
+					}
+					continue
+				}
+				// Qualified reference (e.g., src.Greet): remove qualifier.
+				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
+				selOff := ix.Fset.Position(id.Ident.Pos()).Offset
+				fe := ensureFile(filePath)
+				fe.qualifierEdits = append(fe.qualifierEdits, edit{
+					Start: qualOff,
+					End:   selOff, // removes "src."
+					New:   "",
+				})
+				// Apply rename if needed.
+				if info.tgtName != grp.Name {
+					identEnd := selOff + len(id.Ident.Name)
+					fe.nameEdits = append(fe.nameEdits, edit{
+						Start: selOff,
+						End:   identEnd,
+						New:   info.tgtName,
+					})
+				}
 				continue
 			}
 
