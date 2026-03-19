@@ -69,14 +69,66 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 	}
 
 	// Step 2-5: For each target package, discover all files, parse, partition, type-check.
+	loadedDirs := map[string]bool{}
 	for _, pkg := range initial {
 		if pkg.PkgPath == "" {
 			continue
 		}
 
+		if d := packageDir(pkg); d != "" {
+			loadedDirs[d] = true
+		}
 		pkgs, errs := loadPackage(ix, pkg, pkgsCfg, depPkgs)
 		ix.Pkgs = append(ix.Pkgs, pkgs...)
 		ix.Errors = append(ix.Errors, errs...)
+	}
+
+	// Discover packages missed by packages.Load due to build constraints.
+	// When all .go files in a directory have non-matching build constraints
+	// (e.g., //go:build linux files on Windows), packages.Load skips the
+	// directory entirely. Walk the filesystem to find these directories and
+	// load them manually.
+	if cfg.Dir != "" {
+		var modPath, modDir string
+		for _, pkg := range initial {
+			if pkg.Module != nil && pkg.Module.Dir != "" {
+				modPath = pkg.Module.Path
+				modDir = pkg.Module.Dir
+				break
+			}
+		}
+		if modDir == "" {
+			modPath, modDir = readModulePath(cfg.Dir)
+		}
+
+		if modDir != "" {
+			missed := discoverMissedDirs(cfg.Dir, loadedDirs)
+			for _, dir := range missed {
+				rel, err := filepath.Rel(modDir, dir)
+				if err != nil {
+					continue
+				}
+				pkgPath := modPath
+				if rel != "." {
+					pkgPath = modPath + "/" + filepath.ToSlash(rel)
+				}
+
+				name := discoverPkgName(dir)
+				if name == "" {
+					continue
+				}
+
+				synth := &packages.Package{
+					PkgPath: pkgPath,
+					Name:    name,
+					GoFiles: []string{filepath.Join(dir, "_.go")},
+				}
+
+				pkgs, errs := loadPackage(ix, synth, pkgsCfg, depPkgs)
+				ix.Pkgs = append(ix.Pkgs, pkgs...)
+				ix.Errors = append(ix.Errors, errs...)
+			}
+		}
 	}
 
 	return ix, nil
@@ -440,3 +492,83 @@ var knownGOARCH = map[string]bool{
 
 func isKnownGOOS(s string) bool   { return knownGOOS[s] }
 func isKnownGOARCH(s string) bool { return knownGOARCH[s] }
+
+// discoverMissedDirs walks dir recursively and returns directories containing
+// .go files that are not in loadedDirs. It skips directories starting with
+// "." or "_", and skips "vendor" and "testdata" directories, matching the
+// behavior of Go's "./..." pattern.
+func discoverMissedDirs(dir string, loadedDirs map[string]bool) []string {
+	var missed []string
+	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		if path != dir {
+			name := d.Name()
+			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") ||
+				name == "vendor" || name == "testdata" {
+				return filepath.SkipDir
+			}
+		}
+		if loadedDirs[path] {
+			return nil
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+				missed = append(missed, path)
+				return nil
+			}
+		}
+		return nil
+	})
+	return missed
+}
+
+// discoverPkgName parses the package clause from the first non-test .go file
+// in dir to determine the package name.
+func discoverPkgName(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.PackageClauseOnly)
+		if err != nil || f.Name == nil {
+			continue
+		}
+		return f.Name.Name
+	}
+	return ""
+}
+
+// readModulePath reads the module path and directory from the go.mod file
+// in dir or any parent directory.
+func readModulePath(dir string) (modPath, modDir string) {
+	d := dir
+	for {
+		data, err := os.ReadFile(filepath.Join(d, "go.mod"))
+		if err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "module ") {
+					return strings.TrimSpace(strings.TrimPrefix(line, "module")), d
+				}
+			}
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
+		}
+		d = parent
+	}
+	return "", ""
+}
