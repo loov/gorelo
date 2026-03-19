@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strconv"
 	"strings"
 
 	"github.com/loov/gorelo/mast"
@@ -154,6 +155,36 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 							entry.name, file.Path)
 					}
 				}
+			}
+		}
+	}
+
+	// Warn about potential circular imports for cross-package moves.
+	for _, rr := range resolved {
+		if rr.File == nil {
+			continue
+		}
+		targetDir := dirOf(rr.TargetFile)
+		srcDir := dirOf(rr.File.Path)
+		if targetDir == srcDir {
+			continue
+		}
+		// Check if the target package imports the source package.
+		srcImportPath := guessImportPath(srcDir)
+		if srcImportPath == "" {
+			continue
+		}
+		targetFile := findFileInIndex(ix, rr.TargetFile)
+		if targetFile == nil {
+			continue
+		}
+		for _, imp := range targetFile.Syntax.Imports {
+			impPath, _ := strconv.Unquote(imp.Path.Value)
+			if impPath == srcImportPath {
+				plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+					"moving %s to %s may create a circular import: target already imports source package %s",
+					rr.Group.Name, rr.TargetFile, srcImportPath))
+				break
 			}
 		}
 	}
