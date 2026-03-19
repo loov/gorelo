@@ -3,7 +3,6 @@ package relo
 import (
 	"go/ast"
 	"go/parser"
-	"go/token"
 	"testing"
 )
 
@@ -16,11 +15,7 @@ func Bar() {}
 
 var X = 1
 `
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
+	file, _ := parseSource(t, src)
 
 	tests := []struct {
 		name      string
@@ -57,15 +52,7 @@ var X = 1
 }
 
 func TestFindEnclosingDecl_NotFound(t *testing.T) {
-	src := `package p
-var X = 1
-`
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Create an ident not in the file.
+	file, _ := parseSource(t, "package p\nvar X = 1\n")
 	fake := &ast.Ident{Name: "fake"}
 	decl := findEnclosingDecl(file, fake)
 	if decl != nil {
@@ -82,12 +69,7 @@ const (
 	C = 3
 )
 `
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	file, _ := parseSource(t, src)
 	gd := file.Decls[0].(*ast.GenDecl)
 
 	identB := findIdentByName(file, "B")
@@ -124,12 +106,10 @@ func TestExprListUsesIota(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.src, func(t *testing.T) {
-			fset := token.NewFileSet()
 			expr, err := parser.ParseExpr(tt.src)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_ = fset
 			got := exprListUsesIota([]ast.Expr{expr})
 			if got != tt.want {
 				t.Errorf("exprListUsesIota(%q) = %v, want %v", tt.src, got, tt.want)
@@ -148,11 +128,7 @@ const (
 	D
 )
 `
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
+	file, _ := parseSource(t, src)
 	gd := file.Decls[0].(*ast.GenDecl)
 
 	tests := []struct {
@@ -264,20 +240,4 @@ func TestPrependKeyword(t *testing.T) {
 			}
 		})
 	}
-}
-
-// findIdentByName finds the first ast.Ident with the given name in a file.
-func findIdentByName(file *ast.File, name string) *ast.Ident {
-	var found *ast.Ident
-	ast.Inspect(file, func(n ast.Node) bool {
-		if found != nil {
-			return false
-		}
-		if id, ok := n.(*ast.Ident); ok && id.Name == name {
-			found = id
-			return false
-		}
-		return true
-	})
-	return found
 }

@@ -2,11 +2,8 @@ package relo
 
 import (
 	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/loov/gorelo/mast"
@@ -36,11 +33,7 @@ func TestReceiverTypeName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, "test.go", tt.src, parser.ParseComments)
-			if err != nil {
-				t.Fatal(err)
-			}
+			file, _ := parseSource(t, tt.src)
 			for _, decl := range file.Decls {
 				fd, ok := decl.(*ast.FuncDecl)
 				if !ok {
@@ -102,11 +95,8 @@ func TestResolve_RejectsUntrackedIdent(t *testing.T) {
 	fakeIdent := &ast.Ident{Name: "NotInIndex"}
 	plan := &Plan{}
 	_, err := resolve(ix, []Relo{{Ident: fakeIdent}}, plan)
-	if err == nil {
-		t.Fatal("expected error for untracked ident")
-	}
-	if !strings.Contains(err.Error(), "not tracked") {
-		t.Errorf("unexpected error: %v", err)
+	if !errContains(err, "not tracked") {
+		t.Fatalf("expected 'not tracked' error, got: %v", err)
 	}
 }
 
@@ -124,11 +114,8 @@ func TestResolve_RejectsFieldMove(t *testing.T) {
 
 	plan := &Plan{}
 	_, err := resolve(ix, []Relo{{Ident: fieldIdent, MoveTo: "/tmp/target.go"}}, plan)
-	if err == nil {
-		t.Fatal("expected error for field move")
-	}
-	if !strings.Contains(err.Error(), "cannot be moved") {
-		t.Errorf("unexpected error: %v", err)
+	if !errContains(err, "cannot be moved") {
+		t.Fatalf("expected 'cannot be moved' error, got: %v", err)
 	}
 }
 
@@ -205,13 +192,7 @@ func TestResolve_ConstructorWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	found := false
-	for _, w := range plan.Warnings {
-		if strings.Contains(w, "constructor NewFoo") {
-			found = true
-		}
-	}
-	if !found {
+	if !hasWarning(plan, "constructor NewFoo") {
 		t.Errorf("expected constructor warning, got: %v", plan.Warnings)
 	}
 }

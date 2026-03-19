@@ -2,9 +2,7 @@ package relo
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"strings"
 	"testing"
 
 	"github.com/loov/gorelo/mast"
@@ -64,7 +62,7 @@ func TestExtractConstraintTag(t *testing.T) {
 		{"//go:build linux", "linux"},
 		{"//go:build !linux", "!linux"},
 		{"//go:build amd64", "amd64"},
-		{"//go:build linux && amd64", ""},    // compound
+		{"//go:build linux && amd64", ""},   // compound
 		{"//go:build linux || darwin", ""},   // compound
 		{"//go:build (linux)", ""},           // parentheses
 		{"//go:build !linux && !darwin", ""}, // compound negation
@@ -90,11 +88,7 @@ var Baz = 1
 
 const Qux = "hello"
 `
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
+	file, _ := parseSource(t, src)
 
 	tests := []struct {
 		name string
@@ -125,16 +119,7 @@ const Qux = "hello"
 }
 
 func TestNameConflicts_Method(t *testing.T) {
-	src := `package p
-
-type T struct{}
-func (t T) M() {}
-`
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
+	file, _ := parseSource(t, "package p\n\ntype T struct{}\nfunc (t T) M() {}\n")
 
 	// Methods should not conflict (they have receivers).
 	for _, decl := range file.Decls {
@@ -196,11 +181,7 @@ func Foo() {}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, "test.go", tt.src, parser.ParseComments)
-			if err != nil {
-				t.Fatal(err)
-			}
+			file, fset := parseSource(t, tt.src)
 
 			// Find the first non-import decl.
 			for _, decl := range file.Decls {
@@ -235,16 +216,7 @@ func TestCheckConstraints_MixedWarning(t *testing.T) {
 
 	checkConstraints(resolved, plan)
 
-	if len(plan.Warnings) == 0 {
-		t.Fatal("expected warning about mixed constraints")
-	}
-	found := false
-	for _, w := range plan.Warnings {
-		if strings.Contains(w, "mixed build constraints") {
-			found = true
-		}
-	}
-	if !found {
+	if !hasWarning(plan, "mixed build constraints") {
 		t.Errorf("expected 'mixed build constraints' warning, got: %v", plan.Warnings)
 	}
 }
