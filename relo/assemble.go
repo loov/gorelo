@@ -30,6 +30,12 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 	// Sort target paths for deterministic output.
 	sortedTargets := sortedKeys(byTarget)
 
+	// Track new declarations appended during the target phase, keyed by
+	// target path.  When a file is both source and target, the source phase
+	// needs to re-append these after performing removals on the original
+	// on-disk content.
+	targetNewDecls := make(map[string]string)
+
 	// Build target files.
 	for _, targetPath := range sortedTargets {
 		rrs := byTarget[targetPath]
@@ -185,6 +191,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			if !strings.HasSuffix(content, "\n") {
 				content += "\n"
 			}
+			targetNewDecls[targetPath] = newDecls
 			content += newDecls
 			content = removeUnusedImportsText(content)
 			plan.Edits = append(plan.Edits, FileEdit{
@@ -301,13 +308,10 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		// therefore still use the original on-disk source for removal and
 		// then re-append the new declarations that were added by the target
 		// phase.
-		var newDeclSuffix string
+		newDeclSuffix := targetNewDecls[sourcePath]
 		if existingIdx >= 0 {
 			origSrc := fileContent(rrs[0].File)
 			if origSrc != nil {
-				// The target phase appended declarations after the original
-				// content.  Capture that suffix so we can re-append it.
-				newDeclSuffix = string(src)[len(origSrc):]
 				src = origSrc
 			}
 		}
@@ -386,7 +390,9 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 		// Generate backward-compatibility stubs for cross-package moves.
 		if opts != nil && opts.Stubs {
-			var crossPkg []*resolvedRelo
+			// Group cross-package relos by target directory so we generate
+			// separate stub blocks (and imports) for each target package.
+			crossByDir := make(map[string][]*resolvedRelo)
 			for _, rr := range rrs {
 				if rr.TargetFile == sourcePath || rr.File == nil {
 					continue
@@ -394,16 +400,18 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				targetDir := dirOf(rr.TargetFile)
 				srcDir := dirOf(rr.File.Path)
 				if targetDir != srcDir {
-					crossPkg = append(crossPkg, rr)
+					crossByDir[targetDir] = append(crossByDir[targetDir], rr)
 				}
 			}
-			if len(crossPkg) > 0 {
-				targetPkgName := guessPackageName(dirOf(crossPkg[0].TargetFile))
-				stubs := generateAliases(crossPkg, targetPkgName, ix.Fset)
+			sortedDirs := sortedKeys(crossByDir)
+			for _, tDir := range sortedDirs {
+				group := crossByDir[tDir]
+				targetPkgName := guessPackageName(tDir)
+				stubs := generateAliases(group, targetPkgName, ix.Fset)
 				if len(stubs) > 0 {
 					newSrc += "\n" + strings.Join(stubs, "\n\n") + "\n"
 					// Add the import for the target package.
-					targetImportPath := guessImportPath(dirOf(crossPkg[0].TargetFile))
+					targetImportPath := guessImportPath(tDir)
 					if targetImportPath != "" {
 						newSrc, _ = ensureImport(newSrc, importEntry{Path: targetImportPath})
 					}
@@ -583,10 +591,14 @@ func ensureImport(src string, entry importEntry) (string, Warning) {
 		if expectedAlias == "" {
 			expectedAlias = guessImportLocalName(entry.Path)
 		}
-		if existingAlias != "" && existingAlias != expectedAlias {
+		existingEffective := existingAlias
+		if existingEffective == "" {
+			existingEffective = guessImportLocalName(entry.Path)
+		}
+		if existingEffective != expectedAlias {
 			return src, Warnf(
 				"import %s exists with alias %q but moved code expects %q",
-				quotedPath, existingAlias, expectedAlias)
+				quotedPath, existingEffective, expectedAlias)
 		}
 		return src, Warning{}
 	}
