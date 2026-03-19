@@ -22,13 +22,9 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 
 	// Collect cross-package moves keyed by group.
 	movedGroups := make(map[*mast.Group]*moveInfo)
-	sourceFiles := make(map[string]bool)
 	targetFiles := make(map[string]bool)
 
 	for _, rr := range resolved {
-		if rr.File != nil {
-			sourceFiles[rr.File.Path] = true
-		}
 		targetFiles[rr.TargetFile] = true
 
 		if rr.File == nil {
