@@ -1,0 +1,94 @@
+# Cross-package move of a generic type with consumer packages.
+# The generic type and its constructor move to a new package, and
+# consumer code that instantiates the generic must be updated.
+
+Container NewContainer -> dst/container.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/container.go --
+package src
+
+type Container[T any] struct {
+	Items []T
+}
+
+func (c *Container[T]) Add(item T) {
+	c.Items = append(c.Items, item)
+}
+
+func (c *Container[T]) Len() int {
+	return len(c.Items)
+}
+
+func NewContainer[T any]() *Container[T] {
+	return &Container[T]{}
+}
+
+func Process() string {
+	return "processing"
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/src"
+)
+
+func Run() {
+	strs := src.NewContainer[string]()
+	strs.Add("hello")
+	fmt.Println(strs.Len())
+
+	nums := src.NewContainer[int]()
+	nums.Add(42)
+
+	var box src.Container[float64]
+	box.Add(3.14)
+}
+-- golden/dst/container.go --
+package dst
+
+type Container[T any] struct {
+	Items []T
+}
+
+func (c *Container[T]) Add(item T) {
+	c.Items = append(c.Items, item)
+}
+
+func (c *Container[T]) Len() int {
+	return len(c.Items)
+}
+
+func NewContainer[T any]() *Container[T] {
+	return &Container[T]{}
+}
+-- golden/src/container.go --
+package src
+
+func Process() string {
+	return "processing"
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/dst"
+)
+
+func Run() {
+	strs := dst.NewContainer[string]()
+	strs.Add("hello")
+	fmt.Println(strs.Len())
+
+	nums := dst.NewContainer[int]()
+	nums.Add(42)
+
+	var box dst.Container[float64]
+	box.Add(3.14)
+}

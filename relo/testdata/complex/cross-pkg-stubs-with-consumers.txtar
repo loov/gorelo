@@ -1,0 +1,119 @@
+# Cross-package move with stubs and multiple consumer packages.
+# Stubs are generated in the source for backward compatibility,
+# and multiple consumer packages have their imports rewritten.
+
+@stubs
+Logger NewLogger -> dst/logger.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/logger.go --
+package src
+
+import "fmt"
+
+type Logger struct {
+	Prefix string
+}
+
+func (l *Logger) Log(msg string) {
+	fmt.Printf("[%s] %s\n", l.Prefix, msg)
+}
+
+func NewLogger(prefix string) *Logger {
+	return &Logger{Prefix: prefix}
+}
+
+func Version() string {
+	return "1.0"
+}
+-- input/app/app.go --
+package app
+
+import "example.com/test/src"
+
+func Run() {
+	log := src.NewLogger("app")
+	log.Log("started")
+	_ = src.Version()
+}
+-- input/web/web.go --
+package web
+
+import "example.com/test/src"
+
+func Serve() *src.Logger {
+	return src.NewLogger("web")
+}
+-- input/cli/cli.go --
+package cli
+
+import "example.com/test/src"
+
+func Main() {
+	log := src.NewLogger("cli")
+	log.Log("running")
+}
+-- golden/dst/logger.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type Logger struct {
+	Prefix string
+}
+
+func (l *Logger) Log(msg string) {
+	fmt.Printf("[%s] %s\n", l.Prefix, msg)
+}
+
+func NewLogger(prefix string) *Logger {
+	return &Logger{Prefix: prefix}
+}
+-- golden/src/logger.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Version() string {
+	return "1.0"
+}
+
+//go:fix inline
+type Logger = dst.Logger
+
+//go:fix inline
+func NewLogger(prefix string) *Logger { return dst.NewLogger(prefix) }
+-- golden/app/app.go --
+package app
+
+import "example.com/test/src"
+
+func Run() {
+	log := src.NewLogger("app")
+	log.Log("started")
+	_ = src.Version()
+}
+-- golden/web/web.go --
+package web
+
+import "example.com/test/src"
+
+func Serve() *src.Logger {
+	return src.NewLogger("web")
+}
+-- golden/cli/cli.go --
+package cli
+
+import "example.com/test/src"
+
+func Main() {
+	log := src.NewLogger("cli")
+	log.Log("running")
+}

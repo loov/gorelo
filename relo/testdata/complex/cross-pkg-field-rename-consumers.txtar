@@ -1,0 +1,89 @@
+# Cross-package move with field renames and consumer packages.
+# The type moves to a new package, its fields are renamed, and
+# consumer code that accesses those fields (selectors and composite
+# literals) must be updated both for the new qualifier and the
+# new field names.
+
+Config NewConfig -> dst/config.go
+Config#Host=Address
+Config#Port=ListenPort
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+import "fmt"
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func NewConfig(host string, port int) *Config {
+	return &Config{Host: host, Port: port}
+}
+
+func (c *Config) Endpoint() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+func Utility() {}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/src"
+)
+
+func Setup() {
+	cfg := src.NewConfig("localhost", 8080)
+	fmt.Println(cfg.Host, cfg.Port)
+}
+
+func Build() *src.Config {
+	return &src.Config{Host: "0.0.0.0", Port: 443}
+}
+-- golden/dst/config.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type Config struct {
+	Address string
+	ListenPort int
+}
+
+func NewConfig(host string, port int) *Config {
+	return &Config{Address: host, ListenPort: port}
+}
+
+func (c *Config) Endpoint() string {
+	return fmt.Sprintf("%s:%d", c.Address, c.ListenPort)
+}
+-- golden/src/config.go --
+package src
+
+
+func Utility() {}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/dst"
+)
+
+func Setup() {
+	cfg := dst.NewConfig("localhost", 8080)
+	fmt.Println(cfg.Address, cfg.ListenPort)
+}
+
+func Build() *dst.Config {
+	return &dst.Config{Address: "0.0.0.0", ListenPort: 443}
+}

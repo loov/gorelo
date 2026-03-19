@@ -183,7 +183,9 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			}
 
 			// Qualified cross-package consumer reference (pkg.Name).
-			if id.Qualifier == nil {
+			// When stubs are enabled, consumers keep using the source
+			// package's names — the stubs redirect to the target.
+			if id.Qualifier == nil || (opts != nil && opts.Stubs) {
 				continue
 			}
 

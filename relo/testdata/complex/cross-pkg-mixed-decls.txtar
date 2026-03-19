@@ -1,0 +1,80 @@
+# Cross-package move of interdependent const, type, and function.
+# All three declarations reference each other and must move together.
+# A consumer package references all of them.
+
+DefaultPort Config NewConfig -> dst/config.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+const DefaultPort = 8080
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func NewConfig(host string) *Config {
+	return &Config{
+		Host: host,
+		Port: DefaultPort,
+	}
+}
+
+func Validate(c *Config) bool {
+	return c.Port > 0
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/src"
+)
+
+func Setup() {
+	cfg := src.NewConfig("localhost")
+	fmt.Println(cfg.Port, src.DefaultPort)
+}
+-- golden/dst/config.go --
+package dst
+
+const DefaultPort = 8080
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func NewConfig(host string) *Config {
+	return &Config{
+		Host: host,
+		Port: DefaultPort,
+	}
+}
+-- golden/src/config.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Validate(c *dst.Config) bool {
+	return c.Port > 0
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/dst"
+)
+
+func Setup() {
+	cfg := dst.NewConfig("localhost")
+	fmt.Println(cfg.Port, dst.DefaultPort)
+}

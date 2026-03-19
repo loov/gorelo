@@ -1,0 +1,86 @@
+# Cross-package move with method renames and consumer packages.
+# The type moves to a new package, one method is renamed, and
+# consumer code that calls the renamed method must be updated.
+# Method renames must be on the same line as the type move.
+
+Server Server#Listen=Start NewServer -> dst/server.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+import "fmt"
+
+type Server struct {
+	Addr string
+}
+
+func (s *Server) Listen() {
+	fmt.Println("listening on", s.Addr)
+}
+
+func (s *Server) Shutdown() {
+	fmt.Println("shutting down", s.Addr)
+}
+
+func NewServer(addr string) *Server {
+	return &Server{Addr: addr}
+}
+
+func Helper() string {
+	return "helper"
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Run() {
+	svc := src.NewServer("localhost:8080")
+	svc.Listen()
+	svc.Shutdown()
+}
+-- golden/dst/server.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type Server struct {
+	Addr string
+}
+
+func (s *Server) Start() {
+	fmt.Println("listening on", s.Addr)
+}
+
+func (s *Server) Shutdown() {
+	fmt.Println("shutting down", s.Addr)
+}
+
+func NewServer(addr string) *Server {
+	return &Server{Addr: addr}
+}
+-- golden/src/server.go --
+package src
+
+
+func Helper() string {
+	return "helper"
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func Run() {
+	svc := dst.NewServer("localhost:8080")
+	svc.Start()
+	svc.Shutdown()
+}
