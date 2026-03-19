@@ -552,7 +552,7 @@ func computeImportAliasEdits(ix *mast.Index, rr *resolvedRelo, s *span, ic *impo
 	// Build a map of oldLocalName -> newAlias for imports used by this rr's source file.
 	localToAlias := make(map[string]string)
 	for _, imp := range rr.File.Syntax.Imports {
-		impPath, _ := strconv.Unquote(imp.Path.Value)
+		impPath := importPath(imp)
 		alias, ok := ic.Aliases[impPath]
 		if !ok {
 			continue
@@ -603,7 +603,7 @@ func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImpor
 
 	selfLocalNames := make(map[string]bool)
 	for _, imp := range rr.File.Syntax.Imports {
-		impPath, _ := strconv.Unquote(imp.Path.Value)
+		impPath := importPath(imp)
 		if impPath == selfImportPath {
 			if imp.Name != nil {
 				selfLocalNames[imp.Name.Name] = true
@@ -823,7 +823,7 @@ func removeUnusedImportsText(src string) string {
 
 	var unusedPaths []string
 	for _, imp := range file.Imports {
-		impPath, _ := strconv.Unquote(imp.Path.Value)
+		impPath := importPath(imp)
 		localName := importLocalName(imp, impPath)
 		if localName == "_" || localName == "." {
 			continue

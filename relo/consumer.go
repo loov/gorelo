@@ -3,7 +3,6 @@ package relo
 import (
 	"path/filepath"
 	"sort"
-	"strconv"
 
 	"github.com/loov/gorelo/mast"
 )
@@ -244,7 +243,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			if f != nil {
 				alreadyImported := false
 				for _, imp := range f.Syntax.Imports {
-					impPath, _ := strconv.Unquote(imp.Path.Value)
+					impPath := importPath(imp)
 					if impPath == tgtPath {
 						alreadyImported = true
 						break

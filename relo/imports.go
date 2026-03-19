@@ -67,7 +67,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 
 			// Match against file imports.
 			for _, imp := range rr.File.Syntax.Imports {
-				impPath, _ := strconv.Unquote(imp.Path.Value)
+				impPath := importPath(imp)
 				localName := importLocalName(imp, impPath)
 				if localName == "." {
 					plan.Warnings.AddAtf(rr, ix,
@@ -101,7 +101,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		// Pre-populate usedNames with existing imports in the target file.
 		if existingFile := findFileInIndex(ix, targetFile); existingFile != nil {
 			for _, imp := range existingFile.Syntax.Imports {
-				impPath, _ := strconv.Unquote(imp.Path.Value)
+				impPath := importPath(imp)
 				usedNames[importLocalName(imp, impPath)] = true
 			}
 		}
@@ -208,6 +208,12 @@ func findPkgForDir(ix *mast.Index, dir string) *mast.Package {
 		}
 	}
 	return nil
+}
+
+// importPath returns the unquoted import path from an ImportSpec.
+func importPath(imp *ast.ImportSpec) string {
+	p, _ := strconv.Unquote(imp.Path.Value)
+	return p
 }
 
 // importLocalName returns the local name an import is known by.

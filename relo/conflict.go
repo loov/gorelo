@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/loov/gorelo/mast"
@@ -193,7 +192,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 			}
 			for _, f := range targetPkg.Files {
 				for _, imp := range f.Syntax.Imports {
-					impPath, _ := strconv.Unquote(imp.Path.Value)
+					impPath := importPath(imp)
 					if impPath == srcImportPath {
 						plan.Warnings.AddAtf(rr, ix,
 							"moving %s to %s may create a circular import: target already imports source package %s",
@@ -205,7 +204,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 			continue
 		}
 		for _, imp := range targetFile.Syntax.Imports {
-			impPath, _ := strconv.Unquote(imp.Path.Value)
+			impPath := importPath(imp)
 			if impPath == srcImportPath {
 				plan.Warnings.AddAtf(rr, ix,
 					"moving %s to %s may create a circular import: target already imports source package %s",
