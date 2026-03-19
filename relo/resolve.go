@@ -265,6 +265,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 		ctorKey := typeRelo.Group.Pkg + ".New" + typeRelo.Group.Name
 		if _, moved := movedNames[ctorKey]; !moved {
 			// Check if the constructor exists.
+			ctorFound := false
 			for _, pkg := range ix.Pkgs {
 				if pkg.Path != typeRelo.Group.Pkg {
 					continue
@@ -279,8 +280,16 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 							plan.Warnings.AddAtf(typeRelo, ix,
 								"constructor New%s exists but is not being moved with type %s",
 								typeRelo.Group.Name, typeRelo.Group.Name)
+							ctorFound = true
+							break
 						}
 					}
+					if ctorFound {
+						break
+					}
+				}
+				if ctorFound {
+					break
 				}
 			}
 		}
