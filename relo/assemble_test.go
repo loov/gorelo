@@ -17,7 +17,7 @@ import (
 
 func Foo() { fmt.Println() }
 `
-	got := ensureImport(src, importEntry{Path: "strings"})
+	got, _ := ensureImport(src, importEntry{Path: "strings"})
 	if !strings.Contains(got, `"strings"`) {
 		t.Errorf("expected import to be added, got:\n%s", got)
 	}
@@ -34,7 +34,7 @@ import "fmt"
 
 func Foo() { fmt.Println() }
 `
-	got := ensureImport(src, importEntry{Path: "strings"})
+	got, _ := ensureImport(src, importEntry{Path: "strings"})
 	if !strings.Contains(got, `"strings"`) {
 		t.Errorf("expected strings import to be added, got:\n%s", got)
 	}
@@ -49,7 +49,7 @@ func TestEnsureImport_NoExistingImport(t *testing.T) {
 
 func Foo() {}
 `
-	got := ensureImport(src, importEntry{Path: "fmt"})
+	got, _ := ensureImport(src, importEntry{Path: "fmt"})
 	if !strings.Contains(got, `"fmt"`) {
 		t.Errorf("expected fmt import to be added, got:\n%s", got)
 	}
@@ -67,7 +67,7 @@ import (
 
 func Foo() { fmt.Println() }
 `
-	got := ensureImport(src, importEntry{Path: "math/rand", Alias: "mathrand"})
+	got, _ := ensureImport(src, importEntry{Path: "math/rand", Alias: "mathrand"})
 	if !strings.Contains(got, `mathrand "math/rand"`) {
 		t.Errorf("expected aliased import, got:\n%s", got)
 	}
@@ -82,11 +82,29 @@ import (
 
 func Foo() { fmt.Println() }
 `
-	got := ensureImport(src, importEntry{Path: "fmt"})
+	got, _ := ensureImport(src, importEntry{Path: "fmt"})
 	// Should not duplicate.
 	count := strings.Count(got, `"fmt"`)
 	if count != 1 {
 		t.Errorf("expected exactly 1 fmt import, got %d in:\n%s", count, got)
+	}
+}
+
+func TestEnsureImport_AliasMismatchWarning(t *testing.T) {
+	src := `package p
+
+import (
+	foo "example.com/bar"
+)
+
+func Foo() { foo.X() }
+`
+	_, warn := ensureImport(src, importEntry{Path: "example.com/bar", Alias: "baz"})
+	if warn == "" {
+		t.Error("expected alias mismatch warning")
+	}
+	if !strings.Contains(warn, "alias") {
+		t.Errorf("warning should mention alias, got: %s", warn)
 	}
 }
 

@@ -176,7 +176,11 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 			if ic != nil {
 				for _, entry := range ic.Add {
-					content = ensureImport(content, entry)
+					var warn string
+					content, warn = ensureImport(content, entry)
+					if warn != "" {
+						plan.Warnings = append(plan.Warnings, warn)
+					}
 				}
 			}
 			if !strings.HasSuffix(content, "\n") {
@@ -545,10 +549,20 @@ func collectBuildConstraint(rrs []*resolvedRelo) string {
 }
 
 // ensureImport adds an import to the source if not already present.
-func ensureImport(src string, entry importEntry) string {
+// Returns the updated source and a warning if the import exists with a different alias.
+func ensureImport(src string, entry importEntry) (string, string) {
 	quotedPath := strconv.Quote(entry.Path)
-	if sourceHasImport(src, quotedPath) {
-		return src
+	if existingAlias, has := sourceImportAlias(src, quotedPath); has {
+		expectedAlias := entry.Alias
+		if expectedAlias == "" {
+			expectedAlias = guessImportLocalName(entry.Path)
+		}
+		if existingAlias != "" && existingAlias != expectedAlias {
+			return src, fmt.Sprintf(
+				"import %s exists with alias %q but moved code expects %q",
+				quotedPath, existingAlias, expectedAlias)
+		}
+		return src, ""
 	}
 
 	importLine := "\t"
@@ -567,7 +581,7 @@ func ensureImport(src string, entry importEntry) string {
 			newLines = append(newLines, lines[:i+1]...)
 			newLines = append(newLines, importLine)
 			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n")
+			return strings.Join(newLines, "\n"), ""
 		}
 	}
 
@@ -583,7 +597,7 @@ func ensureImport(src string, entry importEntry) string {
 			newLines = append(newLines, importLine)
 			newLines = append(newLines, ")")
 			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n")
+			return strings.Join(newLines, "\n"), ""
 		}
 	}
 
@@ -597,26 +611,30 @@ func ensureImport(src string, entry importEntry) string {
 			newLines = append(newLines, importLine)
 			newLines = append(newLines, ")")
 			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n")
+			return strings.Join(newLines, "\n"), ""
 		}
 	}
 
-	return src
+	return src, ""
 }
 
-// sourceHasImport checks if the source already imports the given path.
-func sourceHasImport(src, quotedPath string) bool {
+// sourceImportAlias checks if the source already imports the given path
+// and returns the alias (or "" if no explicit alias) and whether it was found.
+func sourceImportAlias(src, quotedPath string) (alias string, found bool) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
 	if err != nil {
-		return false
+		return "", false
 	}
 	for _, imp := range file.Imports {
 		if imp.Path.Value == quotedPath {
-			return true
+			if imp.Name != nil {
+				return imp.Name.Name, true
+			}
+			return "", true
 		}
 	}
-	return false
+	return "", false
 }
 
 // removeUnusedImportsText re-parses and removes unused imports.
