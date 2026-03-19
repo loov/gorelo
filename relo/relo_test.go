@@ -2,6 +2,7 @@ package relo_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -233,6 +234,57 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 		actNorm := strings.TrimRight(act, "\n\r\t ")
 		if expNorm != actNorm {
 			t.Errorf("file %s differs:\n%s", k, lineDiff(expNorm, actNorm))
+		}
+	}
+
+	// Run go vet on the output to catch invalid code.
+	var expectedVet []string
+	for _, d := range f.Directives {
+		if d.Key == "vet" {
+			expectedVet = append(expectedVet, d.Value)
+		}
+	}
+
+	// Write actual output files to the temp directory.
+	// First remove all .go files, then write the output.
+	_ = filepath.WalkDir(pkgDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".go") {
+			os.Remove(path)
+		}
+		return nil
+	})
+	for name, content := range actual {
+		path := filepath.Join(pkgDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := exec.Command("go", "vet", "./...")
+	cmd.Dir = pkgDir
+	vetOut, vetErr := cmd.CombinedOutput()
+	vetOutput := string(vetOut)
+
+	if len(expectedVet) == 0 {
+		// No @vet directives: vet must pass.
+		if vetErr != nil {
+			t.Errorf("go vet failed on output:\n%s", vetOutput)
+		}
+	} else {
+		// @vet directives present: vet output must contain each.
+		if vetErr == nil {
+			t.Errorf("expected go vet to fail, but it passed")
+		}
+		for _, exp := range expectedVet {
+			if !strings.Contains(vetOutput, exp) {
+				t.Errorf("expected go vet output containing %q, got:\n%s", exp, vetOutput)
+			}
 		}
 	}
 }

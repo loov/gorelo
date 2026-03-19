@@ -3,6 +3,7 @@
 UseStrings -> moved.go
 
 @warn moved decl UseStrings uses dot import "strings"
+@vet undefined: ToUpper
 
 -- input/go.mod --
 module example.com/pkg

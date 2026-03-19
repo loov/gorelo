@@ -4,6 +4,7 @@
 Green -> colors_moved.go
 
 @warn const Green depends on iota
+@vet missing init expr for Green
 
 -- input/go.mod --
 module example.com/pkg

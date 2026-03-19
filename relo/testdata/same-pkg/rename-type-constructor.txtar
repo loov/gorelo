@@ -5,6 +5,7 @@ Widget=Component -> component.go
 
 @warn constructor NewWidget exists but is not being moved with type Widget
 @warn renaming type Widget to Component will also change embedded field names
+@vet unknown field Widget in struct literal
 
 -- input/go.mod --
 module example.com/pkg

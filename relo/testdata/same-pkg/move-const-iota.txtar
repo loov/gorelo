@@ -3,6 +3,7 @@
 Blue -> colors_out.go
 
 @warn const Blue depends on iota
+@vet missing init expr for Blue
 
 -- input/go.mod --
 module example.com/pkg

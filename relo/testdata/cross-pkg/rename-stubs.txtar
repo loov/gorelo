@@ -9,6 +9,7 @@ status=Status writeReport=WriteReport -> dst/report.go
 
 @warn unexported method "validate" cannot be moved cross-package
 @warn renaming type config to Config will also change embedded field names
+@vet undefined: Config
 
 -- input/go.mod --
 module example.com/test

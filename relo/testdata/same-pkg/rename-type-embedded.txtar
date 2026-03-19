@@ -5,6 +5,7 @@
 Base=Foundation
 
 @warn renaming type Base to Foundation will also change embedded field names
+@vet unknown field Base in struct literal
 
 -- input/go.mod --
 module example.com/pkg

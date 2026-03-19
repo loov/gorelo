@@ -4,6 +4,7 @@
 Widget -> dst/widget.go
 
 @warn unexported method "render" cannot be moved cross-package
+@vet cannot define new methods on non-local type
 
 -- input/go.mod --
 module example.com/test

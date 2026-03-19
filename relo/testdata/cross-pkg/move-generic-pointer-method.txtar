@@ -2,6 +2,7 @@
 
 @stubs
 Cache -> dst/cache.go
+@vet generic type alias requires go1.23 or later
 
 -- input/go.mod --
 module example.com/test

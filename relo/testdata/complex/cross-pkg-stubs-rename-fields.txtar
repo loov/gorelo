@@ -10,6 +10,7 @@ config=Config config#host=Host config#port=Port newConfig=NewConfig -> dst/confi
 
 @warn renaming type config to Config will also change embedded field names
 @warn unexported method "endpoint" cannot be moved cross-package
+@vet undefined: Config
 
 -- input/go.mod --
 module example.com/test
