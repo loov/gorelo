@@ -99,7 +99,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		usedNames := make(map[string]bool)
 
 		// Pre-populate usedNames with existing imports in the target file.
-		if existingFile := findFileInIndex(ix, targetFile); existingFile != nil {
+		if existingFile := ix.FilesByPath[targetFile]; existingFile != nil {
 			for _, imp := range existingFile.Syntax.Imports {
 				impPath := importPath(imp)
 				usedNames[importLocalName(imp, impPath)] = true
@@ -191,11 +191,6 @@ func resolveCollisions(infos []importInfo, usedNames map[string]bool) map[string
 		}
 	}
 	return aliases
-}
-
-// findFileInIndex finds a mast.File by path in the index.
-func findFileInIndex(ix *mast.Index, path string) *mast.File {
-	return ix.FilesByPath[path]
 }
 
 // findPkgForDir returns the package whose files reside in dir, or nil.

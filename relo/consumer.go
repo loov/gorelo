@@ -239,7 +239,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			ic := imports.ensureFile(filePath)
 
 			// Check if the target import already exists in the file.
-			f := findFileInIndex(ix, filePath)
+			f := ix.FilesByPath[filePath]
 			if f != nil {
 				alreadyImported := false
 				for _, imp := range f.Syntax.Imports {

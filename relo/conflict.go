@@ -182,7 +182,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 		if srcImportPath == "" {
 			continue
 		}
-		targetFile := findFileInIndex(ix, rr.TargetFile)
+		targetFile := ix.FilesByPath[rr.TargetFile]
 		if targetFile == nil {
 			// Target file doesn't exist yet; find the package by
 			// matching the target directory against known packages.
@@ -351,7 +351,7 @@ func checkSourceBuildConstraints(ix *mast.Index, resolved []*resolvedRelo, plan 
 		// Check whether the constraint will be safely propagated.
 		// For a new target file where all sources share the same
 		// constraint, assemble will add the //go:build directive.
-		targetExists := findFileInIndex(ix, rr.TargetFile) != nil
+		targetExists := ix.FilesByPath[rr.TargetFile] != nil
 		if !targetExists {
 			allSame := true
 			for _, peer := range byTarget[rr.TargetFile] {
