@@ -100,11 +100,11 @@ import (
 func Foo() { foo.X() }
 `
 	_, warn := ensureImport(src, importEntry{Path: "example.com/bar", Alias: "baz"})
-	if warn == "" {
+	if warn.Message == "" {
 		t.Error("expected alias mismatch warning")
 	}
-	if !strings.Contains(warn, "alias") {
-		t.Errorf("warning should mention alias, got: %s", warn)
+	if !strings.Contains(warn.Message, "alias") {
+		t.Errorf("warning should mention alias, got: %s", warn.Message)
 	}
 }
 

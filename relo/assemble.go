@@ -1,7 +1,6 @@
 package relo
 
 import (
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -176,10 +175,10 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 			if ic != nil {
 				for _, entry := range ic.Add {
-					var warn string
+					var warn Warning
 					content, warn = ensureImport(content, entry)
-					if warn != "" {
-						plan.Warnings = append(plan.Warnings, warn)
+					if warn.Message != "" {
+						plan.Warnings.Add(warn)
 					}
 				}
 			}
@@ -475,7 +474,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 		src, err := readFile(filePath)
 		if err != nil {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("cannot read %s for rename edits: %v", filePath, err))
+			plan.Warnings.Addf("cannot read %s for rename edits: %v", filePath, err)
 			continue
 		}
 
@@ -577,7 +576,7 @@ func collectBuildConstraint(rrs []*resolvedRelo) string {
 
 // ensureImport adds an import to the source if not already present.
 // Returns the updated source and a warning if the import exists with a different alias.
-func ensureImport(src string, entry importEntry) (string, string) {
+func ensureImport(src string, entry importEntry) (string, Warning) {
 	quotedPath := strconv.Quote(entry.Path)
 	if existingAlias, has := sourceImportAlias(src, quotedPath); has {
 		expectedAlias := entry.Alias
@@ -585,11 +584,11 @@ func ensureImport(src string, entry importEntry) (string, string) {
 			expectedAlias = guessImportLocalName(entry.Path)
 		}
 		if existingAlias != "" && existingAlias != expectedAlias {
-			return src, fmt.Sprintf(
+			return src, Warnf(
 				"import %s exists with alias %q but moved code expects %q",
 				quotedPath, existingAlias, expectedAlias)
 		}
-		return src, ""
+		return src, Warning{}
 	}
 
 	importLine := "\t"
@@ -608,7 +607,7 @@ func ensureImport(src string, entry importEntry) (string, string) {
 			newLines = append(newLines, lines[:i+1]...)
 			newLines = append(newLines, importLine)
 			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n"), ""
+			return strings.Join(newLines, "\n"), Warning{}
 		}
 	}
 
@@ -624,7 +623,7 @@ func ensureImport(src string, entry importEntry) (string, string) {
 			newLines = append(newLines, importLine)
 			newLines = append(newLines, ")")
 			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n"), ""
+			return strings.Join(newLines, "\n"), Warning{}
 		}
 	}
 
@@ -638,11 +637,11 @@ func ensureImport(src string, entry importEntry) (string, string) {
 			newLines = append(newLines, importLine)
 			newLines = append(newLines, ")")
 			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n"), ""
+			return strings.Join(newLines, "\n"), Warning{}
 		}
 	}
 
-	return src, ""
+	return src, Warning{}
 }
 
 // sourceImportAlias checks if the source already imports the given path

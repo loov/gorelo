@@ -64,7 +64,7 @@ func runGoldenTest(t *testing.T, testDir string) {
 
 	// Log warnings.
 	for _, w := range plan.Warnings {
-		t.Log("warning:", w)
+		t.Log("warning:", w.Message)
 	}
 
 	// Verify edits match golden files.

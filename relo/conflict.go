@@ -33,9 +33,9 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 			for c := range constraints {
 				cs = append(cs, c)
 			}
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+			plan.Warnings.Addf(
 				"mixed build constraints (%s) going to %s",
-				strings.Join(cs, "; "), target))
+				strings.Join(cs, "; "), target)
 		}
 	}
 }
@@ -181,9 +181,9 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		for _, imp := range targetFile.Syntax.Imports {
 			impPath, _ := strconv.Unquote(imp.Path.Value)
 			if impPath == srcImportPath {
-				plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+				plan.Warnings.Addf(
 					"moving %s to %s may create a circular import: target already imports source package %s",
-					rr.Group.Name, rr.TargetFile, srcImportPath))
+					rr.Group.Name, rr.TargetFile, srcImportPath)
 				break
 			}
 		}
@@ -199,12 +199,12 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 			continue
 		}
 		if hasDirective(decl, rr.File.Syntax, ix.Fset, "go:embed") {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf(
-				"moved decl %s has a //go:embed directive", rr.Group.Name))
+			plan.Warnings.Addf(
+				"moved decl %s has a //go:embed directive", rr.Group.Name)
 		}
 		if hasDirective(decl, rr.File.Syntax, ix.Fset, "go:generate") {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf(
-				"moved decl %s has a //go:generate directive", rr.Group.Name))
+			plan.Warnings.Addf(
+				"moved decl %s has a //go:generate directive", rr.Group.Name)
 		}
 	}
 

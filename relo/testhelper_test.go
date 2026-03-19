@@ -23,7 +23,7 @@ func parseSource(t *testing.T, src string) (*ast.File, *token.FileSet) {
 // hasWarning reports whether any warning in the plan contains substr.
 func hasWarning(plan *Plan, substr string) bool {
 	for _, w := range plan.Warnings {
-		if strings.Contains(w, substr) {
+		if strings.Contains(w.Message, substr) {
 			return true
 		}
 	}

@@ -1,7 +1,6 @@
 package relo
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"path"
@@ -73,9 +72,9 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 				impPath, _ := strconv.Unquote(imp.Path.Value)
 				localName := importLocalName(imp, impPath)
 				if localName == "." {
-					plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+					plan.Warnings.Addf(
 						"moved decl %s uses dot import %s which cannot be automatically transferred",
-						rr.Group.Name, imp.Path.Value))
+						rr.Group.Name, imp.Path.Value)
 					continue
 				}
 				if usedIdents[localName] {

@@ -227,9 +227,9 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[*mast.Group]*
 							continue
 						}
 						if fd.Name.Name == "New"+typeRelo.Group.Name {
-							plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+							plan.Warnings.Addf(
 								"constructor New%s exists but is not being moved with type %s",
-								typeRelo.Group.Name, typeRelo.Group.Name))
+								typeRelo.Group.Name, typeRelo.Group.Name)
 						}
 					}
 				}
@@ -249,9 +249,9 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[*mast.Group]*
 		}
 		typeKey := rr.Group.Pkg + "." + recvType
 		if _, ok := movedTypes[typeKey]; !ok {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+			plan.Warnings.Addf(
 				"method %s.%s is being moved but type %s is not",
-				recvType, rr.Group.Name, recvType))
+				recvType, rr.Group.Name, recvType)
 		}
 	}
 

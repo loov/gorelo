@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"fmt"
 	"go/ast"
 
 	"github.com/loov/gorelo/mast"
@@ -16,7 +17,41 @@ type Relo struct {
 // Plan is the result of Compile: a set of file edits that implement the relos.
 type Plan struct {
 	Edits    []FileEdit
-	Warnings []string
+	Warnings Warnings
+}
+
+// Warning is an advisory message emitted during compilation.
+type Warning struct {
+	Message string
+}
+
+func (w Warning) String() string { return w.Message }
+
+// Warnf creates a Warning from a format string.
+func Warnf(format string, args ...any) Warning {
+	return Warning{Message: fmt.Sprintf(format, args...)}
+}
+
+// Warnings collects advisory messages emitted during compilation.
+type Warnings []Warning
+
+// Add appends one or more warnings.
+func (w *Warnings) Add(warnings ...Warning) {
+	*w = append(*w, warnings...)
+}
+
+// Addf appends a formatted warning.
+func (w *Warnings) Addf(format string, args ...any) {
+	*w = append(*w, Warnf(format, args...))
+}
+
+// Strings returns all warning messages as strings.
+func (w Warnings) Strings() []string {
+	s := make([]string, len(w))
+	for i, warn := range w {
+		s[i] = warn.Message
+	}
+	return s
 }
 
 // FileEdit describes a change to a single file.

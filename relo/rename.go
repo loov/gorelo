@@ -1,7 +1,6 @@
 package relo
 
 import (
-	"fmt"
 	"go/ast"
 
 	"github.com/loov/gorelo/mast"
@@ -45,9 +44,9 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			continue
 		}
 		if typeHasEmbeddedUses(ix, rr.Group) {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+			plan.Warnings.Addf(
 				"renaming type %s to %s will also change embedded field names, which may affect serialization and reflection",
-				rr.Group.Name, rr.TargetName))
+				rr.Group.Name, rr.TargetName)
 		}
 	}
 
