@@ -1,0 +1,5 @@
+#!/bin/sh
+if grep -qi '^Co-Authored-By:' "$1"; then
+	echo "error: commit messages must not contain Co-Authored-By lines (see CONTRIBUTING.md)"
+	exit 1
+fi
