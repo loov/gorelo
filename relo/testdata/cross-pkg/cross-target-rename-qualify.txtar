@@ -1,0 +1,33 @@
+# Move declarations from the same source package to different target packages
+# with renames. References in the moved code should be qualified with the
+# target package name of the referenced declaration.
+
+ErrCode=Code -> pkg1/codes.go
+helper=Helper -> pkg2/util.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/main.go --
+package src
+
+const ErrCode = 1
+
+func helper() int {
+	return ErrCode
+}
+-- golden/pkg1/codes.go --
+package pkg1
+
+const Code = 1
+-- golden/pkg2/util.go --
+package pkg2
+
+import (
+	"example.com/test/pkg1"
+)
+
+func Helper() int {
+	return pkg1.Code
+}

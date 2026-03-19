@@ -2,6 +2,7 @@ package relo
 
 import (
 	"go/ast"
+	"path/filepath"
 
 	"github.com/loov/gorelo/mast"
 )
@@ -101,10 +102,17 @@ func computeExtractedRenames(ix *mast.Index, rr *resolvedRelo, s *span, resolved
 		return nil
 	}
 
-	// Build rename map for all groups being renamed.
+	targetDir := filepath.Dir(rr.TargetFile)
+
+	// Build rename map for groups being renamed, excluding groups that are
+	// moving to a different target package. Those are handled by
+	// computeCrossTargetEdits which produces a qualified edit (pkg.Name).
 	renamedGroups := make(map[*mast.Group]string)
 	for _, r := range resolved {
 		if r.TargetName != r.Group.Name {
+			if r.File != nil && filepath.Dir(r.TargetFile) != targetDir {
+				continue
+			}
 			renamedGroups[r.Group] = r.TargetName
 		}
 	}
