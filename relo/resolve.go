@@ -77,7 +77,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 		// Warn about init/main rename semantics.
 		if r.Rename != "" && grp.Kind == mast.Func {
 			if grp.Name == "init" && r.Rename != "init" {
-				plan.Warnings.Addf("renaming init function %q loses automatic execution semantics", grp.Name)
+				plan.Warnings.Addf("renaming init function loses automatic execution semantics")
 			}
 			if grp.Name != "init" && r.Rename == "init" {
 				plan.Warnings.Addf("renaming %q to init gains automatic execution semantics", grp.Name)

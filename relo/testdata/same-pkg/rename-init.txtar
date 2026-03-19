@@ -3,7 +3,7 @@
 
 init=Setup -> lifecycle.go
 
-@warn renaming init function "init" loses automatic execution semantics
+@warn renaming init function loses automatic execution semantics
 
 -- input/go.mod --
 module example.com/pkg
