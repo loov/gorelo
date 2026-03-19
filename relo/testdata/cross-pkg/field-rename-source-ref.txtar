@@ -1,0 +1,27 @@
+# Moving a struct to another package while renaming its field should not
+# qualify the field name with the source package.
+
+Foo Foo#name=Name -> pkg1/foo.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/main.go --
+package src
+
+type Foo struct{ name string }
+
+func init() { _ = Foo{name: "x"} }
+-- golden/src/main.go --
+package src
+
+import (
+	"example.com/test/pkg1"
+)
+
+func init() { _ = pkg1.Foo{Name: "x"} }
+-- golden/pkg1/foo.go --
+package pkg1
+
+type Foo struct{ Name string }
