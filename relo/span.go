@@ -20,6 +20,36 @@ type span struct {
 	Keyword    string // "const", "var", "type" for grouped specs
 }
 
+// movedSpanIndex maps file paths to spans being extracted to a different file.
+// It provides a Contains method for checking whether a byte range falls inside
+// a moved span, used by rename and consumer phases to skip idents that will be
+// handled during assembly.
+type movedSpanIndex map[string][]*span
+
+// buildMovedSpanIndex builds an index of spans being moved out of their source file.
+func buildMovedSpanIndex(resolved []*resolvedRelo, spans map[*resolvedRelo]*span) movedSpanIndex {
+	m := make(movedSpanIndex)
+	for _, rr := range resolved {
+		s, ok := spans[rr]
+		if !ok || s == nil || rr.File == nil || rr.TargetFile == rr.File.Path {
+			continue
+		}
+		m[rr.File.Path] = append(m[rr.File.Path], s)
+	}
+	return m
+}
+
+// Contains reports whether the byte range [off, endOff) is inside a moved span
+// for the given file.
+func (m movedSpanIndex) Contains(filePath string, off, endOff int) bool {
+	for _, s := range m[filePath] {
+		if off >= s.Start && endOff <= s.End {
+			return true
+		}
+	}
+	return false
+}
+
 // computeSpans computes byte ranges for each resolved relo (phases 2-3).
 func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*resolvedRelo]*span, error) {
 	spans := make(map[*resolvedRelo]*span)

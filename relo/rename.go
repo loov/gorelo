@@ -21,8 +21,7 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 
 	// Build the set of groups being renamed and their new names.
 	renamedGroups := make(map[*mast.Group]string)
-	// Track which files contain moved declarations (for filtering edits).
-	movedSpans := make(map[string][]*span) // filePath -> spans being removed
+	movedSpans := buildMovedSpanIndex(resolved, spans)
 
 	// When stubs are enabled, track groups with cross-package moves.
 	// The stubs provide backward-compatible aliases using the old name,
@@ -35,11 +34,6 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	for _, rr := range resolved {
 		if rr.TargetName != rr.Group.Name {
 			renamedGroups[rr.Group] = rr.TargetName
-		}
-		// Only track as "moved" if the declaration is actually being extracted
-		// to a different file. Same-file renames don't remove the span.
-		if s, ok := spans[rr]; ok && s != nil && rr.File != nil && rr.TargetFile != rr.File.Path {
-			movedSpans[rr.File.Path] = append(movedSpans[rr.File.Path], s)
 		}
 
 		if opts != nil && opts.Stubs && rr.File != nil && rr.TargetFile != rr.File.Path {
@@ -90,18 +84,8 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			off := ix.Fset.Position(id.Ident.Pos()).Offset
 			endOff := off + len(id.Ident.Name)
 
-			// Check if this ident is inside a moved span — if so, the edit
-			// will be applied to the extracted text in the target file.
-			inMovedSpan := false
-			for _, s := range movedSpans[id.File.Path] {
-				if off >= s.Start && endOff <= s.End {
-					inMovedSpan = true
-					break
-				}
-			}
-
-			if inMovedSpan {
-				// Will be handled during assembly when extracting text.
+			// Inside a moved span — will be handled during assembly.
+			if movedSpans.Contains(id.File.Path, off, endOff) {
 				continue
 			}
 

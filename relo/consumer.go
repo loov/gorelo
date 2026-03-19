@@ -87,21 +87,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	}
 
 	// Build moved span lookup so we can skip idents inside extracted code.
-	movedSpans := make(map[string][]*span) // filePath -> spans being removed
-	for _, rr := range resolved {
-		if s, ok := spans[rr]; ok && s != nil && rr.File != nil && rr.TargetFile != rr.File.Path {
-			movedSpans[rr.File.Path] = append(movedSpans[rr.File.Path], s)
-		}
-	}
-
-	inMovedSpan := func(filePath string, off, endOff int) bool {
-		for _, s := range movedSpans[filePath] {
-			if off >= s.Start && endOff <= s.End {
-				return true
-			}
-		}
-		return false
-	}
+	movedSpans := buildMovedSpanIndex(resolved, spans)
 
 	for grp, info := range movedGroups {
 		for _, id := range grp.Idents {
@@ -121,7 +107,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 					if info.tgtName != grp.Name {
 						identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 						identEnd := identOff + len(id.Ident.Name)
-						if inMovedSpan(filePath, identOff, identEnd) {
+						if movedSpans.Contains(filePath, identOff, identEnd) {
 							continue
 						}
 						fe := ensureFile(filePath)
@@ -166,7 +152,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 				identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 				identEnd := identOff + len(id.Ident.Name)
 
-				if inMovedSpan(filePath, identOff, identEnd) {
+				if movedSpans.Contains(filePath, identOff, identEnd) {
 					continue // inside extracted code, handled during assembly
 				}
 
