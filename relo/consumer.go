@@ -62,7 +62,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		qualifierEdits []edit
 		nameEdits      []edit
 		addImports     map[string]bool // target import paths to add
-		srcImports     map[string]bool // source import paths that may become unused
 	}
 	byFile := make(map[string]*fileEdits)
 
@@ -71,7 +70,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		if !ok {
 			fe = &fileEdits{
 				addImports: make(map[string]bool),
-				srcImports: make(map[string]bool),
 			}
 			byFile[path] = fe
 		}
@@ -163,7 +161,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			}
 
 			fe.addImports[info.tgtPkgPath] = true
-			fe.srcImports[info.srcPkgPath] = true
 		}
 	}
 
