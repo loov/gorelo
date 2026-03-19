@@ -9,8 +9,10 @@ import (
 	"html"
 	"html/template"
 	"log"
+	"context"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/pprof"
 	"sort"
@@ -70,27 +72,33 @@ func main() {
 	cpuprofile := flag.String("cpuprofile", "", "write CPU profile to file")
 	flag.Parse()
 
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
+	if err := run(*dir, *listen, *cpuprofile); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(dir, listen, cpuprofile string) error {
+	if cpuprofile != "" {
+		f, err := os.Create(cpuprofile)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		defer f.Close()
 		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal(err)
+			return err
 		}
 		defer pprof.StopCPUProfile()
 	}
 
-	absDir, err := filepath.Abs(*dir)
+	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	log.Printf("loading packages in %s ...", absDir)
 	ix, err := mast.Load(&mast.Config{Dir: absDir}, "./...")
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("loading packages: %w", err)
 	}
 	for _, e := range ix.Errors {
 		log.Printf("warning: %v", e)
@@ -165,8 +173,18 @@ func main() {
 	http.HandleFunc("/file", s.handleFile)
 	http.HandleFunc("/group", s.handleGroup)
 
-	log.Printf("listening on http://%s", *listen)
-	log.Fatal(http.ListenAndServe(*listen, nil))
+	srv := &http.Server{Addr: listen}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	log.Printf("listening on http://%s", listen)
+	return srv.ListenAndServe()
 }
 
 type server struct {
