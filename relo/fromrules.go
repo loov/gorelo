@@ -37,7 +37,14 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, error) 
 				r.Rename = item.Rename
 			}
 			if rule.Dest != "" {
-				r.MoveTo = filepath.Join(dir, rule.Dest)
+				// Fields cannot be moved, only renamed. Skip MoveTo
+				// for field renames so they work inside <- / -> blocks.
+				// Bare field references (no rename) still get MoveTo
+				// so that resolve catches them as errors.
+				grp := ix.Group(r.Ident)
+				if grp == nil || grp.Kind != mast.Field || r.Rename == "" {
+					r.MoveTo = filepath.Join(dir, rule.Dest)
+				}
 			}
 			relos = append(relos, r)
 		}

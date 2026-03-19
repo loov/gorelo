@@ -721,6 +721,42 @@ func TestParseMultipleItemsOnMultilineLine(t *testing.T) {
 	}
 }
 
+func TestParseFieldRenameInMoveBlock(t *testing.T) {
+	input := "server.go <-\n\tServer\n\tServerOptions#Listen=Address"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "ServerOptions", Field: "Listen", FieldRename: "Address"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseFieldRenameInForwardBlock(t *testing.T) {
+	input := "Server ServerOptions#Listen=Address -> server.go"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "ServerOptions", Field: "Listen", FieldRename: "Address"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
 func FuzzParse(f *testing.F) {
 	seeds := []string{
 		"",
