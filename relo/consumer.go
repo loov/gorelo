@@ -58,13 +58,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	// Scan all Use idents in moved groups looking for consumer references.
 	// A consumer reference is a Use ident in a file that is neither a source
 	// nor a target file.
-	type consumerEdit struct {
-		qualifierEdit *edit      // edit to change the qualifier (pkg alias)
-		nameEdit      *edit      // edit to change the ident name (if renamed)
-		tgtPkgPath    string     // import path to add
-		srcPkgPath    string     // import path potentially to remove
-		file          *mast.File // consumer file
-	}
 
 	// Collect edits per consumer file.
 	type fileEdits struct {
