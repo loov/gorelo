@@ -173,7 +173,9 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	for _, filePath := range sortedConsumerFiles {
 		fe := byFile[filePath]
 		// Merge qualifier and name edits into renames.
-		allEdits := append(fe.qualifierEdits, fe.nameEdits...)
+		allEdits := make([]edit, 0, len(fe.qualifierEdits)+len(fe.nameEdits))
+		allEdits = append(allEdits, fe.qualifierEdits...)
+		allEdits = append(allEdits, fe.nameEdits...)
 		allEdits = deduplicateEdits(allEdits)
 		if len(allEdits) > 0 {
 			// Consumer edits supersede rename edits at the same offset
