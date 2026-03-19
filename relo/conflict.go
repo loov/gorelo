@@ -118,18 +118,29 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 			continue
 		}
 
-		// Build set of names being moved from this package (to exclude from collision check).
-		movedFrom := make(map[string]bool)
+		// Build set of groups being moved out of this package, keyed by
+		// their original name.  We use this to skip collision checks when
+		// the existing declaration at that name is the one being moved away.
+		movedFromGroups := make(map[*mast.Group]bool)
+		movedFromNames := make(map[string]bool)
 		for _, rr := range resolved {
-			if rr.File != nil && rr.File.Pkg == targetPkg {
-				movedFrom[rr.Group.Name] = true
+			if rr.File != nil && rr.File.Pkg == targetPkg && rr.TargetFile != rr.File.Path {
+				movedFromGroups[rr.Group] = true
+				movedFromNames[rr.Group.Name] = true
 			}
 		}
 
 		for _, entry := range entries {
+			// If this entry's own group is moving from this package,
+			// the name it vacates is rr.Group.Name, not entry.name
+			// (which may be a renamed TargetName).  Skip collision check
+			// only for the original name being vacated.
+			if movedFromGroups[entry.reloGroup] {
+				continue
+			}
 			for _, file := range targetPkg.Files {
-				// Skip files that are sources of moved declarations.
-				if movedFrom[entry.name] {
+				// Skip declarations whose name is being vacated.
+				if movedFromNames[entry.name] {
 					continue
 				}
 
