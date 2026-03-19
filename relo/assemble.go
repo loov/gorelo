@@ -1063,9 +1063,5 @@ func fileContent(f *mast.File) []byte {
 	if f == nil {
 		return nil
 	}
-	data, err := readFile(f.Path)
-	if err != nil {
-		return nil
-	}
-	return data
+	return f.Src
 }

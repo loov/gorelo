@@ -17,6 +17,7 @@ import (
 type parsedFile struct {
 	path     string
 	syntax   *ast.File
+	src      []byte
 	buildTag string
 }
 
@@ -174,6 +175,7 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 		parsed = append(parsed, parsedFile{
 			path:     path,
 			syntax:   f,
+			src:      src,
 			buildTag: tag,
 		})
 	}
@@ -242,6 +244,7 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 			Path:     pf.path,
 			Pkg:      owner,
 			Syntax:   pf.syntax,
+			Src:      pf.src,
 			BuildTag: pf.buildTag,
 		}
 		owner.Files = append(owner.Files, mf)

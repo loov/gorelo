@@ -39,6 +39,7 @@ type File struct {
 	Path     string
 	Pkg      *Package // the package this file belongs to
 	Syntax   *ast.File
+	Src      []byte // original source bytes
 	BuildTag string // the build constraint, if any
 }
 
