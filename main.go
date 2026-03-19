@@ -87,7 +87,22 @@ func run(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []s
 	for _, rule := range merged.Rules {
 		for _, item := range rule.Items {
 			if item.Field != "" {
-				warnings.Add(relo.Warnf("field renames not yet supported, skipping %s.%s", item.Name, item.Field))
+				if strings.Contains(item.Field, ".") {
+					warnings.Add(relo.Warnf("nested field renames not yet supported, skipping %s#%s", item.Name, item.Field))
+					continue
+				}
+				fieldIdent := ix.FindFieldDef(item.Name, item.Field, item.Source)
+				if fieldIdent == nil {
+					return fmt.Errorf("could not find field %q in struct %q", item.Field, item.Name)
+				}
+				rename := item.FieldRename
+				if rename == "" {
+					rename = item.Field
+				}
+				relos = append(relos, relo.Relo{
+					Ident:  fieldIdent,
+					Rename: rename,
+				})
 				continue
 			}
 

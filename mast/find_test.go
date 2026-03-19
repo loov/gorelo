@@ -150,3 +150,113 @@ func TestFindDefReturnsDefIdent(t *testing.T) {
 		t.Error("FindDef returned an ident that is not marked as Def in its group")
 	}
 }
+
+func TestFindFieldDef(t *testing.T) {
+	ix := loadTestdata(t)
+
+	tests := []struct {
+		desc      string
+		typeName  string
+		fieldName string
+		source    string
+		wantNil   bool
+	}{
+		{desc: "User.Name", typeName: "User", fieldName: "Name"},
+		{desc: "User.Email", typeName: "User", fieldName: "Email"},
+		{desc: "User.Age", typeName: "User", fieldName: "Age"},
+		{desc: "Server.Addr", typeName: "Server", fieldName: "Addr"},
+		{desc: "Node.Value", typeName: "Node", fieldName: "Value"},
+		{desc: "Node.Children", typeName: "Node", fieldName: "Children"},
+		{desc: "Pair.First", typeName: "Pair", fieldName: "First"},
+		{desc: "Pair.Second", typeName: "Pair", fieldName: "Second"},
+		{desc: "Admin.Permissions", typeName: "Admin", fieldName: "Permissions"},
+
+		// Anonymous struct in var declaration.
+		{desc: "Config.Host", typeName: "Config", fieldName: "Host"},
+		{desc: "Config.Port", typeName: "Config", fieldName: "Port"},
+
+		// Not found cases.
+		{desc: "User.Missing", typeName: "User", fieldName: "Missing", wantNil: true},
+		{desc: "Missing.Name", typeName: "Missing", fieldName: "Name", wantNil: true},
+		{desc: "Counter.X (not a struct)", typeName: "Counter", fieldName: "X", wantNil: true},
+		{desc: "Config.Missing", typeName: "Config", fieldName: "Missing", wantNil: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			id := ix.FindFieldDef(tt.typeName, tt.fieldName, tt.source)
+			if tt.wantNil {
+				if id != nil {
+					t.Errorf("FindFieldDef(%q, %q, %q) = %s, want nil", tt.typeName, tt.fieldName, tt.source, id.Name)
+				}
+				return
+			}
+			if id == nil {
+				t.Fatalf("FindFieldDef(%q, %q, %q) = nil", tt.typeName, tt.fieldName, tt.source)
+			}
+			if id.Name != tt.fieldName {
+				t.Errorf("ident name = %q, want %q", id.Name, tt.fieldName)
+			}
+			grp := ix.Group(id)
+			if grp == nil {
+				t.Fatalf("returned ident has no group")
+			}
+			if grp.Kind != mast.Field {
+				t.Errorf("group kind = %d, want Field", grp.Kind)
+			}
+		})
+	}
+}
+
+func TestFindFieldDefSourceFilter(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// User.Name is in structs.go.
+	id := ix.FindFieldDef("User", "Name", "structs.go")
+	if id == nil {
+		t.Fatal("FindFieldDef(\"User\", \"Name\", \"structs.go\") = nil")
+	}
+
+	// User.Name is not in types.go.
+	id = ix.FindFieldDef("User", "Name", "types.go")
+	if id != nil {
+		t.Error("FindFieldDef(\"User\", \"Name\", \"types.go\") should be nil")
+	}
+
+	// Info.Distro is in example/linux.
+	id = ix.FindFieldDef("Info", "Distro", "example/linux")
+	if id == nil {
+		t.Fatal("FindFieldDef(\"Info\", \"Distro\", \"example/linux\") = nil")
+	}
+
+	// Info.Distro is not in example root.
+	id = ix.FindFieldDef("Info", "Distro", "example")
+	if id != nil {
+		t.Error("FindFieldDef(\"Info\", \"Distro\", \"example\") should be nil")
+	}
+}
+
+func TestFindFieldDefReturnsDefIdent(t *testing.T) {
+	ix := loadTestdata(t)
+
+	id := ix.FindFieldDef("User", "Email", "")
+	if id == nil {
+		t.Fatal("FindFieldDef(\"User\", \"Email\", \"\") = nil")
+	}
+
+	grp := ix.Group(id)
+	if grp == nil {
+		t.Fatal("Email has no group")
+	}
+
+	var found bool
+	for _, gid := range grp.Idents {
+		if gid.Ident == id && gid.Kind == mast.Def {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("FindFieldDef returned an ident that is not marked as Def in its group")
+	}
+}
