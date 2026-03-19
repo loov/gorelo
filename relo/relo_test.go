@@ -8,43 +8,74 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/txtar"
+
 	"github.com/loov/gorelo/mast"
 	"github.com/loov/gorelo/relo"
 )
 
 func TestGolden(t *testing.T) {
-	entries, err := os.ReadDir("testdata")
+	entries, err := filepath.Glob("testdata/*.txtar")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
+		name := strings.TrimSuffix(filepath.Base(entry), ".txtar")
 		t.Run(name, func(t *testing.T) {
-			runGoldenTest(t, filepath.Join("testdata", name))
+			runGoldenTest(t, entry)
 		})
 	}
 }
 
-// runGoldenTest runs a single golden-file test case.
+// runGoldenTest runs a single txtar-based golden test.
 //
-// Each test directory contains:
-//   - input/      — Go source files to load
-//   - golden/     — expected output files after applying the plan
-//   - relo.txt    — relo instructions, one per line: "Name -> target.go" or "Name => NewName" or "Name -> target.go => NewName"
-func runGoldenTest(t *testing.T, testDir string) {
+// The txtar comment section contains relo instructions (same format as before):
+//
+//	Name -> target.go
+//	Name => NewName
+//	Name -> target.go => NewName
+//
+// Lines starting with # are comments.
+//
+// The archive files are split by prefix:
+//   - input/*  — Go source files to load
+//   - golden/* — expected output files after applying the plan
+func runGoldenTest(t *testing.T, txtarPath string) {
 	t.Helper()
 
-	inputDir := filepath.Join(testDir, "input")
-	goldenDir := filepath.Join(testDir, "golden")
+	data, err := os.ReadFile(txtarPath)
+	if err != nil {
+		t.Fatal("reading txtar:", err)
+	}
+	ar := txtar.Parse(data)
 
-	// Copy input files to a temp directory so we can verify output.
+	// Split files into input and golden maps.
+	inputFiles := make(map[string][]byte)
+	goldenFiles := make(map[string]string)
+	for _, f := range ar.Files {
+		switch {
+		case strings.HasPrefix(f.Name, "input/"):
+			inputFiles[strings.TrimPrefix(f.Name, "input/")] = f.Data
+		case strings.HasPrefix(f.Name, "golden/"):
+			goldenFiles[strings.TrimPrefix(f.Name, "golden/")] = string(f.Data)
+		default:
+			t.Fatalf("unexpected file in txtar: %s (must start with input/ or golden/)", f.Name)
+		}
+	}
+
+	// Write input files to a temp directory.
 	tmpDir := t.TempDir()
 	pkgDir := filepath.Join(tmpDir, "pkg")
-	copyDir(t, inputDir, pkgDir)
+	for name, content := range inputFiles {
+		path := filepath.Join(pkgDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// Load all packages in the test module.
 	ix, err := mast.Load(&mast.Config{Dir: pkgDir}, "./...")
@@ -52,9 +83,8 @@ func runGoldenTest(t *testing.T, testDir string) {
 		t.Fatal("loading package:", err)
 	}
 
-	// Parse relo instructions.
-	reloFile := filepath.Join(testDir, "relo.txt")
-	relos := parseReloFile(t, reloFile, ix, pkgDir)
+	// Parse relo instructions from the txtar comment.
+	relos := parseReloLines(t, string(ar.Comment), ix, pkgDir)
 
 	// Compile.
 	plan, err := relo.Compile(ix, relos, nil)
@@ -62,19 +92,54 @@ func runGoldenTest(t *testing.T, testDir string) {
 		t.Fatal("compile:", err)
 	}
 
-	// Log warnings.
+	// Check warnings against expected list.
+	// Lines starting with "warn:" in the txtar comment are expected warnings.
+	var expectedWarnings []string
+	for _, line := range strings.Split(string(ar.Comment), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "warn:") {
+			expectedWarnings = append(expectedWarnings, strings.TrimSpace(strings.TrimPrefix(line, "warn:")))
+		}
+	}
+	var actualWarnings []string
 	for _, w := range plan.Warnings {
-		t.Log("warning:", w.Message)
+		actualWarnings = append(actualWarnings, w.Message)
+	}
+	// Each expected warning must be a substring of some actual warning.
+	for _, exp := range expectedWarnings {
+		found := false
+		for _, act := range actualWarnings {
+			if strings.Contains(act, exp) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected warning containing %q not found", exp)
+		}
+	}
+	// Each actual warning must match some expected warning.
+	for _, act := range actualWarnings {
+		found := false
+		for _, exp := range expectedWarnings {
+			if strings.Contains(act, exp) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("unexpected warning: %s", act)
+		}
 	}
 
-	// Verify edits match golden files.
-	// Build a map of expected files from golden dir.
-	expected := readGoldenDir(t, goldenDir)
-
-	// Build a map of result files from the plan.
-	// Start with input files, apply edits. Exclude go.mod from comparison.
-	actual := readDir(t, pkgDir)
-	delete(actual, "go.mod")
+	// Build actual output: start with input files, apply edits.
+	actual := make(map[string]string)
+	for name, content := range inputFiles {
+		if name == "go.mod" {
+			continue
+		}
+		actual[name] = string(content)
+	}
 	for _, fe := range plan.Edits {
 		relPath, err := filepath.Rel(pkgDir, fe.Path)
 		if err != nil {
@@ -87,23 +152,23 @@ func runGoldenTest(t *testing.T, testDir string) {
 		}
 	}
 
-	// Compare.
+	// Compare actual vs golden.
 	allKeys := make(map[string]bool)
-	for k := range expected {
+	for k := range goldenFiles {
 		allKeys[k] = true
 	}
 	for k := range actual {
 		allKeys[k] = true
 	}
 
-	var sortedAllKeys []string
+	sorted := make([]string, 0, len(allKeys))
 	for k := range allKeys {
-		sortedAllKeys = append(sortedAllKeys, k)
+		sorted = append(sorted, k)
 	}
-	sort.Strings(sortedAllKeys)
+	sort.Strings(sorted)
 
-	for _, k := range sortedAllKeys {
-		exp, hasExp := expected[k]
+	for _, k := range sorted {
+		exp, hasExp := goldenFiles[k]
 		act, hasAct := actual[k]
 		if hasExp && !hasAct {
 			t.Errorf("missing file %s in output", k)
@@ -113,7 +178,6 @@ func runGoldenTest(t *testing.T, testDir string) {
 			t.Errorf("unexpected file %s in output:\n%s", k, act)
 			continue
 		}
-		// Normalize trailing whitespace for comparison.
 		expNorm := strings.TrimRight(exp, "\n\r\t ")
 		actNorm := strings.TrimRight(act, "\n\r\t ")
 		if expNorm != actNorm {
@@ -122,20 +186,13 @@ func runGoldenTest(t *testing.T, testDir string) {
 	}
 }
 
-// parseReloFile parses relo instructions from a file.
-// Format: "Name -> target.go" for move, "Name => NewName" for rename,
-// "Name -> target.go => NewName" for both.
-func parseReloFile(t *testing.T, path string, ix *mast.Index, pkgDir string) []relo.Relo {
+// parseReloLines parses relo instructions from text (the txtar comment section).
+func parseReloLines(t *testing.T, text string, ix *mast.Index, pkgDir string) []relo.Relo {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal("reading relo file:", err)
-	}
-
 	var relos []relo.Relo
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "warn:") {
 			continue
 		}
 
@@ -157,7 +214,6 @@ func parseReloFile(t *testing.T, path string, ix *mast.Index, pkgDir string) []r
 			t.Fatalf("invalid relo line: %q", line)
 		}
 
-		// Find the definition ident.
 		ident := findDefIdent(t, ix, name)
 
 		r := relo.Relo{Ident: ident}
@@ -204,61 +260,4 @@ func findDefIdent(t *testing.T, ix *mast.Index, name string) *ast.Ident {
 	}
 	t.Fatalf("definition ident %q not found", name)
 	return nil
-}
-
-// copyDir copies all files from src to dst.
-func copyDir(t *testing.T, src, dst string) {
-	t.Helper()
-	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, 0755)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0644)
-	})
-	if err != nil {
-		t.Fatal("copying dir:", err)
-	}
-}
-
-// readDir reads all files in a directory into a map of relative path -> content.
-func readDir(t *testing.T, dir string) map[string]string {
-	t.Helper()
-	result := make(map[string]string)
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		result[rel] = string(data)
-		return nil
-	})
-	return result
-}
-
-// readGoldenDir reads all files in a golden directory.
-func readGoldenDir(t *testing.T, dir string) map[string]string {
-	t.Helper()
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Fatal("golden directory does not exist:", dir)
-	}
-	return readDir(t, dir)
 }

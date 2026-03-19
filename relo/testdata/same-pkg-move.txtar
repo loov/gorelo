@@ -1,0 +1,45 @@
+# Move a type to a new file within the same package.
+# References in the same package need no import changes.
+
+Widget -> target.go
+
+warn: constructor NewWidget exists but is not being moved with type Widget
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package pkg
+
+import "fmt"
+
+type Widget struct {
+	Name string
+}
+
+func NewWidget(name string) *Widget {
+	return &Widget{Name: name}
+}
+
+func PrintWidget(w *Widget) {
+	fmt.Println(w.Name)
+}
+-- golden/source.go --
+package pkg
+
+import "fmt"
+
+func NewWidget(name string) *Widget {
+	return &Widget{Name: name}
+}
+
+func PrintWidget(w *Widget) {
+	fmt.Println(w.Name)
+}
+-- golden/target.go --
+package pkg
+
+type Widget struct {
+	Name string
+}

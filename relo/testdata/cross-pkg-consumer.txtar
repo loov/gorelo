@@ -1,0 +1,69 @@
+# Move a type to a different package.
+# Consumer files that reference the moved type should be rewritten
+# to import the new package and update qualifier expressions.
+
+Widget -> target/target.go
+
+warn: constructor NewWidget exists but is not being moved with type Widget
+
+-- input/go.mod --
+module example.com/crosstest
+
+go 1.21
+-- input/source/source.go --
+package source
+
+import "fmt"
+
+type Widget struct {
+	Name string
+}
+
+func NewWidget(name string) *Widget {
+	return &Widget{Name: name}
+}
+
+func PrintWidget(w *Widget) {
+	fmt.Println(w.Name)
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/crosstest/source"
+
+func MakeWidget() *source.Widget {
+	w := source.NewWidget("test")
+	source.PrintWidget(w)
+	return w
+}
+-- golden/source/source.go --
+package source
+
+import "fmt"
+
+func NewWidget(name string) *Widget {
+	return &Widget{Name: name}
+}
+
+func PrintWidget(w *Widget) {
+	fmt.Println(w.Name)
+}
+-- golden/target/target.go --
+package target
+
+type Widget struct {
+	Name string
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/crosstest/source"
+	"example.com/crosstest/target"
+)
+
+func MakeWidget() *target.Widget {
+	w := source.NewWidget("test")
+	source.PrintWidget(w)
+	return w
+}

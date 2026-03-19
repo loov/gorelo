@@ -1,0 +1,31 @@
+# Move a non-iota const out of a file that also has an iota block.
+# The iota block must remain untouched.
+
+MaxSize -> target.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/consts.go --
+package pkg
+
+const (
+	Red = iota
+	Green
+	Blue
+)
+
+const MaxSize = 100
+-- golden/consts.go --
+package pkg
+
+const (
+	Red = iota
+	Green
+	Blue
+)
+-- golden/target.go --
+package pkg
+
+const MaxSize = 100

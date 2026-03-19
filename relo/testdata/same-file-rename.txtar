@@ -1,0 +1,42 @@
+# Rename a type within the same file.
+# All references to the type should be updated.
+
+Foo => Bar
+
+warn: constructor NewFoo exists but is not being moved with type Foo
+warn: renaming type Foo to Bar will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/main.go --
+package pkg
+
+type Foo struct {
+	Value int
+}
+
+func NewFoo() *Foo {
+	return &Foo{Value: 1}
+}
+
+func UseFoo() {
+	f := NewFoo()
+	_ = f.Value
+}
+-- golden/main.go --
+package pkg
+
+type Bar struct {
+	Value int
+}
+
+func NewFoo() *Bar {
+	return &Bar{Value: 1}
+}
+
+func UseFoo() {
+	f := NewFoo()
+	_ = f.Value
+}

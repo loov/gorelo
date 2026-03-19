@@ -1,2 +1,0 @@
-# Move Widget type from source to target package
-Widget -> target/target.go
