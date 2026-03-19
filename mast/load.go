@@ -503,7 +503,10 @@ func isKnownGOARCH(s string) bool { return knownGOARCH[s] }
 func discoverMissedDirs(dir string, loadedDirs map[string]bool) []string {
 	var missed []string
 	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck
-		if err != nil || !d.IsDir() {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
 			return nil
 		}
 		if path != dir {
