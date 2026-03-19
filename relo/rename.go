@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"fmt"
 	"go/ast"
 
 	"github.com/loov/gorelo/mast"
@@ -13,7 +14,7 @@ type renameSet struct {
 }
 
 // computeRenames uses mast groups to find all occurrences needing rename (phase 6).
-func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span) *renameSet {
+func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) *renameSet {
 	rs := &renameSet{
 		byFile: make(map[string][]edit),
 	}
@@ -39,6 +40,18 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 
 	if len(renamedGroups) == 0 {
 		return rs
+	}
+
+	// Warn about type renames that may affect embedded field names.
+	for _, rr := range resolved {
+		if rr.Group.Kind != mast.TypeName || rr.TargetName == rr.Group.Name {
+			continue
+		}
+		if typeHasEmbeddedUses(ix, rr.Group) {
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+				"renaming type %s to %s will also change embedded field names, which may affect serialization and reflection",
+				rr.Group.Name, rr.TargetName))
+		}
 	}
 
 	// For each renamed group, iterate through all its idents and create edits.
@@ -147,4 +160,46 @@ func computeExtractedRenames(ix *mast.Index, rr *resolvedRelo, s *span, resolved
 	})
 
 	return deduplicateEdits(edits)
+}
+
+// typeHasEmbeddedUses checks if a TypeName group has any Use idents
+// that appear as embedded fields in struct declarations.
+func typeHasEmbeddedUses(ix *mast.Index, grp *mast.Group) bool {
+	for _, id := range grp.Idents {
+		if id.Kind != mast.Use || id.File == nil {
+			continue
+		}
+		// Walk the file to check if this ident is used as an anonymous
+		// (embedded) field in a struct type.
+		found := false
+		ast.Inspect(id.File.Syntax, func(n ast.Node) bool {
+			if found {
+				return false
+			}
+			field, ok := n.(*ast.Field)
+			if !ok {
+				return true
+			}
+			// An embedded field has no explicit names.
+			if len(field.Names) > 0 {
+				return true
+			}
+			// Check if the field type is our ident.
+			switch t := field.Type.(type) {
+			case *ast.Ident:
+				if t == id.Ident {
+					found = true
+				}
+			case *ast.StarExpr:
+				if ti, ok := t.X.(*ast.Ident); ok && ti == id.Ident {
+					found = true
+				}
+			}
+			return !found
+		})
+		if found {
+			return true
+		}
+	}
+	return false
 }
