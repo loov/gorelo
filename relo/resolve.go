@@ -118,16 +118,6 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 
 		// Deduplicate by group (+ optional file).
 		if existing, ok := seen[sk]; ok {
-			// If the existing relo is synthesized and this one is explicit, prefer explicit.
-			if existing.Synthesized {
-				existing.Relo = r
-				existing.TargetFile = r.MoveTo
-				if r.Rename != "" {
-					existing.TargetName = r.Rename
-				}
-				existing.Synthesized = false
-				continue
-			}
 			// Two explicit relos for the same key: error if they conflict.
 			newTarget := r.MoveTo
 			if newTarget == "" && defIdent.File != nil {
