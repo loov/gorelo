@@ -38,6 +38,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 	// Build a map from Sel ident to its package qualifier ident
 	// for expressions like pkg.Name.
 	qualifiers := buildQualifierMap(info, fileMap)
+	fields := newFieldOwnerCache()
 
 	// Process Defs (skip embedded fields — handled below).
 	for ident, obj := range info.Defs {
@@ -52,7 +53,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 			continue
 		}
 
-		key := objectKeyFor(obj)
+		key := objectKeyFor(obj, fields)
 		grp := findOrCreateGroup(ix, key, obj)
 		addIdent(ix, grp, ident, qualifiers[ident], file, Def)
 	}
@@ -67,7 +68,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 			continue
 		}
 
-		key := objectKeyFor(obj)
+		key := objectKeyFor(obj, fields)
 		grp := findOrCreateGroup(ix, key, obj)
 		addIdent(ix, grp, ident, qualifiers[ident], file, Use)
 	}
@@ -83,7 +84,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 			continue
 		}
 
-		key := objectKeyFor(obj)
+		key := objectKeyFor(obj, fields)
 		grp := findOrCreateGroup(ix, key, obj)
 		addIdent(ix, grp, sel.Sel, qualifiers[sel.Sel], file, Use)
 	}
@@ -105,7 +106,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 			continue
 		}
 
-		key := objectKeyFor(typeName)
+		key := objectKeyFor(typeName, fields)
 		grp := findOrCreateGroup(ix, key, typeName)
 		addIdent(ix, grp, ident, qualifiers[ident], file, Use)
 	}
@@ -139,7 +140,7 @@ func buildQualifierMap(info *types.Info, fileMap map[*ast.File]*File) map[*ast.I
 }
 
 // objectKeyFor computes the unique key for a types.Object.
-func objectKeyFor(obj types.Object) objectKey {
+func objectKeyFor(obj types.Object, fields *fieldOwnerCache) objectKey {
 	key := objectKey{
 		Name: obj.Name(),
 	}
@@ -162,7 +163,7 @@ func objectKeyFor(obj types.Object) objectKey {
 		}
 	case *types.Var:
 		if o.IsField() {
-			key.Receiver = fieldOwnerName(o)
+			key.Receiver = fields.lookup(o)
 			if key.Receiver == "" {
 				// Anonymous struct field or generic instantiation field:
 				// use declaring position to avoid collisions.
@@ -315,39 +316,50 @@ func isLocalScope(obj types.Object) bool {
 	return parent != pkg.Scope()
 }
 
-// fieldOwnerName returns the name of the struct type that owns the given field.
-// It searches the field's package scope for a named struct type containing
-// this field. Returns "" if the owner cannot be determined (e.g., fields
-// in anonymous struct types).
-func fieldOwnerName(field *types.Var) string {
+// fieldOwnerCache caches the mapping from struct fields to their owning
+// type name, per package scope. This avoids repeatedly calling Scope.Names()
+// (which allocates and sorts) for every field lookup.
+type fieldOwnerCache struct {
+	byScope map[*types.Scope]map[fieldKey]string
+}
+
+type fieldKey struct {
+	pos  token.Pos
+	name string
+}
+
+func newFieldOwnerCache() *fieldOwnerCache {
+	return &fieldOwnerCache{byScope: map[*types.Scope]map[fieldKey]string{}}
+}
+
+func (c *fieldOwnerCache) lookup(field *types.Var) string {
 	pkg := field.Pkg()
 	if pkg == nil {
 		return ""
 	}
 	scope := pkg.Scope()
-	for _, name := range scope.Names() {
-		obj := scope.Lookup(name)
-		tn, ok := obj.(*types.TypeName)
-		if !ok {
-			continue
-		}
-		t := tn.Type().Underlying()
-		st, ok := t.(*types.Struct)
-		if !ok {
-			continue
-		}
-		for f := range st.Fields() {
-			if f == field {
-				return tn.Name()
+
+	m, ok := c.byScope[scope]
+	if !ok {
+		m = map[fieldKey]string{}
+		for _, name := range scope.Names() {
+			obj := scope.Lookup(name)
+			tn, ok := obj.(*types.TypeName)
+			if !ok {
+				continue
 			}
-			// For generic type instantiations, the field object may differ
-			// from the origin type's field. Match by position instead.
-			if f.Pos() == field.Pos() && f.Name() == field.Name() {
-				return tn.Name()
+			st, ok := tn.Type().Underlying().(*types.Struct)
+			if !ok {
+				continue
+			}
+			for f := range st.Fields() {
+				m[fieldKey{pos: f.Pos(), name: f.Name()}] = tn.Name()
 			}
 		}
+		c.byScope[scope] = m
 	}
-	return ""
+
+	return m[fieldKey{pos: field.Pos(), name: field.Name()}]
 }
 
 // resolveUntracked links idents that were not resolved during type-checking
