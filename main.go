@@ -186,7 +186,9 @@ func runFormatter(cmdStr string, paths []string) error {
 	if len(parts) == 0 {
 		return nil
 	}
-	args := append(parts[1:], paths...)
+	args := make([]string, 0, len(parts)-1+len(paths))
+	args = append(args, parts[1:]...)
+	args = append(args, paths...)
 	cmd := exec.Command(parts[0], args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
