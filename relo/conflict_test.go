@@ -43,6 +43,25 @@ func TestConstraintsMayOverlap(t *testing.T) {
 
 		// OS vs arch — not mutually exclusive categories.
 		{"//go:build linux", "//go:build amd64", true},
+
+		// B3: Negated tags from exclusive sets may still overlap.
+		// !linux and !darwin are both true on FreeBSD → overlap.
+		{"//go:build !linux", "//go:build !darwin", true},
+		// !linux and darwin → darwin implies !linux → overlap.
+		{"//go:build !linux", "//go:build darwin", true},
+		{"//go:build darwin", "//go:build !linux", true},
+
+		// B4: ios implies darwin, android implies linux → not exclusive.
+		{"//go:build ios", "//go:build darwin", true},
+		{"//go:build darwin", "//go:build ios", true},
+		{"//go:build android", "//go:build linux", true},
+		{"//go:build linux", "//go:build android", true},
+		// ios and android are still exclusive (different OS families).
+		{"//go:build ios", "//go:build android", false},
+		// ios and linux are exclusive (ios implies darwin, not linux).
+		{"//go:build ios", "//go:build linux", false},
+		// android and darwin are exclusive (android implies linux, not darwin).
+		{"//go:build android", "//go:build darwin", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.a+"_vs_"+tt.b, func(t *testing.T) {
@@ -321,5 +340,45 @@ func TestCheckConstraints_NoWarningForUnconstrained(t *testing.T) {
 
 	if len(plan.Warnings) != 0 {
 		t.Errorf("expected no warnings, got: %v", plan.Warnings)
+	}
+}
+
+func TestDetectConflicts_CircularImport_NewTargetFile(t *testing.T) {
+	// E3: When the target file doesn't exist yet, the circular import
+	// check should still work by looking up the package from the target
+	// directory via findPkgForDir.
+
+	ix := &mast.Index{Fset: token.NewFileSet()}
+
+	targetSyntax := &ast.File{
+		Name:    ast.NewIdent("target"),
+		Imports: []*ast.ImportSpec{{Path: &ast.BasicLit{Kind: token.STRING, Value: `"example.com/src"`}}},
+	}
+	targetPkg := &mast.Package{
+		Name:  "target",
+		Path:  "example.com/target",
+		Files: []*mast.File{{Path: "/proj/target/existing.go", Syntax: targetSyntax}},
+	}
+	targetPkg.Files[0].Pkg = targetPkg
+
+	srcSyntax := &ast.File{Name: ast.NewIdent("src")}
+	srcPkg := &mast.Package{
+		Name:  "src",
+		Path:  "example.com/src",
+		Files: []*mast.File{{Path: "/proj/src/src.go", Syntax: srcSyntax}},
+	}
+	srcPkg.Files[0].Pkg = srcPkg
+
+	ix.Pkgs = []*mast.Package{targetPkg, srcPkg}
+
+	// Verify findPkgForDir finds the package by directory.
+	found := findPkgForDir(ix, "/proj/target")
+	if found != targetPkg {
+		t.Fatalf("findPkgForDir did not find target package")
+	}
+
+	// Verify it returns nil for unknown dirs.
+	if findPkgForDir(ix, "/proj/unknown") != nil {
+		t.Fatalf("findPkgForDir should return nil for unknown dir")
 	}
 }

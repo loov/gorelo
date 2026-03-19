@@ -183,6 +183,18 @@ func findFileInIndex(ix *mast.Index, path string) *mast.File {
 	return nil
 }
 
+// findPkgForDir returns the package whose files reside in dir, or nil.
+func findPkgForDir(ix *mast.Index, dir string) *mast.Package {
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if dirOf(f.Path) == dir {
+				return pkg
+			}
+		}
+	}
+	return nil
+}
+
 // importLocalName returns the local name an import is known by.
 func importLocalName(imp *ast.ImportSpec, impPath string) string {
 	if imp.Name != nil {

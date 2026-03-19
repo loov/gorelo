@@ -176,6 +176,23 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		}
 		targetFile := findFileInIndex(ix, rr.TargetFile)
 		if targetFile == nil {
+			// Target file doesn't exist yet; find the package by
+			// matching the target directory against known packages.
+			targetPkg := findPkgForDir(ix, targetDir)
+			if targetPkg == nil {
+				continue
+			}
+			for _, f := range targetPkg.Files {
+				for _, imp := range f.Syntax.Imports {
+					impPath, _ := strconv.Unquote(imp.Path.Value)
+					if impPath == srcImportPath {
+						plan.Warnings.AddAtf(rr, ix,
+							"moving %s to %s may create a circular import: target already imports source package %s",
+							rr.Group.Name, rr.TargetFile, srcImportPath)
+						break
+					}
+				}
+			}
 			continue
 		}
 		for _, imp := range targetFile.Syntax.Imports {
@@ -223,21 +240,60 @@ func constraintsMayOverlap(a, b string) bool {
 	aTag := extractConstraintTag(a)
 	bTag := extractConstraintTag(b)
 	if aTag != "" && bTag != "" {
+		// Direct negation: "linux" and "!linux" are mutually exclusive.
 		if aTag == "!"+bTag || bTag == "!"+aTag {
 			return false
 		}
+
+		aNeg := strings.HasPrefix(aTag, "!")
+		bNeg := strings.HasPrefix(bTag, "!")
 		aBase := strings.TrimPrefix(aTag, "!")
 		bBase := strings.TrimPrefix(bTag, "!")
+
+		// Resolve implies relationships (e.g. ios→darwin, android→linux).
+		aResolved := resolveImplied(aBase)
+		bResolved := resolveImplied(bBase)
+
 		if aBase != bBase {
-			if exclusiveOSTags[aBase] && exclusiveOSTags[bBase] {
-				return false
-			}
-			if exclusiveArchTags[aBase] && exclusiveArchTags[bBase] {
-				return false
+			switch {
+			case !aNeg && !bNeg:
+				// Two different positive exclusive tags: exclusive only if
+				// neither implies the other and both are in the same
+				// exclusive set.
+				if aResolved != bBase && bResolved != aBase {
+					if exclusiveOSTags[aBase] && exclusiveOSTags[bBase] {
+						return false
+					}
+					if exclusiveArchTags[aBase] && exclusiveArchTags[bBase] {
+						return false
+					}
+				}
+			case aNeg && bNeg:
+				// Two different negated exclusive tags: e.g. !linux and
+				// !darwin both hold on FreeBSD → they overlap.
+				// (conservative: return true)
+			default:
+				// One negated, one positive from the same exclusive set:
+				// e.g. !linux and darwin → darwin implies !linux → overlap.
+				// (conservative: return true)
 			}
 		}
 	}
 	return true
+}
+
+// osImplies maps GOOS values that imply another build tag.
+var osImplies = map[string]string{
+	"ios":     "darwin",
+	"android": "linux",
+}
+
+// resolveImplied returns the tag that base implies, or "" if none.
+func resolveImplied(base string) string {
+	if v, ok := osImplies[base]; ok {
+		return v
+	}
+	return ""
 }
 
 // extractConstraintTag extracts a single tag from "//go:build <tag>".
