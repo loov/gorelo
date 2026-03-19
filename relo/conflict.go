@@ -181,7 +181,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		for _, imp := range targetFile.Syntax.Imports {
 			impPath, _ := strconv.Unquote(imp.Path.Value)
 			if impPath == srcImportPath {
-				plan.Warnings.Addf(
+				plan.Warnings.AddAtf(rr, ix,
 					"moving %s to %s may create a circular import: target already imports source package %s",
 					rr.Group.Name, rr.TargetFile, srcImportPath)
 				break
@@ -199,11 +199,11 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 			continue
 		}
 		if hasDirective(decl, rr.File.Syntax, ix.Fset, "go:embed") {
-			plan.Warnings.Addf(
+			plan.Warnings.AddAtf(rr, ix,
 				"moved decl %s has a //go:embed directive", rr.Group.Name)
 		}
 		if hasDirective(decl, rr.File.Syntax, ix.Fset, "go:generate") {
-			plan.Warnings.Addf(
+			plan.Warnings.AddAtf(rr, ix,
 				"moved decl %s has a //go:generate directive", rr.Group.Name)
 		}
 	}

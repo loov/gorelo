@@ -72,7 +72,7 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 				impPath, _ := strconv.Unquote(imp.Path.Value)
 				localName := importLocalName(imp, impPath)
 				if localName == "." {
-					plan.Warnings.Addf(
+					plan.Warnings.AddAtf(rr, ix,
 						"moved decl %s uses dot import %s which cannot be automatically transferred",
 						rr.Group.Name, imp.Path.Value)
 					continue

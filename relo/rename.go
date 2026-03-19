@@ -44,7 +44,7 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			continue
 		}
 		if typeHasEmbeddedUses(ix, rr.Group) {
-			plan.Warnings.Addf(
+			plan.Warnings.AddAtf(rr, ix,
 				"renaming type %s to %s will also change embedded field names, which may affect serialization and reflection",
 				rr.Group.Name, rr.TargetName)
 		}

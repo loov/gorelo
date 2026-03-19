@@ -35,7 +35,7 @@ func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*re
 		// Find the enclosing declaration.
 		decl := findEnclosingDecl(file.Syntax, rr.DefIdent.Ident)
 		if decl == nil {
-			plan.Warnings.Addf(
+			plan.Warnings.AddAtf(rr, ix,
 				"cannot find declaration for %s in %s", rr.Group.Name, file.Path)
 			continue
 		}
@@ -55,7 +55,7 @@ func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*re
 
 			// Warn about multi-name ValueSpec partial moves.
 			if vs, ok := spec.(*ast.ValueSpec); ok && len(vs.Names) > 1 {
-				plan.Warnings.Addf(
+				plan.Warnings.AddAtf(rr, ix,
 					"%s is part of a multi-name declaration; all names in the spec will be moved together",
 					rr.Group.Name)
 			}
