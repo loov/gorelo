@@ -1,0 +1,43 @@
+# Move a function that imports a vN-module package.
+# The import path should be preserved correctly, with the local name
+# derived by stripping the vN segment (guessImportLocalName).
+
+UseHelper -> dst/moved.go
+
+-- input/go.mod --
+module example.com/test/v2
+
+go 1.21
+-- input/src/use.go --
+package src
+
+import "example.com/test/v2/other"
+
+func UseHelper() string {
+	return other.Help()
+}
+
+func Remaining() {}
+-- input/other/other.go --
+package other
+
+func Help() string { return "help" }
+-- golden/src/use.go --
+package src
+
+
+func Remaining() {}
+-- golden/other/other.go --
+package other
+
+func Help() string { return "help" }
+-- golden/dst/moved.go --
+package dst
+
+import (
+	"example.com/test/v2/other"
+)
+
+func UseHelper() string {
+	return other.Help()
+}

@@ -1,0 +1,62 @@
+# Move functions from files with different build constraints to the same target.
+# Mixed constraints produce a warning and the target gets no constraint.
+
+linux_only.go:LinuxFunc -> merged.go
+darwin_only.go:DarwinFunc -> merged.go
+
+@warn mixed build constraints
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/linux_only.go --
+//go:build linux
+
+package mypkg
+
+// LinuxFunc does linux things.
+func LinuxFunc() string {
+	return "linux"
+}
+
+// OtherLinux stays.
+func OtherLinux() {}
+-- input/darwin_only.go --
+//go:build darwin
+
+package mypkg
+
+// DarwinFunc does darwin things.
+func DarwinFunc() string {
+	return "darwin"
+}
+
+// OtherDarwin stays.
+func OtherDarwin() {}
+-- golden/merged.go --
+package mypkg
+
+// DarwinFunc does darwin things.
+func DarwinFunc() string {
+	return "darwin"
+}
+
+// LinuxFunc does linux things.
+func LinuxFunc() string {
+	return "linux"
+}
+-- golden/linux_only.go --
+//go:build linux
+
+package mypkg
+
+// OtherLinux stays.
+func OtherLinux() {}
+-- golden/darwin_only.go --
+//go:build darwin
+
+package mypkg
+
+// OtherDarwin stays.
+func OtherDarwin() {}

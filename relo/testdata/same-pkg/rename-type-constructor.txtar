@@ -1,0 +1,54 @@
+# Rename a type and move it — warns about constructor using old name.
+# The constructor warning refers to the original type name (NewWidget, not NewComponent).
+
+Widget=Component -> component.go
+
+@warn constructor NewWidget exists but is not being moved with type Widget
+@warn renaming type Widget to Component will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/main.go --
+package mypkg
+
+type Widget struct {
+	Value int
+}
+
+func NewWidget(v int) *Widget {
+	return &Widget{Value: v}
+}
+
+type Container struct {
+	Widget
+	Label string
+}
+
+func UseWidget() {
+	c := Container{Widget: Widget{Value: 1}, Label: "test"}
+	_ = c.Value
+}
+-- golden/component.go --
+package mypkg
+
+type Component struct {
+	Value int
+}
+-- golden/main.go --
+package mypkg
+
+func NewWidget(v int) *Component {
+	return &Component{Value: v}
+}
+
+type Container struct {
+	Component
+	Label string
+}
+
+func UseWidget() {
+	c := Container{Widget: Component{Value: 1}, Label: "test"}
+	_ = c.Value
+}

@@ -1,0 +1,32 @@
+# Move and rename a self-recursive function cross-package.
+
+fibonacci=Fibonacci -> dst/math.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/calc.go --
+package src
+
+func fibonacci(n int) int {
+	if n <= 1 {
+		return n
+	}
+	return fibonacci(n-1) + fibonacci(n-2)
+}
+
+func Other() int { return 0 }
+-- golden/dst/math.go --
+package dst
+
+func Fibonacci(n int) int {
+	if n <= 1 {
+		return n
+	}
+	return Fibonacci(n-1) + Fibonacci(n-2)
+}
+-- golden/src/calc.go --
+package src
+
+func Other() int { return 0 }

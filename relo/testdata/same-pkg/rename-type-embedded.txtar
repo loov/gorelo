@@ -1,0 +1,74 @@
+# Rename a type used as an embedded field.
+# The embedded field name changes with the type, which may affect
+# serialization and reflection.
+
+Base=Foundation
+
+@warn renaming type Base to Foundation will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/types.go --
+package pkg
+
+// Base holds common fields.
+type Base struct {
+	ID   int
+	Name string
+}
+
+// Container embeds Base.
+type Container struct {
+	Base
+	Extra string
+}
+-- input/usage.go --
+package pkg
+
+// NewContainer creates a Container with embedded Base fields.
+func NewContainer() Container {
+	b := Base{ID: 1, Name: "test"}
+	return Container{
+		Base:  b,
+		Extra: "more",
+	}
+}
+
+// ReadFields accesses fields through the embedded type.
+func ReadFields(c Container) (int, string) {
+	_ = c.Base
+	return c.ID, c.Name
+}
+-- golden/types.go --
+package pkg
+
+// Base holds common fields.
+type Foundation struct {
+	ID   int
+	Name string
+}
+
+// Container embeds Base.
+type Container struct {
+	Foundation
+	Extra string
+}
+-- golden/usage.go --
+package pkg
+
+// NewContainer creates a Container with embedded Base fields.
+func NewContainer() Container {
+	b := Foundation{ID: 1, Name: "test"}
+	return Container{
+		Base:  b,
+		Extra: "more",
+	}
+}
+
+// ReadFields accesses fields through the embedded type.
+func ReadFields(c Container) (int, string) {
+	_ = c.Base
+	return c.ID, c.Name
+}

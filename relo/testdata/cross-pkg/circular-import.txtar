@@ -1,0 +1,54 @@
+# Move to a package that already imports source — circular import warning.
+
+Helper -> dst/helper.go
+
+@warn may create a circular import
+
+-- input/go.mod --
+module example.com/circular
+
+go 1.21
+-- input/src/a.go --
+package src
+
+// Helper is a helper function.
+func Helper() string {
+	return "help"
+}
+
+// Other stays behind.
+func Other() string {
+	return "other"
+}
+-- input/dst/b.go --
+package dst
+
+import "example.com/circular/src"
+
+// UsesOther calls src.Other.
+func UsesOther() string {
+	return src.Other()
+}
+-- golden/src/a.go --
+package src
+
+// Other stays behind.
+func Other() string {
+	return "other"
+}
+-- golden/dst/helper.go --
+package dst
+
+// Helper is a helper function.
+func Helper() string {
+	return "help"
+}
+-- golden/dst/b.go --
+package dst
+
+import "example.com/circular/src"
+
+// UsesOther calls src.Other.
+func UsesOther() string {
+	return src.Other()
+}

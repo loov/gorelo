@@ -1,0 +1,41 @@
+# Move a function whose parameter shadows the target package name.
+# Stubs should use an aliased import to avoid the shadow.
+
+@stubs
+process=Process -> dst/process.go
+
+@warn shadows
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+// process transforms the value for the given dst.
+func process(dst string) string {
+	return dst + "_processed"
+}
+
+// Other stays here.
+func Other() {}
+-- golden/src/source.go --
+package src
+
+import (
+	_dst "example.com/test/dst"
+)
+
+// Other stays here.
+func Other() {}
+
+//go:fix inline
+func process(dst string) string { return _dst.Process(dst) }
+-- golden/dst/process.go --
+package dst
+
+// process transforms the value for the given dst.
+func Process(dst string) string {
+	return dst + "_processed"
+}

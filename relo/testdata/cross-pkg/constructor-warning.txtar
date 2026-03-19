@@ -1,0 +1,48 @@
+# Move a type cross-package leaving its constructor behind.
+
+Config -> dst/config.go
+
+@warn constructor NewConfig exists but is not being moved with type Config
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+type Config struct {
+	Name string
+	Port int
+}
+
+func NewConfig(name string) *Config {
+	return &Config{Name: name, Port: 8080}
+}
+
+func UseConfig() {
+	c := NewConfig("app")
+	_ = c.Name
+}
+-- golden/src/config.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func NewConfig(name string) *dst.Config {
+	return &dst.Config{Name: name, Port: 8080}
+}
+
+func UseConfig() {
+	c := NewConfig("app")
+	_ = c.Name
+}
+-- golden/dst/config.go --
+package dst
+
+type Config struct {
+	Name string
+	Port int
+}

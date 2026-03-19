@@ -1,0 +1,90 @@
+# Move three functions with colliding import names to the same target.
+# crypto/rand keeps the short name "rand". The two local "rand" packages
+# share the same parent directory name ("util"), so parentPrefixedName
+# returns "utilrand" for both. The second collision falls back to a
+# numeric suffix: "utilrand" and "utilrand2".
+
+CryptoRand UtilRandA UtilRandB -> merged.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/crypto_use.go --
+package pkg
+
+import (
+	"crypto/rand"
+	"io"
+)
+
+// CryptoRand returns n random bytes from crypto/rand.
+func CryptoRand(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	_, err := io.ReadFull(rand.Reader, buf)
+	return buf, err
+}
+-- input/util_a_use.go --
+package pkg
+
+import "example.com/pkg/a/util/rand"
+
+// UtilRandA uses the first util/rand package.
+func UtilRandA() int {
+	return rand.IntA()
+}
+-- input/util_b_use.go --
+package pkg
+
+import "example.com/pkg/b/util/rand"
+
+// UtilRandB uses the second util/rand package.
+func UtilRandB() int {
+	return rand.IntB()
+}
+-- input/a/util/rand/rand.go --
+package rand
+
+// IntA returns a value.
+func IntA() int { return 1 }
+-- input/b/util/rand/rand.go --
+package rand
+
+// IntB returns a value.
+func IntB() int { return 2 }
+-- golden/a/util/rand/rand.go --
+package rand
+
+// IntA returns a value.
+func IntA() int { return 1 }
+-- golden/b/util/rand/rand.go --
+package rand
+
+// IntB returns a value.
+func IntB() int { return 2 }
+-- golden/merged.go --
+package pkg
+
+import (
+	"crypto/rand"
+	utilrand "example.com/pkg/a/util/rand"
+	utilrand2 "example.com/pkg/b/util/rand"
+	"io"
+)
+
+// CryptoRand returns n random bytes from crypto/rand.
+func CryptoRand(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	_, err := io.ReadFull(rand.Reader, buf)
+	return buf, err
+}
+
+// UtilRandA uses the first util/rand package.
+func UtilRandA() int {
+	return utilrand.IntA()
+}
+
+// UtilRandB uses the second util/rand package.
+func UtilRandB() int {
+	return utilrand2.IntB()
+}

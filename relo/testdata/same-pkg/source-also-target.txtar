@@ -1,0 +1,34 @@
+# A file is both source (declaration moved out) and target (declaration moved in).
+# Both operations should work correctly.
+
+a.go:Alpha -> b.go
+b.go:Beta -> a.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/a.go --
+package mypkg
+
+func Alpha() string { return "alpha" }
+
+func StayA() {}
+-- input/b.go --
+package mypkg
+
+func Beta() string { return "beta" }
+
+func StayB() {}
+-- golden/a.go --
+package mypkg
+
+func StayA() {}
+
+func Beta() string { return "beta" }
+-- golden/b.go --
+package mypkg
+
+func StayB() {}
+
+func Alpha() string { return "alpha" }

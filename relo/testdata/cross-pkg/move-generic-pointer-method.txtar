@@ -1,0 +1,58 @@
+# Move a generic type with pointer receiver methods and generate stubs.
+
+@stubs
+Cache -> dst/cache.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/cache.go --
+package src
+
+// Cache is a generic cache.
+type Cache[K comparable, V any] struct {
+	data map[K]V
+}
+
+// Get retrieves a value from the cache.
+func (c *Cache[K, V]) Get(key K) (V, bool) {
+	v, ok := c.data[key]
+	return v, ok
+}
+
+// Set stores a value in the cache.
+func (c *Cache[K, V]) Set(key K, val V) {
+	c.data[key] = val
+}
+
+func Other() {}
+-- golden/dst/cache.go --
+package dst
+
+// Cache is a generic cache.
+type Cache[K comparable, V any] struct {
+	data map[K]V
+}
+
+// Get retrieves a value from the cache.
+func (c *Cache[K, V]) Get(key K) (V, bool) {
+	v, ok := c.data[key]
+	return v, ok
+}
+
+// Set stores a value in the cache.
+func (c *Cache[K, V]) Set(key K, val V) {
+	c.data[key] = val
+}
+-- golden/src/cache.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Other() {}
+
+//go:fix inline
+type Cache[K comparable, V any] = dst.Cache[K, V]

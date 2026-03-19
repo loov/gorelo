@@ -1,0 +1,78 @@
+# Move a type that implements an interface cross-package.
+# Consumer code using the interface should still work.
+
+FileReader -> dst/reader.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/reader.go --
+package src
+
+import "io"
+
+// FileReader implements io.Reader.
+type FileReader struct {
+	Data []byte
+	pos  int
+}
+
+func (r *FileReader) Read(p []byte) (int, error) {
+	n := copy(p, r.Data[r.pos:])
+	r.pos += n
+	if r.pos >= len(r.Data) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+func Other() {}
+-- input/consumer/use.go --
+package consumer
+
+import (
+	"io"
+	"example.com/test/src"
+)
+
+func ReadAll(r *src.FileReader) ([]byte, error) {
+	return io.ReadAll(r)
+}
+-- golden/src/reader.go --
+package src
+
+
+func Other() {}
+-- golden/dst/reader.go --
+package dst
+
+import (
+	"io"
+)
+
+// FileReader implements io.Reader.
+type FileReader struct {
+	Data []byte
+	pos  int
+}
+
+func (r *FileReader) Read(p []byte) (int, error) {
+	n := copy(p, r.Data[r.pos:])
+	r.pos += n
+	if r.pos >= len(r.Data) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+-- golden/consumer/use.go --
+package consumer
+
+import (
+	"io"
+	"example.com/test/dst"
+)
+
+func ReadAll(r *dst.FileReader) ([]byte, error) {
+	return io.ReadAll(r)
+}

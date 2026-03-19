@@ -1,0 +1,41 @@
+# Move a function from a file with a blank import for side effects.
+
+Process -> moved.go
+
+@warn moved decl Process has blank import "image/png" for side effects
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+import (
+	"image"
+	_ "image/png"
+)
+
+func Process() image.Image {
+	return nil
+}
+
+func Other() {}
+-- golden/source.go --
+package mypkg
+
+import (
+	_ "image/png"
+)
+
+func Other() {}
+-- golden/moved.go --
+package mypkg
+
+import (
+	"image"
+)
+
+func Process() image.Image {
+	return nil
+}

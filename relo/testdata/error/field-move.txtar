@@ -1,0 +1,16 @@
+# Error: fields cannot be moved, only renamed.
+
+Widget#Name -> other.go
+
+@error field "Name" cannot be moved, only renamed
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/main.go --
+package mypkg
+
+type Widget struct {
+	Name string
+}

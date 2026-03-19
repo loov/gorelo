@@ -1,0 +1,49 @@
+# Rename main to Run warns about losing entry-point semantics.
+# Rename start to main warns about gaining entry-point semantics.
+
+main=Run -> entry.go
+
+@warn renaming main function in main package loses entry-point semantics
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/app.go --
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("running app")
+}
+
+// start begins the server.
+func start() {
+	fmt.Println("starting server")
+}
+
+// Helper stays behind.
+func Helper() {}
+-- golden/entry.go --
+package main
+
+import (
+	"fmt"
+)
+
+func Run() {
+	fmt.Println("running app")
+}
+-- golden/app.go --
+package main
+
+import "fmt"
+
+// start begins the server.
+func start() {
+	fmt.Println("starting server")
+}
+
+// Helper stays behind.
+func Helper() {}

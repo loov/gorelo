@@ -1,0 +1,53 @@
+# Move a method without its receiver type — warns about orphaned method.
+
+Render -> render.go
+
+@warn method Widget.Render is being moved but type Widget is not
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/widget.go --
+package mypkg
+
+import "fmt"
+
+// Widget is a UI component.
+type Widget struct {
+	Name string
+}
+
+// Render draws the widget.
+func (w *Widget) Render() string {
+	return fmt.Sprintf("<widget %s>", w.Name)
+}
+
+// Reset clears the widget state.
+func (w *Widget) Reset() {
+	w.Name = ""
+}
+-- golden/render.go --
+package mypkg
+
+import (
+	"fmt"
+)
+
+// Render draws the widget.
+func (w *Widget) Render() string {
+	return fmt.Sprintf("<widget %s>", w.Name)
+}
+-- golden/widget.go --
+package mypkg
+
+
+// Widget is a UI component.
+type Widget struct {
+	Name string
+}
+
+// Reset clears the widget state.
+func (w *Widget) Reset() {
+	w.Name = ""
+}

@@ -1,0 +1,40 @@
+# Move a function that uses a dot import — warns about dot import.
+
+UseStrings -> moved.go
+
+@warn moved decl UseStrings uses dot import "strings"
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package mypkg
+
+import . "strings"
+
+// UseStrings demonstrates dot import usage.
+func UseStrings(s string) string {
+	return ToUpper(TrimSpace(s))
+}
+
+// Other stays behind.
+func Other() string {
+	return "hello"
+}
+-- golden/moved.go --
+package mypkg
+
+// UseStrings demonstrates dot import usage.
+func UseStrings(s string) string {
+	return ToUpper(TrimSpace(s))
+}
+-- golden/source.go --
+package mypkg
+
+import . "strings"
+
+// Other stays behind.
+func Other() string {
+	return "hello"
+}

@@ -1,0 +1,60 @@
+# Move a type with unexported methods cross-package.
+# Unexported methods cannot be synthesized for cross-package moves.
+
+Widget -> dst/widget.go
+
+@warn unexported method "render" cannot be moved cross-package
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/widget.go --
+package src
+
+import "fmt"
+
+// Widget represents a UI element.
+type Widget struct {
+	Name string
+}
+
+// String returns the widget name.
+func (w *Widget) String() string {
+	return w.Name
+}
+
+// render draws the widget.
+func (w *Widget) render() {
+	fmt.Println(w.Name)
+}
+
+// Other stays here.
+func Other() {}
+-- golden/dst/widget.go --
+package dst
+
+// Widget represents a UI element.
+type Widget struct {
+	Name string
+}
+
+// String returns the widget name.
+func (w *Widget) String() string {
+	return w.Name
+}
+-- golden/src/widget.go --
+package src
+
+import (
+	"fmt"
+	"example.com/test/dst"
+)
+
+// render draws the widget.
+func (w *dst.Widget) render() {
+	fmt.Println(w.Name)
+}
+
+// Other stays here.
+func Other() {}
