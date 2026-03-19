@@ -102,8 +102,12 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				continue
 			}
 
-			// Get rename edits for this span.
-			edits := computeExtractedRenames(ix, rr, s, resolved)
+			// Get rename and cross-target qualification edits for this span.
+			er := computeExtractedEdits(ix, rr, s, resolved)
+			edits := er.edits
+			for impPath := range er.imports {
+				crossTargetImports[impPath] = true
+			}
 
 			// Apply self-import unqualification.
 			targetDir := filepath.Dir(targetPath)
@@ -114,13 +118,6 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 			// Apply import alias edits for collision resolution.
 			edits = append(edits, computeImportAliasEdits(ix, rr, s, ic)...)
-
-			// Apply cross-target reference qualification.
-			crossEdits, crossImps := computeCrossTargetEdits(ix, rr, s, resolved)
-			edits = append(edits, crossEdits...)
-			for impPath := range crossImps {
-				crossTargetImports[impPath] = true
-			}
 
 			var text string
 			if len(edits) > 0 {
@@ -548,83 +545,6 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			Content: newSrc,
 		})
 	}
-}
-
-// computeCrossTargetEdits generates edits for an extracted span to qualify
-// references to declarations being moved to a DIFFERENT target package.
-// It also returns the set of import paths that need to be added for those
-// cross-target references.
-func computeCrossTargetEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) ([]edit, map[string]bool) {
-	if rr.File == nil || s == nil {
-		return nil, nil
-	}
-
-	targetDir := filepath.Dir(rr.TargetFile)
-
-	// Build a map of groups being moved to other target directories.
-	type crossInfo struct {
-		tgtPkgPath string
-		tgtName    string
-	}
-	crossGroups := make(map[*mast.Group]*crossInfo)
-	for _, r := range resolved {
-		if r.File == nil {
-			continue
-		}
-		rDir := filepath.Dir(r.TargetFile)
-		if rDir == targetDir {
-			continue // same target directory, no qualification needed
-		}
-		srcDir := filepath.Dir(r.File.Path)
-		if srcDir == targetDir {
-			continue // declaration is already in our target package
-		}
-		tgtPkgPath := guessImportPath(rDir)
-		if tgtPkgPath == "" {
-			continue
-		}
-		crossGroups[r.Group] = &crossInfo{
-			tgtPkgPath: tgtPkgPath,
-			tgtName:    r.TargetName,
-		}
-	}
-	if len(crossGroups) == 0 {
-		return nil, nil
-	}
-
-	var edits []edit
-	neededImports := make(map[string]bool)
-
-	// Walk AST within the span to find idents referencing cross-target groups.
-	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
-		ident, ok := n.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		grp := ix.Group(ident)
-		if grp == nil {
-			return true
-		}
-		info, ok := crossGroups[grp]
-		if !ok {
-			return true
-		}
-
-		off := ix.Fset.Position(ident.Pos()).Offset
-		endOff := off + len(ident.Name)
-		if off >= s.Start && endOff <= s.End {
-			tgtLocalName := guessImportLocalName(info.tgtPkgPath)
-			edits = append(edits, edit{
-				Start: off - s.Start,
-				End:   endOff - s.Start,
-				New:   tgtLocalName + "." + info.tgtName,
-			})
-			neededImports[info.tgtPkgPath] = true
-		}
-		return true
-	})
-
-	return deduplicateEdits(edits), neededImports
 }
 
 // computeImportAliasEdits generates edits for an extracted span to rename

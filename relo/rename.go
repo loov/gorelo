@@ -95,46 +95,75 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	return rs
 }
 
-// computeExtractedRenames builds edits for an extracted span's text.
-// These are relative to the span's start offset.
-func computeExtractedRenames(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) []edit {
-	if s == nil {
-		return nil
+// extractedEditsResult holds the output of computeExtractedEdits.
+type extractedEditsResult struct {
+	edits   []edit
+	imports map[string]bool
+}
+
+// computeExtractedEdits builds edits for an extracted span's text in a single
+// AST walk. It handles both renames (same-target groups) and cross-target
+// qualification (groups moving to a different target package). Edits are
+// relative to the span's start offset.
+func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) extractedEditsResult {
+	if rr.File == nil || s == nil {
+		return extractedEditsResult{}
 	}
 
 	targetDir := filepath.Dir(rr.TargetFile)
 
-	// Build rename map for groups being renamed, excluding groups that are
-	// moving to a different target package. Those are handled by
-	// computeCrossTargetEdits which produces a qualified edit (pkg.Name).
-	renamedGroups := make(map[*mast.Group]string)
+	// Classify each resolved relo's group as either a same-target rename or
+	// a cross-target reference that needs package qualification.
+	type groupAction struct {
+		newText string // replacement text for idents of this group
+		impPath string // non-empty for cross-target (needs import)
+	}
+	actions := make(map[*mast.Group]*groupAction)
+
 	for _, r := range resolved {
-		if r.TargetName != r.Group.Name {
-			if r.File != nil && filepath.Dir(r.TargetFile) != targetDir {
-				continue
+		rDir := filepath.Dir(r.TargetFile)
+		if rDir == targetDir {
+			// Same target — only needs a rename edit if the name changed.
+			if r.TargetName != r.Group.Name {
+				actions[r.Group] = &groupAction{newText: r.TargetName}
 			}
-			renamedGroups[r.Group] = r.TargetName
+			continue
+		}
+		// Different target — needs package-qualified reference.
+		if r.File == nil {
+			continue
+		}
+		srcDir := filepath.Dir(r.File.Path)
+		if srcDir == targetDir {
+			continue // declaration is already in our target package
+		}
+		tgtPkgPath := guessImportPath(rDir)
+		if tgtPkgPath == "" {
+			continue
+		}
+		tgtLocalName := guessImportLocalName(tgtPkgPath)
+		actions[r.Group] = &groupAction{
+			newText: tgtLocalName + "." + r.TargetName,
+			impPath: tgtPkgPath,
 		}
 	}
-	if len(renamedGroups) == 0 {
-		return nil
+	if len(actions) == 0 {
+		return extractedEditsResult{}
 	}
 
 	var edits []edit
+	neededImports := make(map[string]bool)
 
-	// Walk the AST within this span to find idents that belong to renamed groups.
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
 		ident, ok := n.(*ast.Ident)
 		if !ok {
 			return true
 		}
-
 		grp := ix.Group(ident)
 		if grp == nil {
 			return true
 		}
-
-		newName, ok := renamedGroups[grp]
+		act, ok := actions[grp]
 		if !ok {
 			return true
 		}
@@ -145,13 +174,19 @@ func computeExtractedRenames(ix *mast.Index, rr *resolvedRelo, s *span, resolved
 			edits = append(edits, edit{
 				Start: off - s.Start,
 				End:   endOff - s.Start,
-				New:   newName,
+				New:   act.newText,
 			})
+			if act.impPath != "" {
+				neededImports[act.impPath] = true
+			}
 		}
 		return true
 	})
 
-	return deduplicateEdits(edits)
+	return extractedEditsResult{
+		edits:   deduplicateEdits(edits),
+		imports: neededImports,
+	}
 }
 
 // typeHasEmbeddedUses checks if a TypeName group has any Use idents
