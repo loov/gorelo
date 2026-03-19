@@ -11,28 +11,69 @@ import (
 	"github.com/loov/gorelo/mast"
 )
 
+// aliasResult holds generated stubs and any import alias needed.
+type aliasResult struct {
+	Stubs    []string
+	Warnings Warnings
+	// ImportAlias is non-empty when a parameter name shadows targetPkgName,
+	// requiring an aliased import (e.g., _newpkg).
+	ImportAlias string
+}
+
 // generateAliases generates //go:fix inline stubs for cross-package moves.
-func generateAliases(rrs []*resolvedRelo, targetPkgName string, fset *token.FileSet) []string {
-	var stubs []string
+func generateAliases(rrs []*resolvedRelo, targetPkgName string, fset *token.FileSet) aliasResult {
+	var result aliasResult
+	pkgQualifier := targetPkgName
+
+	// Check whether any func parameter shadows targetPkgName.
+	if funcParamShadows(rrs, targetPkgName) {
+		pkgQualifier = "_" + targetPkgName
+		result.ImportAlias = pkgQualifier
+		result.Warnings.Addf("parameter name %q shadows target package; using import alias %q in stubs",
+			targetPkgName, pkgQualifier)
+	}
 
 	for _, rr := range rrs {
 		switch rr.Group.Kind {
 		case mast.TypeName:
-			stubs = append(stubs, generateTypeAlias(rr, targetPkgName, fset))
+			result.Stubs = append(result.Stubs, generateTypeAlias(rr, pkgQualifier, fset))
 		case mast.Func:
-			stubs = append(stubs, generateFuncAlias(rr, targetPkgName, fset))
+			result.Stubs = append(result.Stubs, generateFuncAlias(rr, pkgQualifier, fset))
 		case mast.Const:
-			stubs = append(stubs, fmt.Sprintf("//go:fix inline\nconst %s = %s.%s",
-				rr.Group.Name, targetPkgName, rr.TargetName))
+			result.Stubs = append(result.Stubs, fmt.Sprintf("//go:fix inline\nconst %s = %s.%s",
+				rr.Group.Name, pkgQualifier, rr.TargetName))
 		case mast.Var:
-			stubs = append(stubs, fmt.Sprintf("// Deprecated: Use %s.%s instead.\n//go:fix inline\nvar %s = %s.%s",
-				targetPkgName, rr.TargetName, rr.Group.Name, targetPkgName, rr.TargetName))
+			result.Stubs = append(result.Stubs, fmt.Sprintf("// Deprecated: Use %s.%s instead.\nvar %s = %s.%s",
+				pkgQualifier, rr.TargetName, rr.Group.Name, pkgQualifier, rr.TargetName))
 		case mast.Method:
 			// Methods follow receiver type alias; no separate stub.
 		}
 	}
 
-	return stubs
+	return result
+}
+
+// funcParamShadows reports whether any func relo in rrs has a parameter
+// whose name equals targetPkgName.
+func funcParamShadows(rrs []*resolvedRelo, targetPkgName string) bool {
+	for _, rr := range rrs {
+		if rr.Group.Kind != mast.Func || rr.File == nil {
+			continue
+		}
+		decl := findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
+		fd, ok := decl.(*ast.FuncDecl)
+		if !ok || fd.Type.Params == nil {
+			continue
+		}
+		for _, field := range fd.Type.Params.List {
+			for _, name := range field.Names {
+				if name.Name == targetPkgName {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func generateTypeAlias(rr *resolvedRelo, targetPkgName string, fset *token.FileSet) string {
@@ -72,6 +113,14 @@ func generateFuncAlias(rr *resolvedRelo, targetPkgName string, fset *token.FileS
 	var buf bytes.Buffer
 	buf.WriteString("//go:fix inline\nfunc ")
 	buf.WriteString(rr.Group.Name)
+
+	// B2: Handle type parameters for generic functions.
+	if fd.Type.TypeParams != nil && len(fd.Type.TypeParams.List) > 0 {
+		buf.WriteString("[")
+		buf.WriteString(formatTypeParams(fd.Type.TypeParams, fset))
+		buf.WriteString("]")
+	}
+
 	buf.WriteString("(")
 	buf.WriteString(formatFieldList(fd.Type.Params, fset))
 	buf.WriteString(")")
@@ -96,11 +145,30 @@ func generateFuncAlias(rr *resolvedRelo, targetPkgName string, fset *token.FileS
 	buf.WriteString(targetPkgName)
 	buf.WriteString(".")
 	buf.WriteString(rr.TargetName)
+
+	// B2: Include type arguments in the forwarding call.
+	if fd.Type.TypeParams != nil && len(fd.Type.TypeParams.List) > 0 {
+		buf.WriteString("[")
+		buf.WriteString(typeParamNames(fd.Type.TypeParams))
+		buf.WriteString("]")
+	}
+
 	buf.WriteString("(")
 	buf.WriteString(paramNames(fd.Type.Params))
 	buf.WriteString(") }")
 
 	return buf.String()
+}
+
+// typeParamNames extracts just the names (no constraints) from a type parameter list.
+func typeParamNames(fl *ast.FieldList) string {
+	var names []string
+	for _, field := range fl.List {
+		for _, name := range field.Names {
+			names = append(names, name.Name)
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 func formatTypeParams(fl *ast.FieldList, fset *token.FileSet) string {

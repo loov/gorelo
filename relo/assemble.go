@@ -407,13 +407,18 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			for _, tDir := range sortedDirs {
 				group := crossByDir[tDir]
 				targetPkgName := guessPackageName(tDir)
-				stubs := generateAliases(group, targetPkgName, ix.Fset)
-				if len(stubs) > 0 {
-					newSrc += "\n" + strings.Join(stubs, "\n\n") + "\n"
+				ar := generateAliases(group, targetPkgName, ix.Fset)
+				plan.Warnings.Add(ar.Warnings...)
+				if len(ar.Stubs) > 0 {
+					newSrc += "\n" + strings.Join(ar.Stubs, "\n\n") + "\n"
 					// Add the import for the target package.
 					targetImportPath := guessImportPath(tDir)
 					if targetImportPath != "" {
-						newSrc, _ = ensureImport(newSrc, importEntry{Path: targetImportPath})
+						entry := importEntry{Path: targetImportPath}
+						if ar.ImportAlias != "" {
+							entry.Alias = ar.ImportAlias
+						}
+						newSrc, _ = ensureImport(newSrc, entry)
 					}
 				}
 			}
