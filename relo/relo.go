@@ -66,7 +66,7 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	renameEdits := computeRenames(ix, resolved, spans)
 
 	// Phase 7: compute import changes.
-	importChanges := computeImports(ix, resolved, spans)
+	importChanges := computeImports(ix, resolved, spans, plan)
 
 	// Phase 8: assemble file edits.
 	assemble(ix, resolved, spans, renameEdits, importChanges, opts, plan)

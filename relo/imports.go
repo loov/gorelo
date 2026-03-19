@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"path"
@@ -29,7 +30,7 @@ type importSet struct {
 }
 
 // computeImports determines import changes for all affected files (phase 7).
-func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span) *importSet {
+func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) *importSet {
 	is := &importSet{
 		byFile: make(map[string]*importChange),
 	}
@@ -71,6 +72,12 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			for _, imp := range rr.File.Syntax.Imports {
 				impPath, _ := strconv.Unquote(imp.Path.Value)
 				localName := importLocalName(imp, impPath)
+				if localName == "." {
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf(
+						"moved decl %s uses dot import %s which cannot be automatically transferred",
+						rr.Group.Name, imp.Path.Value))
+					continue
+				}
 				if usedIdents[localName] {
 					neededImports[impPath] = imp
 				}
@@ -87,6 +94,14 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		// Build import entries for the target file.
 		var entries []importEntry
 		usedNames := make(map[string]bool)
+
+		// Pre-populate usedNames with existing imports in the target file.
+		if existingFile := findFileInIndex(ix, targetFile); existingFile != nil {
+			for _, imp := range existingFile.Syntax.Imports {
+				impPath, _ := strconv.Unquote(imp.Path.Value)
+				usedNames[importLocalName(imp, impPath)] = true
+			}
+		}
 
 		// First pass: collect all local names.
 		type importInfo struct {
@@ -155,6 +170,18 @@ func (is *importSet) ensureFile(path string) *importChange {
 		is.byFile[path] = ic
 	}
 	return ic
+}
+
+// findFileInIndex finds a mast.File by path in the index.
+func findFileInIndex(ix *mast.Index, path string) *mast.File {
+	for _, pkg := range ix.Pkgs {
+		for _, f := range pkg.Files {
+			if f.Path == path {
+				return f
+			}
+		}
+	}
+	return nil
 }
 
 // importLocalName returns the local name an import is known by.
