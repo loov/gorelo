@@ -13,17 +13,23 @@ type edit struct {
 }
 
 // deduplicateEdits removes duplicate edits at the same Start offset.
+// It panics if two edits share the same Start but differ in End or New.
 func deduplicateEdits(edits []edit) []edit {
 	if len(edits) == 0 {
 		return edits
 	}
-	seen := make(map[int]bool)
+	seen := make(map[int]edit)
 	out := edits[:0:0]
 	for _, e := range edits {
-		if !seen[e.Start] {
-			seen[e.Start] = true
-			out = append(out, e)
+		if prev, ok := seen[e.Start]; ok {
+			if prev.End != e.End || prev.New != e.New {
+				panic(fmt.Sprintf("deduplicateEdits: conflicting edits at offset %d: {End:%d, New:%q} vs {End:%d, New:%q}",
+					e.Start, prev.End, prev.New, e.End, e.New))
+			}
+			continue
 		}
+		seen[e.Start] = e
+		out = append(out, e)
 	}
 	return out
 }
