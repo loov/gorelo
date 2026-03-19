@@ -132,6 +132,13 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 		}
 	}
 
+	// Resolve idents that were untracked due to build-tag partitioning.
+	// When conflicting build constraints cause separate type-check passes,
+	// cross-partition references (e.g. a const defined in one build tag
+	// and used in another) are unresolved. Link them to matching
+	// package-level groups by name.
+	resolveUntracked(ix)
+
 	ix.FilesByPath = make(map[string]*File, len(ix.Pkgs)*4)
 	for _, pkg := range ix.Pkgs {
 		for _, f := range pkg.Files {

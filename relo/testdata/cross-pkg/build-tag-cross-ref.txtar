@@ -1,0 +1,54 @@
+# When a declaration is moved+renamed cross-package, references in files
+# with incompatible build tags must also be rewritten. gorelo loads all
+# build-tag variants and uses resolveUntracked to link cross-partition
+# references.
+
+Val=Default -> pkg1/val.go
+UseVal -> pkg2/use.go
+
+@vet build constraints exclude all Go files
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/a.go --
+//go:build special
+
+package src
+
+const Val = "hello"
+
+func UseVal() string { return Val }
+-- input/src/a_nospecial.go --
+//go:build !special
+
+package src
+
+func UseVal() string { return Val }
+-- golden/pkg1/val.go --
+//go:build special
+
+package pkg1
+
+const Default = "hello"
+-- golden/pkg2/use.go --
+//go:build special
+
+package pkg2
+
+import (
+	"example.com/test/pkg1"
+)
+
+func UseVal() string { return pkg1.Default }
+-- golden/src/a_nospecial.go --
+//go:build !special
+
+package src
+
+import (
+	"example.com/test/pkg1"
+)
+
+func UseVal() string { return pkg1.Default }
