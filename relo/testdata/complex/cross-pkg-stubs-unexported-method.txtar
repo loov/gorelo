@@ -1,0 +1,63 @@
+# Cross-package move with stubs and unexported methods that have
+# external callers. The method is auto-exported, and callers in the
+# source file need the new name even though stubs are enabled (because
+# methods don't get their own stubs — they follow the type alias).
+
+@stubs
+Server -> dst/server.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+import "fmt"
+
+type Server struct {
+	Name string
+}
+
+func (s *Server) Start() {
+	s.greet()
+}
+
+func (s *Server) greet() {
+	fmt.Println("Hello from", s.Name)
+}
+
+func Boot(s *Server) {
+	s.greet()
+}
+-- golden/dst/server.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type Server struct {
+	Name string
+}
+
+func (s *Server) Start() {
+	s.Greet()
+}
+
+func (s *Server) Greet() {
+	fmt.Println("Hello from", s.Name)
+}
+-- golden/src/server.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Boot(s *Server) {
+	s.Greet()
+}
+
+//go:fix inline
+type Server = dst.Server

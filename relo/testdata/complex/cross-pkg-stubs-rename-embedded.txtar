@@ -1,0 +1,59 @@
+# Cross-package move with stubs, type rename, and embedded field usage.
+# The source package has a Container struct embedding the renamed type.
+# Composite literal keys using the embedded field name should keep
+# the old name since the stub alias preserves it.
+
+@stubs
+Widget=Component -> dst/widget.go
+
+@warn renaming type Widget to Component will also change embedded field names
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/widget.go --
+package src
+
+type Widget struct {
+	Label string
+}
+
+type Container struct {
+	Widget
+	Extra string
+}
+
+func Build() Container {
+	return Container{
+		Widget: Widget{Label: "ok"},
+		Extra:  "x",
+	}
+}
+-- golden/dst/widget.go --
+package dst
+
+type Component struct {
+	Label string
+}
+-- golden/src/widget.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+type Container struct {
+	Widget
+	Extra string
+}
+
+func Build() Container {
+	return Container{
+		Widget: Widget{Label: "ok"},
+		Extra:  "x",
+	}
+}
+
+//go:fix inline
+type Widget = dst.Component

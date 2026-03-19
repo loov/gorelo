@@ -24,10 +24,13 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	// Track which files contain moved declarations (for filtering edits).
 	movedSpans := make(map[string][]*span) // filePath -> spans being removed
 
-	// When stubs are enabled, track groups with cross-package moves and
-	// their source files. The stubs provide backward-compatible aliases
-	// using the old name, so remaining source code must keep the old name.
-	stubSourceFiles := make(map[*mast.Group]map[string]bool) // group -> source file paths
+	// When stubs are enabled, track groups with cross-package moves.
+	// The stubs provide backward-compatible aliases using the old name,
+	// so all references (source files, same-package files, and consumer
+	// packages) must keep the old name. Methods are excluded because
+	// they don't get their own stubs — they follow the type alias and
+	// callers need the new name.
+	stubGroups := make(map[*mast.Group]bool)
 
 	for _, rr := range resolved {
 		if rr.TargetName != rr.Group.Name {
@@ -42,11 +45,8 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		if opts != nil && opts.Stubs && rr.File != nil && rr.TargetFile != rr.File.Path {
 			srcDir := filepath.Dir(rr.File.Path)
 			tgtDir := filepath.Dir(rr.TargetFile)
-			if srcDir != tgtDir {
-				if stubSourceFiles[rr.Group] == nil {
-					stubSourceFiles[rr.Group] = make(map[string]bool)
-				}
-				stubSourceFiles[rr.Group][rr.File.Path] = true
+			if srcDir != tgtDir && rr.Group.Kind != mast.Method {
+				stubGroups[rr.Group] = true
 			}
 		}
 	}
@@ -71,6 +71,11 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			// that must be renamed alongside the type.
 			for _, fgrp := range ix.EmbeddedFieldGroups(rr.Group.Name, rr.Group.Pkg) {
 				renamedGroups[fgrp] = rr.TargetName
+				// Propagate stub status: with stubs the alias preserves
+				// the old embedded field name.
+				if stubGroups[rr.Group] {
+					stubGroups[fgrp] = true
+				}
 			}
 		}
 	}
@@ -100,10 +105,11 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 				continue
 			}
 
-			// When stubs are enabled, the source file gets an alias
-			// using the old name.  Remaining code in that file must
-			// keep the old name so it resolves through the alias.
-			if stubSourceFiles[grp][id.File.Path] {
+			// When stubs are enabled, the source package gets an alias
+			// using the old name.  All references (source files, same-
+			// package files, and consumer packages) must keep the old
+			// name so they resolve through the alias.
+			if stubGroups[grp] {
 				continue
 			}
 
