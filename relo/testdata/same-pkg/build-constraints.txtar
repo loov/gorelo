@@ -44,7 +44,7 @@ func GetHomeDir() string {
 	return "/alt/home"
 }
 -- golden/platform.go --
-linux
+//go:build linux
 
 package mypkg
 
@@ -53,7 +53,7 @@ func LinuxOnly() string {
 	return "linux"
 }
 -- golden/homedir.go --
-!alt
+//go:build !alt
 
 package mypkg
 

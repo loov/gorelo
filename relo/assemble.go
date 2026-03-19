@@ -237,6 +237,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 			var b strings.Builder
 			if constraint != "" {
+				b.WriteString("//go:build ")
 				b.WriteString(constraint)
 				b.WriteString("\n\n")
 			}

@@ -33,7 +33,7 @@ func LinuxOnly() string {
 	return "linux-only"
 }
 -- golden/darwin_moved.go --
-darwin
+//go:build darwin
 
 package mypkg
 
@@ -45,7 +45,7 @@ func DarwinOnly() string {
 	return "macos"
 }
 -- golden/linux_moved.go --
-linux
+//go:build linux
 
 package mypkg
 
