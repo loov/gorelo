@@ -143,18 +143,18 @@ func run(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []s
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
 
-	// Dry run: print plan and exit.
-	if dryRun {
+	// Dry run or verbose: print plan summary.
+	if dryRun || verbose {
 		for _, edit := range plan.Edits {
-			action := "modify"
-			if edit.IsNew {
-				action = "create"
-			} else if edit.IsDelete {
-				action = "delete"
+			w := os.Stdout
+			if verbose {
+				w = os.Stderr
 			}
-			fmt.Printf("%s %s\n", action, edit.Path)
+			fmt.Fprintf(w, "%s %s\n", editAction(edit), edit.Path)
 		}
-		return nil
+		if dryRun {
+			return nil
+		}
 	}
 
 	// Apply plan.
@@ -177,19 +177,6 @@ func run(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []s
 		}
 	}
 
-	// Verbose: print each file edit.
-	if verbose {
-		for _, edit := range plan.Edits {
-			action := "modify"
-			if edit.IsNew {
-				action = "create"
-			} else if edit.IsDelete {
-				action = "delete"
-			}
-			fmt.Fprintf(os.Stderr, "%s %s\n", action, edit.Path)
-		}
-	}
-
 	return nil
 }
 
@@ -204,4 +191,15 @@ func runFormatter(cmdStr string, paths []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func editAction(edit relo.FileEdit) string {
+	switch {
+	case edit.IsNew:
+		return "create"
+	case edit.IsDelete:
+		return "delete"
+	default:
+		return "modify"
+	}
 }
