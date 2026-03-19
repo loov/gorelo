@@ -77,6 +77,24 @@ func TestParseMultiline(t *testing.T) {
 	}
 }
 
+func TestParseMultilineIndentedComment(t *testing.T) {
+	input := "server.go <-\n\tServer\n\t# a comment\n\tHandler"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Server"},
+			{Name: "Handler"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
 func TestParseRenames(t *testing.T) {
 	input := `Server=Core ServerOptions=Options -> server/core.go`
 	file, err := Parse("test", []byte(input))

@@ -26,14 +26,18 @@ func Parse(filename string, data []byte) (*File, error) {
 			return nil, fmt.Errorf("%s:%d: invalid directive", filename, lineno)
 		}
 
+		// Check indentation before stripping comments, so that
+		// indented comment-only lines do not break multiline blocks.
+		indented := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
+
 		line = stripComment(line)
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
-			current = nil
+			if !indented {
+				current = nil
+			}
 			continue
 		}
-
-		indented := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
 		if indented {
 			if current == nil {
 				return nil, fmt.Errorf("%s:%d: unexpected indented line", filename, lineno)
