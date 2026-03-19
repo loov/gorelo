@@ -1,7 +1,7 @@
-# Rename a type, its fields while moving to a new file.
-# The move and field renames must be in separate rules.
+# Rename a type, its fields, and methods while moving to a new file.
+# Method renames must be on the same line as the type move.
 
-conn=Connection -> connection.go
+conn=Connection conn#dial=Dial conn#addr=Addr -> connection.go
 conn#host=Host
 conn#port=Port
 
@@ -60,13 +60,13 @@ type Connection struct {
 }
 
 // dial connects to the remote host.
-func (c *Connection) dial() error {
+func (c *Connection) Dial() error {
 	fmt.Printf("dialing %s:%d\n", c.Host, c.Port)
 	return nil
 }
 
 // addr returns the address string.
-func (c *Connection) addr() string {
+func (c *Connection) Addr() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 -- golden/usage.go --
@@ -77,9 +77,9 @@ import "fmt"
 // Connect creates a connection and dials.
 func Connect(host string, port int) (*Connection, error) {
 	c := &Connection{Host: host, Port: port}
-	if err := c.dial(); err != nil {
+	if err := c.Dial(); err != nil {
 		return nil, err
 	}
-	fmt.Println("connected to", c.addr())
+	fmt.Println("connected to", c.Addr())
 	return c, nil
 }

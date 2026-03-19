@@ -1,0 +1,53 @@
+# Move declarations to different target packages.
+# Moved code that references other declarations in a different target
+# should have those references qualified with the target package name.
+
+FormatTitle MinRetries MaxRetries -> config/config.go
+RunChecks -> checks/checks.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+
+var MinRetries = 5
+
+var MaxRetries = 100
+-- input/src/checks.go --
+package src
+
+func RunChecks(home string) {
+	name := FormatTitle(home)
+	_ = name
+	_ = MinRetries
+	_ = MaxRetries
+}
+-- golden/config/config.go --
+package config
+
+func FormatTitle(name string) string {
+	return "Title: " + name
+}
+
+var MinRetries = 5
+
+var MaxRetries = 100
+-- golden/checks/checks.go --
+package checks
+
+import (
+	"example.com/test/config"
+)
+
+func RunChecks(home string) {
+	name := config.FormatTitle(home)
+	_ = name
+	_ = config.MinRetries
+	_ = config.MaxRetries
+}

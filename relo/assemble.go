@@ -74,6 +74,10 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		}
 		var extracted []extractedItem
 		seenDecls := make(map[ast.Decl]bool)
+		crossTargetImports := make(map[string]bool)
+
+		// Get import changes for this target (used for alias edits).
+		ic := imports.byFile[targetPath]
 
 		for _, rr := range rrs {
 			s := spans[rr]
@@ -106,6 +110,16 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				edits = append(edits, collectSelfImportEdits(ix, rr, s, targetImportPath)...)
 			}
 
+			// Apply import alias edits for collision resolution.
+			edits = append(edits, computeImportAliasEdits(ix, rr, s, ic)...)
+
+			// Apply cross-target reference qualification.
+			crossEdits, crossImps := computeCrossTargetEdits(ix, rr, s, resolved)
+			edits = append(edits, crossEdits...)
+			for impPath := range crossImps {
+				crossTargetImports[impPath] = true
+			}
+
 			var text string
 			if len(edits) > 0 {
 				text = applyEdits(src[s.Start:s.End], edits)
@@ -123,6 +137,25 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 				keyword:   keyword,
 				isGrouped: isGroupedSpec,
 			})
+		}
+
+		// Add cross-target imports to the import change set.
+		if len(crossTargetImports) > 0 {
+			if ic == nil {
+				ic = imports.ensureFile(targetPath)
+			}
+			for impPath := range crossTargetImports {
+				already := false
+				for _, entry := range ic.Add {
+					if entry.Path == impPath {
+						already = true
+						break
+					}
+				}
+				if !already {
+					ic.Add = append(ic.Add, importEntry{Path: impPath})
+				}
+			}
 		}
 
 		if len(extracted) == 0 {
@@ -164,9 +197,6 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			i = j - 1
 		}
 		newDecls := declsBuf.String()
-
-		// Get import changes for this target.
-		ic := imports.byFile[targetPath]
 
 		// Check if target file already exists.
 		existing, err := readFile(targetPath)
@@ -519,6 +549,138 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			Content: newSrc,
 		})
 	}
+}
+
+// computeCrossTargetEdits generates edits for an extracted span to qualify
+// references to declarations being moved to a DIFFERENT target package.
+// It also returns the set of import paths that need to be added for those
+// cross-target references.
+func computeCrossTargetEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) ([]edit, map[string]bool) {
+	if rr.File == nil || s == nil {
+		return nil, nil
+	}
+
+	targetDir := dirOf(rr.TargetFile)
+
+	// Build a map of groups being moved to other target directories.
+	type crossInfo struct {
+		tgtPkgPath string
+		tgtName    string
+	}
+	crossGroups := make(map[*mast.Group]*crossInfo)
+	for _, r := range resolved {
+		if r.File == nil {
+			continue
+		}
+		rDir := dirOf(r.TargetFile)
+		if rDir == targetDir {
+			continue // same target directory, no qualification needed
+		}
+		srcDir := dirOf(r.File.Path)
+		if srcDir == targetDir {
+			continue // declaration is already in our target package
+		}
+		tgtPkgPath := guessImportPath(rDir)
+		if tgtPkgPath == "" {
+			continue
+		}
+		crossGroups[r.Group] = &crossInfo{
+			tgtPkgPath: tgtPkgPath,
+			tgtName:    r.TargetName,
+		}
+	}
+	if len(crossGroups) == 0 {
+		return nil, nil
+	}
+
+	var edits []edit
+	neededImports := make(map[string]bool)
+
+	// Walk AST within the span to find idents referencing cross-target groups.
+	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		grp := ix.Group(ident)
+		if grp == nil {
+			return true
+		}
+		info, ok := crossGroups[grp]
+		if !ok {
+			return true
+		}
+
+		off := ix.Fset.Position(ident.Pos()).Offset
+		endOff := off + len(ident.Name)
+		if off >= s.Start && endOff <= s.End {
+			tgtLocalName := guessImportLocalName(info.tgtPkgPath)
+			edits = append(edits, edit{
+				Start: off - s.Start,
+				End:   endOff - s.Start,
+				New:   tgtLocalName + "." + info.tgtName,
+			})
+			neededImports[info.tgtPkgPath] = true
+		}
+		return true
+	})
+
+	return deduplicateEdits(edits), neededImports
+}
+
+// computeImportAliasEdits generates edits for an extracted span to rename
+// import qualifier idents that were aliased due to collision resolution.
+// For each import in rr's source file that received an alias in the target,
+// it maps the old local name to the new alias and rewrites SelectorExpr
+// qualifiers within the span.
+func computeImportAliasEdits(ix *mast.Index, rr *resolvedRelo, s *span, ic *importChange) []edit {
+	if rr.File == nil || ic == nil || len(ic.Aliases) == 0 {
+		return nil
+	}
+
+	// Build a map of oldLocalName -> newAlias for imports used by this rr's source file.
+	localToAlias := make(map[string]string)
+	for _, imp := range rr.File.Syntax.Imports {
+		impPath, _ := strconv.Unquote(imp.Path.Value)
+		alias, ok := ic.Aliases[impPath]
+		if !ok {
+			continue
+		}
+		oldLocal := importLocalName(imp, impPath)
+		if oldLocal != alias {
+			localToAlias[oldLocal] = alias
+		}
+	}
+	if len(localToAlias) == 0 {
+		return nil
+	}
+
+	var edits []edit
+	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		newAlias, ok := localToAlias[ident.Name]
+		if !ok {
+			return true
+		}
+		off := ix.Fset.Position(ident.Pos()).Offset
+		endOff := off + len(ident.Name)
+		if off >= s.Start && endOff <= s.End {
+			edits = append(edits, edit{
+				Start: off - s.Start,
+				End:   endOff - s.Start,
+				New:   newAlias,
+			})
+		}
+		return true
+	})
+	return edits
 }
 
 // collectSelfImportEdits finds selector expressions like pkg.Foo where pkg is

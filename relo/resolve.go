@@ -23,7 +23,7 @@ type resolvedRelo struct {
 // resolve validates, deduplicates, and synthesizes relos (phases 0-1).
 func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) {
 	// Phase 0: validate each relo.
-	seen := make(map[*mast.Group]*resolvedRelo)
+	seen := make(map[seenKey]*resolvedRelo)
 	var resolved []*resolvedRelo
 
 	for _, r := range relos {
@@ -106,8 +106,17 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 			}
 		}
 
-		// Deduplicate by group.
-		if existing, ok := seen[grp]; ok {
+		// Compute the seen key. Normally we deduplicate by group alone,
+		// but when the definition comes from a build-constrained file, we
+		// include the file path so that same-name declarations from
+		// non-overlapping build tags can coexist.
+		sk := seenKey{Group: grp}
+		if defIdent.File != nil && defIdent.File.BuildTag != "" {
+			sk.File = defIdent.File.Path
+		}
+
+		// Deduplicate by group (+ optional file).
+		if existing, ok := seen[sk]; ok {
 			// If the existing relo is synthesized and this one is explicit, prefer explicit.
 			if existing.Synthesized {
 				existing.Relo = r
@@ -118,7 +127,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 				existing.Synthesized = false
 				continue
 			}
-			// Two explicit relos for the same group: error if they conflict.
+			// Two explicit relos for the same key: error if they conflict.
 			newTarget := r.MoveTo
 			if newTarget == "" && defIdent.File != nil {
 				newTarget = defIdent.File.Path
@@ -150,7 +159,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 			rr.TargetFile = rr.File.Path
 		}
 
-		seen[grp] = rr
+		seen[sk] = rr
 		resolved = append(resolved, rr)
 	}
 
@@ -160,8 +169,17 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 	return resolved, nil
 }
 
+// seenKey is used by resolve and synthesize to deduplicate resolved relos.
+// When File is empty, it matches any entry for the same Group. When File
+// is set (for build-constrained definitions), entries from different files
+// can coexist independently.
+type seenKey struct {
+	Group *mast.Group
+	File  string
+}
+
 // synthesize adds methods for moved types and generates warnings.
-func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[*mast.Group]*resolvedRelo, plan *Plan) []*resolvedRelo {
+func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*resolvedRelo, plan *Plan) []*resolvedRelo {
 	// Collect moved type names for method synthesis and warnings.
 	movedTypes := make(map[string]*resolvedRelo) // "pkg.TypeName" -> relo
 	movedNames := make(map[string]*resolvedRelo) // "pkg.Name" -> relo
@@ -197,7 +215,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[*mast.Group]*
 				if grp == nil {
 					continue
 				}
-				if _, already := seen[grp]; already {
+				if _, already := seen[seenKey{Group: grp}]; already {
 					continue
 				}
 
@@ -235,7 +253,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[*mast.Group]*
 					TargetName:  grp.Name,
 					Synthesized: true,
 				}
-				seen[grp] = rr
+				seen[seenKey{Group: grp}] = rr
 				resolved = append(resolved, rr)
 			}
 		}

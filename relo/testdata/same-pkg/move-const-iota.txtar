@@ -1,8 +1,8 @@
-# Move an iota-dependent const (hard error about value change).
+# Move an iota-dependent const (warning about value change).
 
 Blue -> colors_out.go
 
-@error const Blue depends on iota
+@warn const Blue depends on iota
 
 -- input/go.mod --
 module example.com/pkg
@@ -20,3 +20,18 @@ const (
 )
 
 func OtherColor() {}
+-- golden/colors.go --
+package mypkg
+
+type Color int
+
+const (
+	Red Color = iota
+	Green
+)
+
+func OtherColor() {}
+-- golden/colors_out.go --
+package mypkg
+
+const Blue

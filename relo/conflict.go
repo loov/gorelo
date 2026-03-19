@@ -43,15 +43,25 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 // detectConflicts checks for naming and movement conflicts (phase 5).
 func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error {
 	// Check movement conflicts: same group moved to two different targets.
-	targetsByGroup := make(map[*mast.Group]string)
+	// Use a composite key of (group, source file path) so that declarations
+	// from non-overlapping build constraints can target different files.
+	type moveKey struct {
+		group *mast.Group
+		file  string // source file path, non-empty for build-constrained files
+	}
+	targetsByKey := make(map[moveKey]string)
 	for _, rr := range resolved {
-		if existing, ok := targetsByGroup[rr.Group]; ok {
+		mk := moveKey{group: rr.Group}
+		if rr.File != nil && rr.File.BuildTag != "" {
+			mk.file = rr.File.Path
+		}
+		if existing, ok := targetsByKey[mk]; ok {
 			if existing != rr.TargetFile {
 				return fmt.Errorf("conflicting moves: %s targeted to both %s and %s",
 					rr.Group.Name, existing, rr.TargetFile)
 			}
 		}
-		targetsByGroup[rr.Group] = rr.TargetFile
+		targetsByKey[mk] = rr.TargetFile
 	}
 
 	// Check naming conflicts in target packages.
@@ -127,20 +137,32 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		for _, rr := range resolved {
 			if rr.File != nil && rr.File.Pkg == targetPkg && rr.TargetFile != rr.File.Path {
 				movedFromGroups[rr.Group] = true
-				movedFromNames[rr.Group.Name] = true
+				// Only mark the name as vacated when moving to a different
+				// package. Same-package moves keep the name in the package.
+				if dirOf(rr.TargetFile) != dir {
+					movedFromNames[rr.Group.Name] = true
+				}
+			}
+		}
+
+		// Build a set of groups that are leaving this package entirely
+		// (cross-package moves). These vacate their names.
+		leavingGroups := make(map[*mast.Group]bool)
+		for _, rr := range resolved {
+			if rr.File != nil && rr.File.Pkg == targetPkg && dirOf(rr.TargetFile) != dir {
+				leavingGroups[rr.Group] = true
 			}
 		}
 
 		for _, entry := range entries {
-			// If this entry's own group is moving from this package,
-			// the name it vacates is rr.Group.Name, not entry.name
-			// (which may be a renamed TargetName).  Skip collision check
-			// only for the original name being vacated.
-			if movedFromGroups[entry.reloGroup] {
+			// If this entry's group is leaving the package entirely,
+			// it vacates the name — skip collision check.
+			if leavingGroups[entry.reloGroup] {
 				continue
 			}
 			for _, file := range targetPkg.Files {
-				// Skip declarations whose name is being vacated.
+				// Skip declarations whose name is being vacated
+				// (cross-package moves that remove the name).
 				if movedFromNames[entry.name] {
 					continue
 				}
@@ -150,10 +172,15 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 				}
 
 				for _, decl := range file.Syntax.Decls {
-					if nameConflicts(decl, entry.name) {
-						return fmt.Errorf("name collision: %s already exists in %s",
-							entry.name, file.Path)
+					if !nameConflicts(decl, entry.name) {
+						continue
 					}
+					// Don't flag the entry's own declaration as a collision.
+					if movedFromGroups[entry.reloGroup] && declDefinesGroup(ix, decl, entry.reloGroup) {
+						continue
+					}
+					return fmt.Errorf("name collision: %s already exists in %s",
+						entry.name, file.Path)
 				}
 			}
 		}
@@ -319,6 +346,30 @@ var exclusiveArchTags = map[string]bool{
 	"ppc64": true, "ppc64le": true, "mips": true, "mipsle": true,
 	"mips64": true, "mips64le": true, "s390x": true, "riscv64": true,
 	"wasm": true, "loong64": true,
+}
+
+// declDefinesGroup checks if a declaration's defining ident belongs to the given group.
+func declDefinesGroup(ix *mast.Index, decl ast.Decl, grp *mast.Group) bool {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		return ix.Group(d.Name) == grp
+	case *ast.GenDecl:
+		for _, spec := range d.Specs {
+			switch s := spec.(type) {
+			case *ast.TypeSpec:
+				if ix.Group(s.Name) == grp {
+					return true
+				}
+			case *ast.ValueSpec:
+				for _, n := range s.Names {
+					if ix.Group(n) == grp {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // nameConflicts checks if a declaration defines the given name.

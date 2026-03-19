@@ -1,0 +1,58 @@
+# Move same-name functions from different build-tag files to different targets.
+# Non-overlapping build constraints should allow this.
+
+stat_darwin.go:GetStat DarwinOnly -> darwin_moved.go
+stat_linux.go:GetStat LinuxOnly -> linux_moved.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/stat_darwin.go --
+//go:build darwin
+
+package mypkg
+
+func GetStat() string {
+	return "darwin"
+}
+
+func DarwinOnly() string {
+	return "macos"
+}
+-- input/stat_linux.go --
+//go:build linux
+
+package mypkg
+
+func GetStat() string {
+	return "linux"
+}
+
+func LinuxOnly() string {
+	return "linux-only"
+}
+-- golden/darwin_moved.go --
+darwin
+
+package mypkg
+
+func GetStat() string {
+	return "darwin"
+}
+
+func DarwinOnly() string {
+	return "macos"
+}
+-- golden/linux_moved.go --
+linux
+
+package mypkg
+
+func GetStat() string {
+	return "linux"
+}
+
+func LinuxOnly() string {
+	return "linux-only"
+}

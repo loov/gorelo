@@ -1,10 +1,8 @@
-# Error: moving a declaration to a file that doesn't exist in the package.
-# Actually, let's test that conflicting relos produce an error.
+# Error: target file already declares a function with the same name.
 
-source.go:Foo -> target1.go
-source.go:Foo -> target2.go
+source.go:Foo -> target.go
 
-@error conflicting relos
+@error name collision: Foo already exists in
 
 -- input/go.mod --
 module example.com/pkg
@@ -15,4 +13,14 @@ package mypkg
 
 func Foo() string {
 	return "from source"
+}
+
+func Bar() string {
+	return "bar"
+}
+-- input/target.go --
+package mypkg
+
+func Foo() string {
+	return "from target"
 }

@@ -1,9 +1,9 @@
 # Move constants with explicit values from a mixed iota/explicit block.
-# The tool treats all consts in an iota-containing block as iota-dependent.
+# The tool warns that the block contains iota.
 
 ExplicitA ExplicitB -> explicit_out.go
 
-@error depends on iota
+@warn depends on iota
 
 -- input/go.mod --
 module example.com/pkg
@@ -15,6 +15,22 @@ package mypkg
 const (
 	ExplicitA = 0
 	ExplicitB = 1
+
+	IotaX = iota
+	IotaY
+	IotaZ
+)
+-- golden/explicit_out.go --
+package mypkg
+
+const (
+	ExplicitA = 0
+	ExplicitB = 1
+)
+-- golden/explicit.go --
+package mypkg
+
+const (
 
 	IotaX = iota
 	IotaY

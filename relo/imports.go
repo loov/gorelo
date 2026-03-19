@@ -13,8 +13,9 @@ import (
 
 // importChange describes import modifications needed for a file.
 type importChange struct {
-	Add    []importEntry // imports to add
-	Remove []string      // import paths to remove
+	Add     []importEntry     // imports to add
+	Remove  []string          // import paths to remove
+	Aliases map[string]string // importPath -> alias (from collision resolution)
 }
 
 // importEntry is a single import to add.
@@ -135,6 +136,14 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		if len(entries) > 0 {
 			ic := is.ensureFile(targetFile)
 			ic.Add = append(ic.Add, entries...)
+			if len(aliases) > 0 {
+				if ic.Aliases == nil {
+					ic.Aliases = make(map[string]string)
+				}
+				for impPath, alias := range aliases {
+					ic.Aliases[impPath] = alias
+				}
+			}
 		}
 	}
 

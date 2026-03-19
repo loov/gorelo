@@ -38,6 +38,7 @@ package test
 import (
 	"crypto/rand"
 	"io"
+	mathrand "math/rand"
 )
 
 // RandBytes returns n random bytes from crypto/rand.
@@ -49,5 +50,5 @@ func RandBytes(n int) ([]byte, error) {
 
 // RandInt returns a random integer from math/rand.
 func RandInt() int {
-	return rand.Int()
+	return mathrand.Int()
 }

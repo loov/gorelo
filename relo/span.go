@@ -259,9 +259,10 @@ func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved 
 	}
 
 	if !allMoved {
-		return fmt.Errorf(
+		plan.Warnings.AddAtf(rr, ix,
 			"const %s depends on iota — moving it without the full block will change its value",
 			rr.Group.Name)
+		return nil
 	}
 
 	// All specs are being moved — verify they all go to the same target file.

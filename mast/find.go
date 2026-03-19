@@ -107,7 +107,57 @@ func (ix *Index) FindFieldDef(typeName, fieldPath, source string) *ast.Ident {
 			}
 		}
 	}
+
+	// If not found as a struct field, search for a method on the type.
+	for _, pkg := range ix.Pkgs {
+		pkgMatch := source == "" || pkg.Path == source
+		for _, file := range pkg.Files {
+			if !pkgMatch && !strings.HasSuffix(file.Path, source) {
+				continue
+			}
+			for _, decl := range file.Syntax.Decls {
+				fd, ok := decl.(*ast.FuncDecl)
+				if !ok || fd.Recv == nil {
+					continue
+				}
+				recvType := receiverTypeName(fd.Recv)
+				if recvType != typeName {
+					continue
+				}
+				// fieldPath for methods is just the method name (no dots).
+				if fd.Name.Name == fieldPath && ix.Group(fd.Name) != nil {
+					return fd.Name
+				}
+			}
+		}
+	}
+
 	return nil
+}
+
+// receiverTypeName extracts the type name from a method receiver field list.
+func receiverTypeName(recv *ast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 {
+		return ""
+	}
+	t := recv.List[0].Type
+	if star, ok := t.(*ast.StarExpr); ok {
+		t = star.X
+	}
+	if ident, ok := t.(*ast.Ident); ok {
+		return ident.Name
+	}
+	if idx, ok := t.(*ast.IndexExpr); ok {
+		if ident, ok := idx.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	}
+	if idx, ok := t.(*ast.IndexListExpr); ok {
+		if ident, ok := idx.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	}
+	return ""
 }
 
 // findFieldByPath resolves a possibly dotted field path (e.g. "TLS.CertFile")
