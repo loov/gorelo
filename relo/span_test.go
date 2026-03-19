@@ -3,6 +3,7 @@ package relo
 import (
 	"go/ast"
 	"go/parser"
+	"strings"
 	"testing"
 
 	"github.com/loov/gorelo/mast"
@@ -193,6 +194,184 @@ func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
 
 	if !hasWarning(plan, "multi-name declaration") {
 		t.Errorf("expected multi-name warning, got: %v", plan.Warnings)
+	}
+}
+
+func TestCheckIotaBlock_DifferentTargets(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": `package p
+
+const (
+	A = iota
+	B
+	C
+)
+`,
+	})
+
+	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+
+	// Build a resolvedRelo for each const in the iota block, sending A and B
+	// to different target files.
+	names := []string{"A", "B", "C"}
+	targets := []string{
+		joinPath(pkgDir, "target1.go"),
+		joinPath(pkgDir, "target2.go"), // different target
+		joinPath(pkgDir, "target1.go"),
+	}
+
+	var resolved []*resolvedRelo
+	for i, name := range names {
+		ident := findDefIdentInIndex(ix, name)
+		if ident == nil {
+			t.Fatalf("ident %q not found", name)
+		}
+		grp := ix.Group(ident)
+		var defIdent *mast.Ident
+		for _, id := range grp.Idents {
+			if id.Kind == mast.Def {
+				defIdent = id
+				break
+			}
+		}
+		resolved = append(resolved, &resolvedRelo{
+			Group:      grp,
+			DefIdent:   defIdent,
+			File:       defIdent.File,
+			TargetFile: targets[i],
+			TargetName: name,
+		})
+	}
+
+	plan := &Plan{}
+	_, err := computeSpans(ix, resolved, plan)
+	if err == nil {
+		t.Fatal("expected error for iota block with different targets, got nil")
+	}
+	if !errContains(err, "same target file") {
+		t.Errorf("expected error about same target file, got: %v", err)
+	}
+}
+
+func TestCheckIotaBlock_SameTarget(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": `package p
+
+const (
+	A = iota
+	B
+	C
+)
+`,
+	})
+
+	pkgDir := dirOf(ix.Pkgs[0].Files[0].Path)
+	target := joinPath(pkgDir, "target.go")
+
+	var resolved []*resolvedRelo
+	for _, name := range []string{"A", "B", "C"} {
+		ident := findDefIdentInIndex(ix, name)
+		if ident == nil {
+			t.Fatalf("ident %q not found", name)
+		}
+		grp := ix.Group(ident)
+		var defIdent *mast.Ident
+		for _, id := range grp.Idents {
+			if id.Kind == mast.Def {
+				defIdent = id
+				break
+			}
+		}
+		resolved = append(resolved, &resolvedRelo{
+			Group:      grp,
+			DefIdent:   defIdent,
+			File:       defIdent.File,
+			TargetFile: target,
+			TargetName: name,
+		})
+	}
+
+	plan := &Plan{}
+	_, err := computeSpans(ix, resolved, plan)
+	if err != nil {
+		t.Fatalf("expected no error when all iota specs go to same target, got: %v", err)
+	}
+}
+
+func TestSpecByteRange_AdjacentSpecs_NoBoundaryOverlap(t *testing.T) {
+	src := "package p\n\nconst (\n\tA = 1\n\tB = 2\n\tC = 3\n)\n"
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": src,
+	})
+
+	file := ix.Pkgs[0].Files[0]
+	gd := file.Syntax.Decls[0].(*ast.GenDecl)
+
+	// Compute ranges for all three specs.
+	type specRange struct {
+		name       string
+		start, end int
+	}
+	var ranges []specRange
+	for _, spec := range gd.Specs {
+		vs := spec.(*ast.ValueSpec)
+		start, end := specByteRange(ix.Fset, spec, file)
+		ranges = append(ranges, specRange{
+			name:  vs.Names[0].Name,
+			start: start,
+			end:   end,
+		})
+	}
+
+	// Verify no overlap: each range's start should be >= the previous range's end.
+	for i := 1; i < len(ranges); i++ {
+		prev := ranges[i-1]
+		curr := ranges[i]
+		if curr.start < prev.end {
+			t.Errorf("overlap between %s [%d,%d) and %s [%d,%d)",
+				prev.name, prev.start, prev.end,
+				curr.name, curr.start, curr.end)
+		}
+	}
+
+	// Each spec's text should contain exactly one trailing newline (not more).
+	content := string(fileContent(file))
+	for _, r := range ranges {
+		text := content[r.start:r.end]
+		trimmed := strings.TrimRight(text, "\n")
+		nlCount := len(text) - len(trimmed)
+		if nlCount != 1 {
+			t.Errorf("spec %s text %q has %d trailing newlines, want 1",
+				r.name, text, nlCount)
+		}
+	}
+}
+
+func TestSpecByteRange_BlankLineBetweenSpecs(t *testing.T) {
+	src := "package p\n\nconst (\n\tA = 1\n\n\tB = 2\n)\n"
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": src,
+	})
+
+	file := ix.Pkgs[0].Files[0]
+	gd := file.Syntax.Decls[0].(*ast.GenDecl)
+	content := string(fileContent(file))
+
+	specA := gd.Specs[0]
+	specB := gd.Specs[1]
+
+	startA, endA := specByteRange(ix.Fset, specA, file)
+	startB, endB := specByteRange(ix.Fset, specB, file)
+
+	// A should claim only one trailing newline, not the blank line.
+	textA := content[startA:endA]
+	if strings.HasSuffix(textA, "\n\n") {
+		t.Errorf("spec A should not claim multiple trailing newlines, got %q", textA)
+	}
+
+	// B should not overlap with A.
+	if startB < endA {
+		t.Errorf("spec B [%d,%d) overlaps with spec A [%d,%d)", startB, endB, startA, endA)
 	}
 }
 

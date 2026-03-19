@@ -189,13 +189,17 @@ func specByteRange(fset *token.FileSet, spec ast.Spec, file *mast.File) (int, in
 	startOff := fset.Position(specStart).Offset
 	endOff := fset.Position(specEnd).Offset
 
-	// Extend start to beginning of line.
+	// Extend start to beginning of line (stop right after the preceding newline,
+	// so this spec does not claim the newline that belongs to the previous spec).
 	for startOff > 0 && src[startOff-1] != '\n' {
 		startOff--
 	}
 
-	// Extend end to include trailing newlines.
-	for endOff < len(src) && src[endOff] == '\n' {
+	// Extend end to include exactly one trailing newline, so that only this spec
+	// claims the boundary newline. The next spec's backward scan will start on
+	// its own content line, preventing double blank lines when adjacent specs are
+	// both being moved.
+	if endOff < len(src) && src[endOff] == '\n' {
 		endOff++
 	}
 
@@ -253,6 +257,22 @@ func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved 
 			"const %s depends on iota — moving it without the full block will change its value",
 			rr.Group.Name)
 	}
+
+	// All specs are being moved — verify they all go to the same target file.
+	targets := make(map[string]bool)
+	for _, r := range resolved {
+		if r.File == rr.File {
+			decl := findEnclosingDecl(r.File.Syntax, r.DefIdent.Ident)
+			if decl == gd {
+				targets[r.TargetFile] = true
+			}
+		}
+	}
+	if len(targets) > 1 {
+		return fmt.Errorf(
+			"all specs in iota-dependent const block must move to the same target file")
+	}
+
 	return nil
 }
 
