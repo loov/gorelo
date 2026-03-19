@@ -201,7 +201,7 @@ func (ix *Index) findFieldByPath(expr ast.Expr, fieldPath string) *ast.Ident {
 			return nil
 		}
 	}
-	return nil
+	return nil // unreachable: strings.Split always returns ≥1 element
 }
 
 // fileMatchesSource reports whether the file path ends with the given source
