@@ -109,6 +109,16 @@ func (grp *Group) IsPackageScope() bool {
 	return false
 }
 
+// HasUses reports whether the group has any Use idents.
+func (g *Group) HasUses() bool {
+	for _, id := range g.Idents {
+		if id.Kind == Use {
+			return true
+		}
+	}
+	return false
+}
+
 // Ident is a single identifier occurrence within a group.
 type Ident struct {
 	Ident     *ast.Ident

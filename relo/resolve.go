@@ -103,7 +103,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 				if name == "" {
 					name = grp.Name
 				}
-				if len(name) > 0 && !unicode.IsUpper(rune(name[0])) && groupHasUses(grp) {
+				if len(name) > 0 && !unicode.IsUpper(rune(name[0])) && grp.HasUses() {
 					return nil, fmt.Errorf("unexported name %q cannot be moved cross-package without a rename to an exported name", grp.Name)
 				}
 			}
@@ -398,16 +398,6 @@ func groupBySource(resolved []*resolvedRelo) map[string][]*resolvedRelo {
 		}
 	}
 	return m
-}
-
-// groupHasUses reports whether grp has any Use idents.
-func groupHasUses(grp *mast.Group) bool {
-	for _, id := range grp.Idents {
-		if id.Kind == mast.Use {
-			return true
-		}
-	}
-	return false
 }
 
 // isSamePackageDir checks if targetFile is in the same directory as pkg.
