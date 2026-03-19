@@ -21,6 +21,11 @@ type resolvedRelo struct {
 	Synthesized bool
 }
 
+// isCrossFileMove reports whether this relo moves a declaration to a different file.
+func (rr *resolvedRelo) isCrossFileMove() bool {
+	return rr.File != nil && rr.TargetFile != rr.File.Path
+}
+
 // resolve validates, deduplicates, and synthesizes relos (phases 0-1).
 func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) {
 	// Phase 0: validate each relo.

@@ -36,7 +36,7 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			renamedGroups[rr.Group] = rr.TargetName
 		}
 
-		if opts != nil && opts.Stubs && rr.File != nil && rr.TargetFile != rr.File.Path {
+		if opts.stubsEnabled() && rr.isCrossFileMove() {
 			srcDir := filepath.Dir(rr.File.Path)
 			tgtDir := filepath.Dir(rr.TargetFile)
 			if srcDir != tgtDir && rr.Group.Kind.HasStub() {

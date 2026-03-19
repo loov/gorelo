@@ -148,7 +148,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			//
 			// Methods and fields travel with their parent type and are
 			// accessed through instances, not as bare identifiers.
-			if id.Qualifier == nil && !(opts != nil && opts.Stubs) && !grp.Kind.TravelsWithType() {
+			if id.Qualifier == nil && !(opts.stubsEnabled()) && !grp.Kind.TravelsWithType() {
 				identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 				identEnd := identOff + len(id.Ident.Name)
 
@@ -170,7 +170,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			// Qualified cross-package consumer reference (pkg.Name).
 			// When stubs are enabled, consumers keep using the source
 			// package's names — the stubs redirect to the target.
-			if id.Qualifier == nil || (opts != nil && opts.Stubs) {
+			if id.Qualifier == nil || (opts.stubsEnabled()) {
 				continue
 			}
 

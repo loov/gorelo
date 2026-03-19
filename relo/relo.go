@@ -32,6 +32,8 @@ type Options struct {
 	Stubs bool // generate //go:fix inline alias stubs
 }
 
+func (o *Options) stubsEnabled() bool { return o != nil && o.Stubs }
+
 // Compile builds a Plan from a set of Relo instructions against a mast.Index.
 func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	if opts == nil {

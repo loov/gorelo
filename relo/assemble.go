@@ -406,7 +406,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		}
 
 		// Generate backward-compatibility stubs for cross-package moves.
-		if opts != nil && opts.Stubs {
+		if opts.stubsEnabled() {
 			// Group cross-package relos by target directory so we generate
 			// separate stub blocks (and imports) for each target package.
 			crossByDir := make(map[string][]*resolvedRelo)

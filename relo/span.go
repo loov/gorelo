@@ -31,7 +31,7 @@ func buildMovedSpanIndex(resolved []*resolvedRelo, spans map[*resolvedRelo]*span
 	m := make(movedSpanIndex)
 	for _, rr := range resolved {
 		s, ok := spans[rr]
-		if !ok || s == nil || rr.File == nil || rr.TargetFile == rr.File.Path {
+		if !ok || s == nil || !rr.isCrossFileMove() {
 			continue
 		}
 		m[rr.File.Path] = append(m[rr.File.Path], s)

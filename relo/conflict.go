@@ -117,7 +117,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 		movedFromGroups := make(map[*mast.Group]bool)
 		movedFromNames := make(map[string]bool)
 		for _, rr := range resolved {
-			if rr.File != nil && rr.File.Pkg == targetPkg && rr.TargetFile != rr.File.Path {
+			if rr.isCrossFileMove() && rr.File.Pkg == targetPkg {
 				movedFromGroups[rr.Group] = true
 				// Only mark the name as vacated when moving to a different
 				// package. Same-package moves keep the name in the package.
