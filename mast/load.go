@@ -552,19 +552,29 @@ func discoverPkgName(dir string) string {
 	return ""
 }
 
+// ReadModulePath reads the module path from the go.mod file in dir.
+// Returns "" if no go.mod exists or the module line cannot be parsed.
+func ReadModulePath(dir string) string {
+	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
+		}
+	}
+	return ""
+}
+
 // readModulePath reads the module path and directory from the go.mod file
 // in dir or any parent directory.
 func readModulePath(dir string) (modPath, modDir string) {
 	d := dir
 	for {
-		data, err := os.ReadFile(filepath.Join(d, "go.mod"))
-		if err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "module ") {
-					return strings.TrimSpace(strings.TrimPrefix(line, "module")), d
-				}
-			}
+		if mod := ReadModulePath(d); mod != "" {
+			return mod, d
 		}
 		parent := filepath.Dir(d)
 		if parent == d {

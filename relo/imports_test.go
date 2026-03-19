@@ -96,9 +96,9 @@ func TestReadModulePath(t *testing.T) {
 	dir := t.TempDir()
 
 	// No go.mod.
-	got := readModulePath(dir)
+	got := mast.ReadModulePath(dir)
 	if got != "" {
-		t.Errorf("readModulePath(no go.mod) = %q, want empty", got)
+		t.Errorf("ReadModulePath(no go.mod) = %q, want empty", got)
 	}
 
 	// With go.mod.
@@ -106,9 +106,9 @@ func TestReadModulePath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(modContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	got = readModulePath(dir)
+	got = mast.ReadModulePath(dir)
 	if got != "example.com/mymod" {
-		t.Errorf("readModulePath = %q, want %q", got, "example.com/mymod")
+		t.Errorf("ReadModulePath = %q, want %q", got, "example.com/mymod")
 	}
 }
 

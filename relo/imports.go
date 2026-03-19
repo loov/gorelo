@@ -3,7 +3,6 @@ package relo
 import (
 	"go/ast"
 	"go/token"
-	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -284,7 +283,7 @@ func walkRange(file *ast.File, fset *token.FileSet, start, end int, fn func(ast.
 func guessImportPath(dir string) string {
 	d := dir
 	for {
-		modPath := readModulePath(d)
+		modPath := mast.ReadModulePath(d)
 		if modPath != "" {
 			rel, err := filepath.Rel(d, dir)
 			if err == nil {
@@ -299,21 +298,6 @@ func guessImportPath(dir string) string {
 			break
 		}
 		d = parent
-	}
-	return ""
-}
-
-// readModulePath reads the module path from a go.mod file in dir.
-func readModulePath(dir string) string {
-	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
-		}
 	}
 	return ""
 }
