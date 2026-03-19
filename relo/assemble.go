@@ -168,6 +168,12 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		if err == nil && len(existing) > 0 {
 			// Append to existing file.
 			content := string(existing)
+
+			// Apply rename edits for references in the existing content.
+			if targetRenames := renames.byFile[targetPath]; len(targetRenames) > 0 {
+				content = applyEditsToString(content, targetRenames)
+			}
+
 			if ic != nil {
 				for _, entry := range ic.Add {
 					content = ensureImport(content, entry)
