@@ -1,0 +1,41 @@
+# Move a declaration to an existing file while simultaneously renaming
+# another declaration that the existing file references. This exercises
+# the fix for double-applying rename edits to target-only files.
+
+Greet -> dst/moved.go
+MaxSize=Limit -> dst/moved.go
+
+@warn may create a circular import
+@warn may create a circular import
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+func Greet() string { return "hi" }
+
+var MaxSize = 100
+-- input/dst/existing.go --
+package dst
+
+import "example.com/test/src"
+
+func Wrapper() string { return src.Greet() }
+
+var MyLimit = src.MaxSize
+-- golden/dst/moved.go --
+package dst
+
+func Greet() string { return "hi" }
+
+var Limit = 100
+-- golden/dst/existing.go --
+package dst
+
+
+func Wrapper() string { return Greet() }
+
+var MyLimit = Limit

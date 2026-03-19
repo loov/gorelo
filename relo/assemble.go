@@ -512,12 +512,14 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			continue
 		}
 
-		// If this file was already emitted as a target, apply renames
-		// to the already-computed content instead of reading from disk.
+		// If this file was already emitted as a target, renames were
+		// already applied during the target phase (line ~210). Only
+		// apply consumer import entries here to avoid double-applying
+		// rename edits with stale offsets.
 		if idx, already := emittedPaths[filePath]; already {
 			existing := plan.Edits[idx]
 			if !existing.IsDelete {
-				newSrc := applyEditsToString(existing.Content, edits)
+				newSrc := existing.Content
 				if ic, ok := imports.byFile[filePath]; ok {
 					newSrc = applyImportEntries(newSrc, ic.Add)
 				}
