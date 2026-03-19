@@ -243,6 +243,65 @@ func TestCheckConstraints_NoWarningForSameConstraint(t *testing.T) {
 	}
 }
 
+func testResolvedRelo(grp *mast.Group, targetFile, targetName string, file *mast.File) *resolvedRelo {
+	fakeIdent := ast.NewIdent(grp.Name)
+	return &resolvedRelo{
+		Group:      grp,
+		DefIdent:   &mast.Ident{Ident: fakeIdent, Kind: mast.Def, File: file},
+		TargetFile: targetFile,
+		TargetName: targetName,
+		File:       file,
+	}
+}
+
+func TestDetectConflicts_InterReloCollision(t *testing.T) {
+	// Two relos with the same TargetName going to the same directory
+	// from different groups should produce an error.
+	grpA := &mast.Group{Name: "Foo", Kind: mast.TypeName, Pkg: "example.com/a"}
+	grpB := &mast.Group{Name: "Bar", Kind: mast.TypeName, Pkg: "example.com/b"}
+
+	emptyFile := &ast.File{Name: ast.NewIdent("p")}
+	ix := &mast.Index{Fset: token.NewFileSet()}
+	plan := &Plan{}
+
+	fileA := &mast.File{Path: "/tmp/a/a.go", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/a"}}
+	fileB := &mast.File{Path: "/tmp/b/b.go", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/b"}}
+
+	resolved := []*resolvedRelo{
+		testResolvedRelo(grpA, "/tmp/target/target.go", "Foo", fileA),
+		testResolvedRelo(grpB, "/tmp/target/other.go", "Foo", fileB),
+	}
+
+	err := detectConflicts(ix, resolved, plan)
+	if !errContains(err, "name collision") {
+		t.Fatalf("expected 'name collision' error for inter-relo collision, got: %v", err)
+	}
+}
+
+func TestDetectConflicts_InterReloCollision_NonOverlappingConstraints(t *testing.T) {
+	// Two relos with the same TargetName but non-overlapping build constraints
+	// should NOT produce an error.
+	grpA := &mast.Group{Name: "Foo", Kind: mast.TypeName, Pkg: "example.com/a"}
+	grpB := &mast.Group{Name: "Bar", Kind: mast.TypeName, Pkg: "example.com/b"}
+
+	emptyFile := &ast.File{Name: ast.NewIdent("p")}
+	ix := &mast.Index{Fset: token.NewFileSet()}
+	plan := &Plan{}
+
+	fileA := &mast.File{Path: "/tmp/a/a.go", BuildTag: "//go:build linux", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/a"}}
+	fileB := &mast.File{Path: "/tmp/b/b.go", BuildTag: "//go:build darwin", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/b"}}
+
+	resolved := []*resolvedRelo{
+		testResolvedRelo(grpA, "/tmp/target/target.go", "Foo", fileA),
+		testResolvedRelo(grpB, "/tmp/target/other.go", "Foo", fileB),
+	}
+
+	err := detectConflicts(ix, resolved, plan)
+	if err != nil {
+		t.Fatalf("expected no error for non-overlapping constraints, got: %v", err)
+	}
+}
+
 func TestCheckConstraints_NoWarningForUnconstrained(t *testing.T) {
 	plan := &Plan{}
 

@@ -77,6 +77,26 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		})
 	}
 
+	// Check for inter-relo collisions: two different relos with the same
+	// TargetName going to the same directory.
+	for dir, entries := range byTargetDir {
+		for i := 0; i < len(entries); i++ {
+			for j := i + 1; j < len(entries); j++ {
+				if entries[i].name != entries[j].name {
+					continue
+				}
+				if entries[i].reloGroup == entries[j].reloGroup {
+					continue
+				}
+				if !constraintsMayOverlap(entries[i].buildTag, entries[j].buildTag) {
+					continue
+				}
+				return fmt.Errorf("name collision: multiple declarations named %s are being moved to %s",
+					entries[i].name, dir)
+			}
+		}
+	}
+
 	// Check against existing declarations in target packages.
 	for dir, entries := range byTargetDir {
 		// Find existing package in this directory.
