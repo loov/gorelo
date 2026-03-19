@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,7 +67,20 @@ var tmpl = template.Must(template.ParseFS(templates, "*.html"))
 func main() {
 	dir := flag.String("dir", ".", "directory to load")
 	listen := flag.String("listen", "127.0.0.1:8080", "listen address")
+	cpuprofile := flag.String("cpuprofile", "", "write CPU profile to file")
 	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal(err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	absDir, err := filepath.Abs(*dir)
 	if err != nil {

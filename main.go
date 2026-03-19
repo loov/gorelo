@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"runtime/pprof"
 	"strings"
 
 	"github.com/loov/gorelo/mast"
@@ -69,7 +71,21 @@ Directives (in rules files):
 `)
 	}
 
+	cpuprofile := flag.String("cpuprofile", "", "write CPU profile to file")
+
 	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal(err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	if err := run(*verbose, *dryRun, *rulesFile, *stubs, inlineRules); err != nil {
 		fmt.Fprintf(os.Stderr, "gorelo: %v\n", err)
