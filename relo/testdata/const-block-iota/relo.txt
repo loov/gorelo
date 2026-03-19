@@ -1,0 +1,2 @@
+# Move MaxSize to target.go (non-iota, should work cleanly)
+MaxSize -> target.go

@@ -1,0 +1,701 @@
+package relo
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/loov/gorelo/mast"
+)
+
+// assemble builds the final FileEdit list (phase 8).
+func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, opts *Options, plan *Plan) {
+	// Group relos by target file.
+	byTarget := make(map[string][]*resolvedRelo)
+	for _, rr := range resolved {
+		byTarget[rr.TargetFile] = append(byTarget[rr.TargetFile], rr)
+	}
+
+	// Group relos by source file.
+	bySource := make(map[string][]*resolvedRelo)
+	for _, rr := range resolved {
+		if rr.File != nil {
+			bySource[rr.File.Path] = append(bySource[rr.File.Path], rr)
+		}
+	}
+
+	// Sort target paths for deterministic output.
+	sortedTargets := sortedKeys(byTarget)
+
+	// Build target files.
+	for _, targetPath := range sortedTargets {
+		rrs := byTarget[targetPath]
+		if len(rrs) == 0 {
+			continue
+		}
+
+		// Sort by source position.
+		sort.SliceStable(rrs, func(i, j int) bool {
+			pi := ix.Fset.Position(rrs[i].DefIdent.Ident.Pos())
+			pj := ix.Fset.Position(rrs[j].DefIdent.Ident.Pos())
+			if pi.Filename != pj.Filename {
+				return pi.Filename < pj.Filename
+			}
+			return pi.Offset < pj.Offset
+		})
+
+		// Check if all sources are the same file as target (same-file rename).
+		allSameFile := true
+		for _, rr := range rrs {
+			if rr.File == nil || rr.File.Path != targetPath {
+				allSameFile = false
+				break
+			}
+		}
+		if allSameFile {
+			// Pure rename in the same file — no target file to create.
+			continue
+		}
+
+		// Extract declarations.
+		type extractedItem struct {
+			text      string
+			keyword   string
+			isGrouped bool
+		}
+		var extracted []extractedItem
+		seenDecls := make(map[ast.Decl]bool)
+
+		for _, rr := range rrs {
+			s := spans[rr]
+			if s == nil {
+				continue
+			}
+
+			isGroupedSpec := s.IsGrouped
+			keyword := s.Keyword
+
+			if !isGroupedSpec {
+				if seenDecls[s.Decl] {
+					continue
+				}
+				seenDecls[s.Decl] = true
+			}
+
+			src := fileContent(rr.File)
+			if src == nil {
+				continue
+			}
+
+			// Get rename edits for this span.
+			edits := computeExtractedRenames(ix, rr, s, resolved)
+
+			// Apply self-import unqualification.
+			targetDir := dirOf(targetPath)
+			targetImportPath := guessImportPath(targetDir)
+			if targetImportPath != "" {
+				edits = append(edits, collectSelfImportEdits(ix, rr, s, targetImportPath)...)
+			}
+
+			var text string
+			if len(edits) > 0 {
+				text = applyEdits(src[s.Start:s.End], edits)
+			} else {
+				text = string(src[s.Start:s.End])
+			}
+
+			if isGroupedSpec {
+				text = dedentBlock(text)
+			}
+			text = strings.TrimRight(text, "\n")
+
+			extracted = append(extracted, extractedItem{
+				text:      text,
+				keyword:   keyword,
+				isGrouped: isGroupedSpec,
+			})
+		}
+
+		if len(extracted) == 0 {
+			continue
+		}
+
+		// Render extracted items, grouping consecutive specs.
+		var declsBuf strings.Builder
+		for i := 0; i < len(extracted); i++ {
+			e := extracted[i]
+			if !e.isGrouped {
+				declsBuf.WriteString("\n")
+				declsBuf.WriteString(e.text)
+				declsBuf.WriteString("\n")
+				continue
+			}
+			// Collect consecutive grouped specs with same keyword.
+			j := i + 1
+			for j < len(extracted) && extracted[j].isGrouped && extracted[j].keyword == e.keyword {
+				j++
+			}
+			count := j - i
+			if count == 1 {
+				declsBuf.WriteString("\n")
+				declsBuf.WriteString(prependKeyword(e.text, e.keyword))
+				declsBuf.WriteString("\n")
+			} else {
+				declsBuf.WriteString("\n")
+				declsBuf.WriteString(e.keyword + " (\n")
+				for k := i; k < j; k++ {
+					for _, line := range strings.Split(extracted[k].text, "\n") {
+						declsBuf.WriteString("\t")
+						declsBuf.WriteString(line)
+						declsBuf.WriteString("\n")
+					}
+				}
+				declsBuf.WriteString(")\n")
+			}
+			i = j - 1
+		}
+		newDecls := declsBuf.String()
+
+		// Get import changes for this target.
+		ic := imports.byFile[targetPath]
+
+		// Check if target file already exists.
+		existing, err := readFile(targetPath)
+		if err == nil && len(existing) > 0 {
+			// Append to existing file.
+			content := string(existing)
+			if ic != nil {
+				for _, entry := range ic.Add {
+					content = ensureImport(content, entry)
+				}
+			}
+			if !strings.HasSuffix(content, "\n") {
+				content += "\n"
+			}
+			content += newDecls
+			content = removeUnusedImportsText(content)
+			plan.Edits = append(plan.Edits, FileEdit{
+				Path:    targetPath,
+				Content: content,
+			})
+		} else {
+			// New file.
+			targetPkgName := determineTargetPkgName(rrs)
+
+			// Collect build constraint.
+			constraint := collectBuildConstraint(rrs)
+
+			var b strings.Builder
+			if constraint != "" {
+				b.WriteString(constraint)
+				b.WriteString("\n\n")
+			}
+			b.WriteString("package ")
+			b.WriteString(targetPkgName)
+			b.WriteString("\n")
+
+			if ic != nil && len(ic.Add) > 0 {
+				sortedImports := make([]importEntry, len(ic.Add))
+				copy(sortedImports, ic.Add)
+				sort.Slice(sortedImports, func(i, j int) bool {
+					return sortedImports[i].Path < sortedImports[j].Path
+				})
+				b.WriteString("\nimport (\n")
+				for _, entry := range sortedImports {
+					b.WriteString("\t")
+					if entry.Alias != "" {
+						b.WriteString(entry.Alias)
+						b.WriteString(" ")
+					}
+					b.WriteString(strconv.Quote(entry.Path))
+					b.WriteString("\n")
+				}
+				b.WriteString(")\n")
+			}
+
+			b.WriteString(newDecls)
+			content := removeUnusedImportsText(b.String())
+			plan.Edits = append(plan.Edits, FileEdit{
+				Path:    targetPath,
+				IsNew:   true,
+				Content: content,
+			})
+		}
+	}
+
+	// Process source files: remove moved declarations.
+	sortedSources := sortedKeys(bySource)
+	for _, sourcePath := range sortedSources {
+		rrs := bySource[sourcePath]
+		if len(rrs) == 0 {
+			continue
+		}
+
+		// Check if all relos for this file are same-file renames.
+		allSameFile := true
+		for _, rr := range rrs {
+			if rr.TargetFile != sourcePath {
+				allSameFile = false
+				break
+			}
+		}
+
+		src := fileContent(rrs[0].File)
+		if src == nil {
+			continue
+		}
+
+		if allSameFile {
+			// Same-file renames: apply rename edits only.
+			edits := renames.byFile[sourcePath]
+			if len(edits) == 0 {
+				continue
+			}
+			newSrc := applyEdits(src, edits)
+			plan.Edits = append(plan.Edits, FileEdit{
+				Path:    sourcePath,
+				Content: newSrc,
+			})
+			continue
+		}
+
+		// Collect byte ranges to remove.
+		type byteRange struct{ start, end int }
+		seen := make(map[[2]int]bool)
+		var ranges []byteRange
+		for _, rr := range rrs {
+			if rr.TargetFile == sourcePath {
+				continue // not being moved, just renamed
+			}
+			s := spans[rr]
+			if s == nil {
+				continue
+			}
+
+			// For grouped specs, we remove the individual spec.
+			// For whole decls, we remove the entire decl.
+			start, end := s.Start, s.End
+			key := [2]int{start, end}
+			if !seen[key] {
+				seen[key] = true
+				ranges = append(ranges, byteRange{start, end})
+			}
+		}
+
+		sort.Slice(ranges, func(i, j int) bool {
+			return ranges[i].start < ranges[j].start
+		})
+
+		// Merge overlapping ranges.
+		merged := ranges[:0:0]
+		for _, r := range ranges {
+			if len(merged) > 0 && r.start <= merged[len(merged)-1].end {
+				if r.end > merged[len(merged)-1].end {
+					merged[len(merged)-1].end = r.end
+				}
+			} else {
+				merged = append(merged, r)
+			}
+		}
+
+		// Get rename edits for remaining code.
+		renameEdits := renames.byFile[sourcePath]
+
+		// Filter rename edits that fall inside removed ranges.
+		if len(renameEdits) > 0 {
+			var filtered []edit
+			for _, e := range renameEdits {
+				inRemoved := false
+				for _, r := range merged {
+					if e.Start >= r.start && e.End <= r.end {
+						inRemoved = true
+						break
+					}
+				}
+				if !inRemoved {
+					filtered = append(filtered, e)
+				}
+			}
+			renameEdits = filtered
+		}
+
+		// Build edits: removals + renames.
+		var allEdits []edit
+		for _, r := range merged {
+			allEdits = append(allEdits, edit{Start: r.start, End: r.end, New: ""})
+		}
+		allEdits = append(allEdits, renameEdits...)
+
+		newSrc := applyEdits(src, allEdits)
+
+		// Clean up.
+		newSrc = removeEmptyDeclBlocks(newSrc)
+		newSrc = cleanBlankLines(newSrc)
+		newSrc = removeUnusedImportsText(newSrc)
+
+		if sourceFileIsEmpty(newSrc) {
+			plan.Edits = append(plan.Edits, FileEdit{
+				Path:     sourcePath,
+				IsDelete: true,
+			})
+		} else {
+			plan.Edits = append(plan.Edits, FileEdit{
+				Path:    sourcePath,
+				Content: newSrc,
+			})
+		}
+	}
+
+	// Apply renames to other files not involved as source/target.
+	for filePath, edits := range renames.byFile {
+		if _, isSource := bySource[filePath]; isSource {
+			continue
+		}
+		if _, isTarget := byTarget[filePath]; isTarget {
+			continue
+		}
+		if len(edits) == 0 {
+			continue
+		}
+
+		src, err := readFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		newSrc := applyEdits(src, edits)
+		newSrc = removeUnusedImportsText(newSrc)
+		plan.Edits = append(plan.Edits, FileEdit{
+			Path:    filePath,
+			Content: newSrc,
+		})
+	}
+}
+
+// collectSelfImportEdits finds selector expressions like pkg.Foo where pkg is
+// the target package (self-import) and unqualifies them.
+func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImportPath string) []edit {
+	if rr.File == nil {
+		return nil
+	}
+
+	selfLocalNames := make(map[string]bool)
+	for _, imp := range rr.File.Syntax.Imports {
+		impPath, _ := strconv.Unquote(imp.Path.Value)
+		if impPath == selfImportPath {
+			if imp.Name != nil {
+				selfLocalNames[imp.Name.Name] = true
+			} else {
+				selfLocalNames[guessImportLocalName(impPath)] = true
+			}
+		}
+	}
+	if len(selfLocalNames) == 0 {
+		return nil
+	}
+
+	var edits []edit
+	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if !selfLocalNames[ident.Name] {
+			return true
+		}
+
+		startOff := ix.Fset.Position(ident.Pos()).Offset
+		selOff := ix.Fset.Position(sel.Sel.Pos()).Offset
+		if startOff >= s.Start && selOff <= s.End {
+			edits = append(edits, edit{
+				Start: startOff - s.Start,
+				End:   selOff - s.Start,
+				New:   "",
+			})
+		}
+		return true
+	})
+	return edits
+}
+
+// determineTargetPkgName figures out the package name for a new target file.
+func determineTargetPkgName(rrs []*resolvedRelo) string {
+	for _, rr := range rrs {
+		if rr.File != nil {
+			srcDir := dirOf(rr.File.Path)
+			targetDir := dirOf(rr.TargetFile)
+			if srcDir == targetDir {
+				return rr.File.Syntax.Name.Name
+			}
+		}
+	}
+	// Guess from directory name.
+	if len(rrs) > 0 {
+		return guessPackageName(dirOf(rrs[0].TargetFile))
+	}
+	return "pkg"
+}
+
+// collectBuildConstraint determines constraint for a new target file.
+func collectBuildConstraint(rrs []*resolvedRelo) string {
+	seen := make(map[string]bool)
+	for _, rr := range rrs {
+		if rr.File != nil {
+			seen[rr.File.BuildTag] = true
+		}
+	}
+	hasUnconstrained := seen[""]
+	delete(seen, "")
+	if len(seen) == 0 || hasUnconstrained || len(seen) > 1 {
+		return ""
+	}
+	for c := range seen {
+		return c
+	}
+	return ""
+}
+
+// ensureImport adds an import to the source if not already present.
+func ensureImport(src string, entry importEntry) string {
+	quotedPath := strconv.Quote(entry.Path)
+	if sourceHasImport(src, quotedPath) {
+		return src
+	}
+
+	importLine := "\t"
+	if entry.Alias != "" {
+		importLine += entry.Alias + " "
+	}
+	importLine += quotedPath
+
+	lines := strings.Split(src, "\n")
+
+	// Look for grouped import block.
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "import (" {
+			newLines := make([]string, 0, len(lines)+1)
+			newLines = append(newLines, lines[:i+1]...)
+			newLines = append(newLines, importLine)
+			newLines = append(newLines, lines[i+1:]...)
+			return strings.Join(newLines, "\n")
+		}
+	}
+
+	// Look for single-line import.
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "import ") && !strings.HasPrefix(trimmed, "import (") {
+			existingImport := "\t" + strings.TrimPrefix(trimmed, "import ")
+			newLines := make([]string, 0, len(lines)+3)
+			newLines = append(newLines, lines[:i]...)
+			newLines = append(newLines, "import (")
+			newLines = append(newLines, existingImport)
+			newLines = append(newLines, importLine)
+			newLines = append(newLines, ")")
+			newLines = append(newLines, lines[i+1:]...)
+			return strings.Join(newLines, "\n")
+		}
+	}
+
+	// No import — add after package clause.
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "package ") {
+			newLines := make([]string, 0, len(lines)+4)
+			newLines = append(newLines, lines[:i+1]...)
+			newLines = append(newLines, "")
+			newLines = append(newLines, "import (")
+			newLines = append(newLines, importLine)
+			newLines = append(newLines, ")")
+			newLines = append(newLines, lines[i+1:]...)
+			return strings.Join(newLines, "\n")
+		}
+	}
+
+	return src
+}
+
+// sourceHasImport checks if the source already imports the given path.
+func sourceHasImport(src, quotedPath string) bool {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
+	if err != nil {
+		return false
+	}
+	for _, imp := range file.Imports {
+		if imp.Path.Value == quotedPath {
+			return true
+		}
+	}
+	return false
+}
+
+// removeUnusedImportsText re-parses and removes unused imports.
+func removeUnusedImportsText(src string) string {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	if err != nil {
+		return src
+	}
+	if len(file.Imports) == 0 {
+		return src
+	}
+
+	usedPkgs := make(map[string]bool)
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			usedPkgs[ident.Name] = true
+		}
+		return true
+	})
+
+	var unusedPaths []string
+	for _, imp := range file.Imports {
+		impPath, _ := strconv.Unquote(imp.Path.Value)
+		localName := importLocalName(imp, impPath)
+		if localName == "_" || localName == "." {
+			continue
+		}
+		if !usedPkgs[localName] {
+			unusedPaths = append(unusedPaths, imp.Path.Value)
+		}
+	}
+
+	if len(unusedPaths) == 0 {
+		return src
+	}
+
+	unusedSet := make(map[string]bool)
+	for _, p := range unusedPaths {
+		unusedSet[p] = true
+	}
+
+	removeLines := make(map[int]bool)
+	for _, imp := range file.Imports {
+		if unusedSet[imp.Path.Value] {
+			removeLines[fset.Position(imp.Pos()).Line] = true
+			if imp.Doc != nil {
+				startLine := fset.Position(imp.Doc.Pos()).Line
+				endLine := fset.Position(imp.Doc.End()).Line
+				for l := startLine; l <= endLine; l++ {
+					removeLines[l] = true
+				}
+			}
+		}
+	}
+
+	lines := strings.Split(src, "\n")
+	var out []string
+	for i, line := range lines {
+		if !removeLines[i+1] {
+			out = append(out, line)
+		}
+	}
+
+	result := strings.Join(out, "\n")
+	result = removeEmptyDeclBlocks(result)
+	return result
+}
+
+// removeEmptyDeclBlocks removes empty declaration blocks like "import (\n)".
+func removeEmptyDeclBlocks(src string) string {
+	for _, keyword := range []string{"import", "const", "var", "type"} {
+		for {
+			pattern := keyword + " (\n)"
+			idx := strings.Index(src, pattern)
+			if idx < 0 {
+				break
+			}
+			// Remove the entire block including surrounding blank lines.
+			start := idx
+			end := idx + len(pattern)
+			for start > 0 && src[start-1] == '\n' {
+				start--
+			}
+			for end < len(src) && src[end] == '\n' {
+				end++
+			}
+			src = src[:start] + "\n" + src[end:]
+		}
+	}
+	return src
+}
+
+// cleanBlankLines collapses runs of more than one blank line.
+func cleanBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	blankCount := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			blankCount++
+			if blankCount <= 2 {
+				out = append(out, line)
+			}
+		} else {
+			blankCount = 0
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// sourceFileIsEmpty checks if a Go source has no declarations.
+func sourceFileIsEmpty(src string) bool {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	if err != nil {
+		return false
+	}
+	for _, decl := range file.Decls {
+		if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// guessPackageName derives a package name from a directory path.
+func guessPackageName(dir string) string {
+	base := baseName(dir)
+	base = strings.ReplaceAll(base, "-", "")
+	base = strings.ReplaceAll(base, ".", "")
+	if base == "" {
+		return "pkg"
+	}
+	return base
+}
+
+// sortedKeys returns sorted keys of a map.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// fileContent returns the source bytes of a mast.File.
+func fileContent(f *mast.File) []byte {
+	if f == nil {
+		return nil
+	}
+	data, err := readFile(f.Path)
+	if err != nil {
+		return nil
+	}
+	return data
+}

@@ -1,0 +1,2 @@
+# Move Widget type to target.go
+Widget -> target.go

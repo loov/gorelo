@@ -1,0 +1,2 @@
+# Rename Foo to Bar in the same file
+Foo => Bar
