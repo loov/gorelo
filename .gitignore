@@ -10,6 +10,7 @@
 
 # Commands
 /mast-browser
+/gorelo
 
 # Go workspace
 go.work
