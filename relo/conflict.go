@@ -74,7 +74,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 	}
 	byTargetDir := make(map[string][]targetEntry)
 	for _, rr := range resolved {
-		if rr.Group.Kind == mast.Method || rr.Group.Kind == mast.Field {
+		if rr.Group.Kind.TravelsWithType() {
 			continue
 		}
 		dir := filepath.Dir(rr.TargetFile)

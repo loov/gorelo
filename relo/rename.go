@@ -45,7 +45,7 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		if opts != nil && opts.Stubs && rr.File != nil && rr.TargetFile != rr.File.Path {
 			srcDir := filepath.Dir(rr.File.Path)
 			tgtDir := filepath.Dir(rr.TargetFile)
-			if srcDir != tgtDir && rr.Group.Kind != mast.Method {
+			if srcDir != tgtDir && rr.Group.Kind.HasStub() {
 				stubGroups[rr.Group] = true
 			}
 		}
@@ -158,12 +158,11 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	actions := make(map[*mast.Group]*groupAction)
 
 	for _, r := range resolved {
-		// Fields and methods never move independently — they travel
-		// with their parent type.  Treat them as same-target renames
-		// so they produce plain rename edits, not cross-target
-		// package-qualified references.
+		// Fields and methods travel with their parent type — treat
+		// them as same-target renames so they produce plain rename
+		// edits, not cross-target package-qualified references.
 		rDir := filepath.Dir(r.TargetFile)
-		if rDir == targetDir || r.Group.Kind == mast.Field || r.Group.Kind == mast.Method {
+		if rDir == targetDir || r.Group.Kind.TravelsWithType() {
 			// Same target — only needs a rename edit if the name changed.
 			if r.TargetName != r.Group.Name {
 				actions[r.Group] = &groupAction{newText: r.TargetName}

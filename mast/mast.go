@@ -140,6 +140,27 @@ const (
 	Label
 )
 
+// TravelsWithType reports whether this kind represents an entity that
+// moves with its parent type (methods and fields). These are accessed
+// through instances (e.g. svc.Start(), cfg.Host), not as bare package-
+// qualified identifiers, so they must not be package-qualified during
+// cross-package moves.
+func (k ObjectKind) TravelsWithType() bool {
+	return k == Method || k == Field
+}
+
+// HasStub reports whether this kind gets its own backward-compatibility
+// stub when moved cross-package with stubs enabled. Methods are excluded
+// because they follow the receiver type's alias automatically.
+func (k ObjectKind) HasStub() bool {
+	switch k {
+	case TypeName, Func, Const, Var:
+		return true
+	default:
+		return false
+	}
+}
+
 // Load parses and type-checks packages matching patterns, including
 // all files regardless of build constraints. Returns an Index linking
 // all identifiers.
