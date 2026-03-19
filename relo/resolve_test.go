@@ -301,6 +301,141 @@ func TestResolve_InvalidRenameTarget(t *testing.T) {
 	}
 }
 
+// TestResolve_NilIdent tests that resolve returns a clear error for nil Ident.
+func TestResolve_NilIdent(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nvar X = 1\n",
+	})
+
+	plan := &Plan{}
+	_, err := resolve(ix, []Relo{{Ident: nil}}, plan)
+	if !errContains(err, "nil Ident") {
+		t.Fatalf("expected 'nil Ident' error, got: %v", err)
+	}
+}
+
+// TestResolve_RenameInitWarning tests that renaming an init function
+// produces a warning about losing auto-execution semantics.
+func TestResolve_RenameInitWarning(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nfunc init() {}\n",
+	})
+
+	initIdent := findDefIdentInIndex(ix, "init")
+	if initIdent == nil {
+		t.Fatal("init not found")
+	}
+
+	plan := &Plan{}
+	_, err := resolve(ix, []Relo{{Ident: initIdent, Rename: "Setup"}}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(plan, "loses automatic execution") {
+		t.Errorf("expected warning about losing init semantics, got: %v", plan.Warnings)
+	}
+}
+
+// TestResolve_RenameToInitWarning tests that renaming a function to "init"
+// produces a warning about gaining auto-execution semantics.
+func TestResolve_RenameToInitWarning(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nfunc Setup() {}\n",
+	})
+
+	ident := findDefIdentInIndex(ix, "Setup")
+	if ident == nil {
+		t.Fatal("Setup not found")
+	}
+
+	plan := &Plan{}
+	_, err := resolve(ix, []Relo{{Ident: ident, Rename: "init"}}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(plan, "gains automatic execution") {
+		t.Errorf("expected warning about gaining init semantics, got: %v", plan.Warnings)
+	}
+}
+
+// TestResolve_RenameMainWarning tests that renaming the main function in a
+// main package produces a warning about losing entry-point semantics.
+func TestResolve_RenameMainWarning(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	mainIdent := findDefIdentInIndex(ix, "main")
+	if mainIdent == nil {
+		t.Fatal("main not found")
+	}
+
+	plan := &Plan{}
+	_, err := resolve(ix, []Relo{{Ident: mainIdent, Rename: "Run"}}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(plan, "entry-point") {
+		t.Errorf("expected warning about entry-point semantics, got: %v", plan.Warnings)
+	}
+}
+
+// TestResolve_RenameToMainWarning tests that renaming a function to "main"
+// in a main package produces a warning about gaining entry-point semantics.
+func TestResolve_RenameToMainWarning(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package main\n\nfunc Run() {}\n",
+	})
+
+	ident := findDefIdentInIndex(ix, "Run")
+	if ident == nil {
+		t.Fatal("Run not found")
+	}
+
+	plan := &Plan{}
+	_, err := resolve(ix, []Relo{{Ident: ident, Rename: "main"}}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(plan, "gains entry-point") {
+		t.Errorf("expected warning about gaining entry-point semantics, got: %v", plan.Warnings)
+	}
+}
+
+// TestResolve_SynthesizedUnexportedMethodCrossPackage tests that synthesized
+// unexported methods are skipped with a warning when moving cross-package.
+func TestResolve_SynthesizedUnexportedMethodCrossPackage(t *testing.T) {
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\ntype T struct{}\n\nfunc (t T) Exported() {}\n\nfunc (t T) helper() {}\n",
+	})
+
+	typeIdent := findDefIdentInIndex(ix, "T")
+	if typeIdent == nil {
+		t.Fatal("type T not found")
+	}
+
+	// Move cross-package (different directory).
+	plan := &Plan{}
+	resolved, err := resolve(ix, []Relo{{
+		Ident:  typeIdent,
+		MoveTo: "/tmp/otherpkg/target.go",
+	}}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Exported method should be synthesized, unexported should be skipped.
+	for _, rr := range resolved {
+		if rr.Group.Name == "helper" {
+			t.Errorf("unexported method 'helper' should not have been synthesized for cross-package move")
+		}
+	}
+
+	if !hasWarning(plan, "unexported method") {
+		t.Errorf("expected warning about unexported method, got: %v", plan.Warnings)
+	}
+}
+
 // loadTestIndex creates a temporary Go module from the given files,
 // loads it with mast.Load, and returns the index.
 func loadTestIndex(t *testing.T, files map[string]string) *mast.Index {

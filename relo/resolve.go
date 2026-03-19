@@ -27,6 +27,9 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 	var resolved []*resolvedRelo
 
 	for _, r := range relos {
+		if r.Ident == nil {
+			return nil, fmt.Errorf("relo has nil Ident")
+		}
 		grp := ix.Group(r.Ident)
 		if grp == nil {
 			return nil, fmt.Errorf("ident %q at %v is not tracked by the index", r.Ident.Name, r.Ident.Pos())
@@ -69,6 +72,24 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 		// Validate rename target is a valid Go identifier.
 		if r.Rename != "" && !token.IsIdentifier(r.Rename) {
 			return nil, fmt.Errorf("rename target %q is not a valid Go identifier", r.Rename)
+		}
+
+		// Warn about init/main rename semantics.
+		if r.Rename != "" && grp.Kind == mast.Func {
+			if grp.Name == "init" && r.Rename != "init" {
+				plan.Warnings.Addf("renaming init function %q loses automatic execution semantics", grp.Name)
+			}
+			if grp.Name != "init" && r.Rename == "init" {
+				plan.Warnings.Addf("renaming %q to init gains automatic execution semantics", grp.Name)
+			}
+			if defIdent.File != nil && defIdent.File.Pkg != nil && defIdent.File.Pkg.Name == "main" {
+				if grp.Name == "main" && r.Rename != "main" {
+					plan.Warnings.Addf("renaming main function in main package loses entry-point semantics")
+				}
+				if grp.Name != "main" && r.Rename == "main" {
+					plan.Warnings.Addf("renaming %q to main in main package gains entry-point semantics", grp.Name)
+				}
+			}
 		}
 
 		// Unexported cross-package check.
@@ -190,6 +211,16 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[*mast.Group]*
 				}
 				if defIdent == nil {
 					continue
+				}
+
+				// Unexported cross-package check for synthesized methods.
+				if defIdent.File != nil && defIdent.File.Pkg != nil &&
+					!isSamePackageDir(defIdent.File.Pkg, typeRelo.TargetFile) {
+					if len(grp.Name) > 0 && !unicode.IsUpper(rune(grp.Name[0])) {
+						plan.Warnings.AddAtf(&resolvedRelo{DefIdent: defIdent, File: defIdent.File}, ix,
+							"unexported method %q cannot be moved cross-package; skipping synthesis", grp.Name)
+						continue
+					}
 				}
 
 				rr := &resolvedRelo{
