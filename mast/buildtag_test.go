@@ -48,6 +48,18 @@ func TestExtractBuildTag(t *testing.T) {
 			want: "amd64",
 		},
 		{
+			name: "filename GOOS_GOARCH",
+			path: "foo_linux_amd64.go",
+			src:  "package p\n",
+			want: "linux && amd64",
+		},
+		{
+			name: "filename GOOS_GOARCH test",
+			path: "foo_linux_amd64_test.go",
+			src:  "package p\n",
+			want: "linux && amd64",
+		},
+		{
 			name: "directive takes precedence over filename",
 			path: "foo_linux.go",
 			src:  "//go:build darwin\n\npackage p\n",

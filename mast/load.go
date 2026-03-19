@@ -376,13 +376,21 @@ func extractBuildTag(path string, src []byte) string {
 		break
 	}
 
-	// Check filename-based constraints (e.g., *_linux.go, *_linux_test.go).
+	// Check filename-based constraints (e.g., *_linux.go, *_linux_amd64.go).
 	name := filepath.Base(path)
 	name = strings.TrimSuffix(name, ".go")
 	name = strings.TrimSuffix(name, "_test")
 	parts := strings.Split(name, "_")
 	if len(parts) >= 2 {
 		last := parts[len(parts)-1]
+		// *_GOOS_GOARCH.go: both second-to-last (GOOS) and last (GOARCH).
+		if len(parts) >= 3 && isKnownGOARCH(last) {
+			secondLast := parts[len(parts)-2]
+			if isKnownGOOS(secondLast) {
+				return secondLast + " && " + last
+			}
+			return last
+		}
 		if isKnownGOOS(last) || isKnownGOARCH(last) {
 			return last
 		}
