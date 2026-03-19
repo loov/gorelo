@@ -9,7 +9,7 @@ status=Status writeReport=WriteReport -> dst/report.go
 
 @warn unexported method "validate" cannot be moved cross-package
 @warn renaming type config to Config will also change embedded field names
-@vet undefined: Config
+@vet cannot define new methods on non-local type
 
 -- input/go.mod --
 module example.com/test
@@ -182,7 +182,7 @@ import (
 )
 
 // validate checks the config.
-func (c *Config) validate() error {
+func (c *config) validate() error {
 	if c.Name == "" {
 		return nil
 	}

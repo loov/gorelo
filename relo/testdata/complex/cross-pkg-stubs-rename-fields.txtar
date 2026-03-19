@@ -10,7 +10,7 @@ config=Config config#host=Host config#port=Port newConfig=NewConfig -> dst/confi
 
 @warn renaming type config to Config will also change embedded field names
 @warn unexported method "endpoint" cannot be moved cross-package
-@vet undefined: Config
+@vet cannot define new methods on non-local type
 
 -- input/go.mod --
 module example.com/test
@@ -65,12 +65,12 @@ import (
 	"example.com/test/dst"
 )
 
-func (c *Config) endpoint() string {
+func (c *config) endpoint() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
 func UseConfig() {
-	c := NewConfig("localhost", 8080)
+	c := newConfig("localhost", 8080)
 	fmt.Println(c.Host, c.Port)
 }
 

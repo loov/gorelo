@@ -28,6 +28,32 @@ func (ix *Index) Group(id *ast.Ident) *Group {
 	return ix.groups[id]
 }
 
+// EmbeddedFieldGroups returns Field groups with the given name and package
+// that represent embedded (anonymous) fields.  These groups contain only
+// Use idents (composite literal keys and selectors) because the embedded
+// field definition ident is linked to the type name's group instead.
+func (ix *Index) EmbeddedFieldGroups(name, pkg string) []*Group {
+	var groups []*Group
+	for key, grp := range ix.groupsByKey {
+		if key.Name != name || key.PkgPath != pkg || grp.Kind != Field {
+			continue
+		}
+		// Embedded field groups have no Def ident — the definition
+		// is redirected to the type name's group in resolveInfo.
+		hasDef := false
+		for _, id := range grp.Idents {
+			if id.Kind == Def {
+				hasDef = true
+				break
+			}
+		}
+		if !hasDef {
+			groups = append(groups, grp)
+		}
+	}
+	return groups
+}
+
 // Package represents a parsed and type-checked Go package.
 type Package struct {
 	Name  string

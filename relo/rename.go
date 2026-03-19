@@ -14,7 +14,7 @@ type renameSet struct {
 }
 
 // computeRenames uses mast groups to find all occurrences needing rename (phase 6).
-func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) *renameSet {
+func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, opts *Options, plan *Plan) *renameSet {
 	rs := &renameSet{
 		byFile: make(map[string][]edit),
 	}
@@ -23,6 +23,11 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	renamedGroups := make(map[*mast.Group]string)
 	// Track which files contain moved declarations (for filtering edits).
 	movedSpans := make(map[string][]*span) // filePath -> spans being removed
+
+	// When stubs are enabled, track groups with cross-package moves and
+	// their source files. The stubs provide backward-compatible aliases
+	// using the old name, so remaining source code must keep the old name.
+	stubSourceFiles := make(map[*mast.Group]map[string]bool) // group -> source file paths
 
 	for _, rr := range resolved {
 		if rr.TargetName != rr.Group.Name {
@@ -33,13 +38,26 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		if s, ok := spans[rr]; ok && s != nil && rr.File != nil && rr.TargetFile != rr.File.Path {
 			movedSpans[rr.File.Path] = append(movedSpans[rr.File.Path], s)
 		}
+
+		if opts != nil && opts.Stubs && rr.File != nil && rr.TargetFile != rr.File.Path {
+			srcDir := filepath.Dir(rr.File.Path)
+			tgtDir := filepath.Dir(rr.TargetFile)
+			if srcDir != tgtDir {
+				if stubSourceFiles[rr.Group] == nil {
+					stubSourceFiles[rr.Group] = make(map[string]bool)
+				}
+				stubSourceFiles[rr.Group][rr.File.Path] = true
+			}
+		}
 	}
 
 	if len(renamedGroups) == 0 {
 		return rs
 	}
 
-	// Warn about type renames that may affect embedded field names.
+	// Warn about type renames that may affect embedded field names,
+	// and propagate the rename to the embedded field groups so that
+	// composite literal keys and selectors are also updated.
 	for _, rr := range resolved {
 		if rr.Group.Kind != mast.TypeName || rr.TargetName == rr.Group.Name {
 			continue
@@ -48,6 +66,12 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			plan.Warnings.AddAtf(rr, ix,
 				"renaming type %s to %s will also change embedded field names, which may affect serialization and reflection",
 				rr.Group.Name, rr.TargetName)
+			// Find embedded field groups with the same name and package.
+			// These contain composite literal keys and selector idents
+			// that must be renamed alongside the type.
+			for _, fgrp := range ix.EmbeddedFieldGroups(rr.Group.Name, rr.Group.Pkg) {
+				renamedGroups[fgrp] = rr.TargetName
+			}
 		}
 	}
 
@@ -73,6 +97,13 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 
 			if inMovedSpan {
 				// Will be handled during assembly when extracting text.
+				continue
+			}
+
+			// When stubs are enabled, the source file gets an alias
+			// using the old name.  Remaining code in that file must
+			// keep the old name so it resolves through the alias.
+			if stubSourceFiles[grp][id.File.Path] {
 				continue
 			}
 

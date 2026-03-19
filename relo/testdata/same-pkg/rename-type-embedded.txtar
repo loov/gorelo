@@ -5,7 +5,6 @@
 Base=Foundation
 
 @warn renaming type Base to Foundation will also change embedded field names
-@vet unknown field Base in struct literal
 
 -- input/go.mod --
 module example.com/pkg
@@ -63,13 +62,13 @@ package pkg
 func NewContainer() Container {
 	b := Foundation{ID: 1, Name: "test"}
 	return Container{
-		Base:  b,
+		Foundation:  b,
 		Extra: "more",
 	}
 }
 
 // ReadFields accesses fields through the embedded type.
 func ReadFields(c Container) (int, string) {
-	_ = c.Base
+	_ = c.Foundation
 	return c.ID, c.Name
 }

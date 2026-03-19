@@ -61,7 +61,7 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	}
 
 	// Phase 6: compute rename edits.
-	renameEdits := computeRenames(ix, resolved, spans, plan)
+	renameEdits := computeRenames(ix, resolved, spans, opts, plan)
 
 	// Phase 7: compute import changes.
 	importChanges := computeImports(ix, resolved, spans, plan)
