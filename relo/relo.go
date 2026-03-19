@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"fmt"
 	"go/ast"
 
 	"github.com/loov/gorelo/mast"
@@ -38,6 +39,9 @@ type Options struct {
 func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	if opts == nil {
 		opts = &Options{}
+	}
+	if opts.RewriteConsumers {
+		return nil, fmt.Errorf("RewriteConsumers is not yet implemented")
 	}
 	plan := &Plan{}
 
