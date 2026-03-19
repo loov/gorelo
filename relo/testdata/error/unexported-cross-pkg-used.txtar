@@ -1,0 +1,18 @@
+# Error: moving an unexported identifier with references cross-package.
+
+uuid_ -> dst/ids.go
+
+@error unexported name "uuid_" cannot be moved cross-package without a rename
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+var uuid_ = "default-uuid"
+
+func GetID() string {
+	return uuid_
+}

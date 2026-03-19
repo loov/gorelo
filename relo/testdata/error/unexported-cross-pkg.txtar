@@ -1,8 +1,6 @@
-# Error: moving an unexported identifier to a different package.
+# Moving an unreferenced unexported identifier cross-package is safe.
 
 uuid_ -> dst/ids.go
-
-@error unexported name "uuid_" cannot be moved cross-package without a rename
 
 -- input/go.mod --
 module example.com/test
@@ -12,6 +10,16 @@ go 1.21
 package src
 
 var uuid_ = "default-uuid"
+
+func helper() string {
+	return "internal"
+}
+-- golden/dst/ids.go --
+package dst
+
+var uuid_ = "default-uuid"
+-- golden/src/source.go --
+package src
 
 func helper() string {
 	return "internal"

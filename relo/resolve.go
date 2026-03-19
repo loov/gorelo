@@ -93,7 +93,9 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 			}
 		}
 
-		// Unexported cross-package check.
+		// Unexported cross-package check: reject only if the name has
+		// references that would break. An unreferenced unexported name
+		// can be safely moved to another package.
 		if r.MoveTo != "" && defIdent.File != nil {
 			srcPkg := defIdent.File.Pkg
 			if srcPkg != nil && !isSamePackageDir(srcPkg, r.MoveTo) {
@@ -101,7 +103,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 				if name == "" {
 					name = grp.Name
 				}
-				if len(name) > 0 && !unicode.IsUpper(rune(name[0])) {
+				if len(name) > 0 && !unicode.IsUpper(rune(name[0])) && groupHasUses(grp) {
 					return nil, fmt.Errorf("unexported name %q cannot be moved cross-package without a rename to an exported name", grp.Name)
 				}
 			}
@@ -396,6 +398,16 @@ func groupBySource(resolved []*resolvedRelo) map[string][]*resolvedRelo {
 		}
 	}
 	return m
+}
+
+// groupHasUses reports whether grp has any Use idents.
+func groupHasUses(grp *mast.Group) bool {
+	for _, id := range grp.Idents {
+		if id.Kind == mast.Use {
+			return true
+		}
+	}
+	return false
 }
 
 // isSamePackageDir checks if targetFile is in the same directory as pkg.
