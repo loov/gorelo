@@ -78,6 +78,37 @@ type Group struct {
 	Idents []*Ident
 }
 
+// IsPackageScope reports whether the group represents a package-scope
+// declaration (as opposed to a local variable, parameter, or result).
+// A package-scope group has at least one Def ident at file top-level
+// (not inside any FuncDecl).
+func (grp *Group) IsPackageScope() bool {
+	for _, id := range grp.Idents {
+		if id.Kind != Def || id.File == nil {
+			continue
+		}
+		inside := false
+		for _, decl := range id.File.Syntax.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if id.Ident.Pos() >= fd.Pos() && id.Ident.End() <= fd.End() {
+				// Inside this FuncDecl — package-scope only if
+				// it IS the function's name ident itself.
+				if id.Ident != fd.Name {
+					inside = true
+				}
+				break
+			}
+		}
+		if !inside {
+			return true
+		}
+	}
+	return false
+}
+
 // Ident is a single identifier occurrence within a group.
 type Ident struct {
 	Ident     *ast.Ident

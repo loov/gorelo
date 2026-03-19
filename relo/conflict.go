@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/loov/gorelo/mast"
 )
@@ -41,7 +42,7 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 }
 
 // detectConflicts checks for naming and movement conflicts (phase 5).
-func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error {
+func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) error {
 	// Check movement conflicts: same group moved to two different targets.
 	// Use a composite key of (group, source file path) so that declarations
 	// from non-overlapping build constraints can target different files.
@@ -238,7 +239,151 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) error
 		}
 	}
 
+	// Warn about cross-package moves referencing unexported symbols or
+	// symbols in package main that stay behind.
+	checkCrossPkgRefs(ix, resolved, spans, plan)
+
+	// Warn when a source file has build constraints.
+	checkSourceBuildConstraints(ix, resolved, plan)
+
 	return nil
+}
+
+// checkCrossPkgRefs warns when a declaration being moved cross-package
+// references unexported package-scope symbols or symbols in package main
+// that are not part of the move set.
+func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) {
+	// Build set of groups being moved.
+	movedGroups := make(map[*mast.Group]bool)
+	for _, rr := range resolved {
+		movedGroups[rr.Group] = true
+	}
+
+	for _, rr := range resolved {
+		if rr.File == nil {
+			continue
+		}
+		// Only check cross-package moves.
+		srcDir := filepath.Dir(rr.File.Path)
+		targetDir := filepath.Dir(rr.TargetFile)
+		if srcDir == targetDir {
+			continue
+		}
+
+		s := spans[rr]
+		if s == nil {
+			continue
+		}
+
+		srcPkg := rr.File.Pkg
+		if srcPkg == nil {
+			continue
+		}
+
+		// Walk idents within the span to find references to the source
+		// package's symbols that are staying behind.
+		warned := make(map[*mast.Group]bool)
+		walkRange(rr.File.Syntax, ix.Fset, s.Start, s.End, func(n ast.Node) {
+			ident, ok := n.(*ast.Ident)
+			if !ok {
+				return
+			}
+			grp := ix.Group(ident)
+			if grp == nil || warned[grp] || movedGroups[grp] {
+				return
+			}
+			// Only check package-scope symbols in the source package.
+			if grp.Pkg != srcPkg.Path {
+				return
+			}
+			// Only check kinds that represent package-scope declarations.
+			switch grp.Kind {
+			case mast.Func, mast.Const, mast.Var, mast.TypeName:
+				// These are the kinds that matter.
+			default:
+				return
+			}
+			// Skip local variables and parameters — they move with the
+			// declaration body. A package-scope group always has at
+			// least one Def ident at file top-level (outside any FuncDecl).
+			if !grp.IsPackageScope() {
+				return
+			}
+			// Skip qualified references (pkg.Name) — those already have imports.
+			for _, id := range grp.Idents {
+				if id.Ident == ident && id.Qualifier != nil {
+					return
+				}
+			}
+
+			warned[grp] = true
+			if srcPkg.Name == "main" {
+				plan.Warnings.AddAtf(rr, ix,
+					"moved decl %s references %q which stays in package main (main cannot be imported)",
+					rr.Group.Name, grp.Name)
+			} else if len(grp.Name) > 0 && !unicode.IsUpper(rune(grp.Name[0])) {
+				plan.Warnings.AddAtf(rr, ix,
+					"moved decl %s references unexported %q which is not in the move set",
+					rr.Group.Name, grp.Name)
+			}
+		})
+	}
+}
+
+// checkSourceBuildConstraints warns when a build-constrained source file's
+// constraint may not be propagated to the target. The constraint is safely
+// propagated when all items going to the same new target share the same
+// constraint. We only warn when the constraint could be lost: the target
+// file already exists, or the items mixed constrained and unconstrained
+// sources (the mixed-constraints case is already covered by checkConstraints).
+func checkSourceBuildConstraints(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) {
+	// Group relos by target file.
+	byTarget := make(map[string][]*resolvedRelo)
+	for _, rr := range resolved {
+		byTarget[rr.TargetFile] = append(byTarget[rr.TargetFile], rr)
+	}
+
+	warnedFiles := make(map[string]bool)
+	for _, rr := range resolved {
+		if rr.File == nil || rr.File.BuildTag == "" {
+			continue
+		}
+		// Only warn for cross-package moves.
+		srcDir := filepath.Dir(rr.File.Path)
+		targetDir := filepath.Dir(rr.TargetFile)
+		if srcDir == targetDir {
+			continue
+		}
+		if warnedFiles[rr.File.Path] {
+			continue
+		}
+
+		// Check whether the constraint will be safely propagated.
+		// For a new target file where all sources share the same
+		// constraint, assemble will add the //go:build directive.
+		targetExists := findFileInIndex(ix, rr.TargetFile) != nil
+		if !targetExists {
+			allSame := true
+			for _, peer := range byTarget[rr.TargetFile] {
+				peerTag := ""
+				if peer.File != nil {
+					peerTag = peer.File.BuildTag
+				}
+				if peerTag != rr.File.BuildTag {
+					allSame = false
+					break
+				}
+			}
+			if allSame {
+				continue // constraint will be propagated
+			}
+		}
+
+		warnedFiles[rr.File.Path] = true
+		plan.Warnings.AddAtf(rr, ix,
+			"source file %s has build constraints — moved declarations may need the same constraints in the target",
+			filepath.Base(rr.File.Path))
+	}
 }
 
 // constraintsMayOverlap returns true if two build constraints could coexist.

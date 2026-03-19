@@ -1,0 +1,54 @@
+# Move a function from a build-constrained file cross-package into an
+# existing target file. Since the target already exists, the build
+# constraint cannot be automatically propagated — warn the user.
+
+Helper -> dst/dst.go
+
+@warn source file helper_linux.go has build constraints
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/helper_linux.go --
+//go:build linux
+
+package src
+
+// Helper is a Linux-specific helper.
+func Helper() string {
+	return "linux"
+}
+-- input/src/other.go --
+package src
+
+// Other stays behind.
+func Other() string {
+	return "other"
+}
+-- input/dst/dst.go --
+package dst
+
+// Existing function in target.
+func Existing() string {
+	return "existing"
+}
+-- golden/src/other.go --
+package src
+
+// Other stays behind.
+func Other() string {
+	return "other"
+}
+-- golden/dst/dst.go --
+package dst
+
+// Existing function in target.
+func Existing() string {
+	return "existing"
+}
+
+// Helper is a Linux-specific helper.
+func Helper() string {
+	return "linux"
+}

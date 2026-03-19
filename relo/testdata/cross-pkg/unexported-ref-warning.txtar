@@ -1,0 +1,43 @@
+# Move a function cross-package that references an unexported symbol
+# staying behind in the source package. The warning alerts the user
+# that the resulting code will not compile.
+
+Greet -> dst/greet.go
+
+@warn moved decl Greet references unexported "greeting" which is not in the move set
+@vet undefined: greeting
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+var greeting = "hello"
+
+// Greet formats a greeting message.
+func Greet(name string) string {
+	return greeting + " " + name
+}
+
+// Other stays behind.
+func Other() string {
+	return greeting
+}
+-- golden/src/greet.go --
+package src
+
+var greeting = "hello"
+
+// Other stays behind.
+func Other() string {
+	return greeting
+}
+-- golden/dst/greet.go --
+package dst
+
+// Greet formats a greeting message.
+func Greet(name string) string {
+	return greeting + " " + name
+}

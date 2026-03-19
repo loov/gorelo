@@ -1,0 +1,43 @@
+# Move a function out of package main that references an exported symbol
+# staying in main. Since main cannot be imported, the warning tells the
+# user the resulting code won't compile.
+
+Handler -> dst/handler.go
+
+@warn moved decl Handler references "DefaultAddr" which stays in package main
+@vet undefined: DefaultAddr
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/cmd/main.go --
+package main
+
+var DefaultAddr = ":8080"
+
+func Handler() string {
+	return DefaultAddr
+}
+
+func main() {
+	_ = Handler()
+}
+-- golden/cmd/main.go --
+package main
+
+import (
+	"example.com/test/dst"
+)
+
+var DefaultAddr = ":8080"
+
+func main() {
+	_ = dst.Handler()
+}
+-- golden/dst/handler.go --
+package dst
+
+func Handler() string {
+	return DefaultAddr
+}

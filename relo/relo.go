@@ -56,7 +56,7 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 
 	// Phase 4-5: check build constraints and detect conflicts.
 	checkConstraints(resolved, plan)
-	if err := detectConflicts(ix, resolved, plan); err != nil {
+	if err := detectConflicts(ix, resolved, spans, plan); err != nil {
 		return nil, err
 	}
 
