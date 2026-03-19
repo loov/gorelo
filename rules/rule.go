@@ -6,7 +6,7 @@ type File struct {
 	Rules      []Rule
 }
 
-// Directive is a key-value pair declared with the "#@" prefix.
+// Directive is a key-value pair declared with the "@" prefix.
 type Directive struct {
 	Key   string
 	Value string

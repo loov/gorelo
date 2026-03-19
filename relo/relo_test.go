@@ -95,7 +95,7 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 		t.Fatal("compile:", err)
 	}
 
-	// Check warnings against expected list from #@warn directives.
+	// Check warnings against expected list from @warn directives.
 	var expectedWarnings []string
 	for _, d := range f.Directives {
 		if d.Key == "warn" {

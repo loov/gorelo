@@ -333,7 +333,7 @@ func TestParseFieldWithoutRename(t *testing.T) {
 }
 
 func TestParseDirectiveEquals(t *testing.T) {
-	input := `#@stubs=true`
+	input := `@stubs=true`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -345,7 +345,7 @@ func TestParseDirectiveEquals(t *testing.T) {
 }
 
 func TestParseDirectiveSpace(t *testing.T) {
-	input := `#@fmt goimports`
+	input := `@fmt goimports`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -357,7 +357,7 @@ func TestParseDirectiveSpace(t *testing.T) {
 }
 
 func TestParseDirectiveNoValue(t *testing.T) {
-	input := `#@verbose`
+	input := `@verbose`
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -369,7 +369,7 @@ func TestParseDirectiveNoValue(t *testing.T) {
 }
 
 func TestParseDirectiveWithRules(t *testing.T) {
-	input := "#@fmt goimports\n#@stubs=true\nServer -> server.go"
+	input := "@fmt goimports\n@stubs=true\nServer -> server.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -389,7 +389,7 @@ func TestParseDirectiveWithRules(t *testing.T) {
 }
 
 func TestParseDirectiveIndented(t *testing.T) {
-	input := "  #@fmt goimports"
+	input := "  @fmt goimports"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -401,7 +401,7 @@ func TestParseDirectiveIndented(t *testing.T) {
 }
 
 func TestParseDirectiveBreaksMultiline(t *testing.T) {
-	input := "server.go <-\n\tServer\n#@fmt goimports\nhandler.go <- Handler"
+	input := "server.go <-\n\tServer\n@fmt goimports\nhandler.go <- Handler"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -517,7 +517,7 @@ func TestParseCR(t *testing.T) {
 }
 
 func TestParseDirectiveTab(t *testing.T) {
-	input := "#@fmt\tgoimports"
+	input := "@fmt\tgoimports"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -528,15 +528,12 @@ func TestParseDirectiveTab(t *testing.T) {
 	}
 }
 
-func TestParseDirectiveEmptyKeyIgnored(t *testing.T) {
-	// "#@" alone and "#@=value" should not produce a directive.
-	for _, input := range []string{"#@", "#@=value", "#@ "} {
-		file, err := Parse("test", []byte(input))
-		if err != nil {
-			t.Fatalf("input %q: unexpected error: %v", input, err)
-		}
-		if len(file.Directives) != 0 {
-			t.Errorf("input %q: got %d directives, want 0", input, len(file.Directives))
+func TestParseDirectiveEmptyKeyIsError(t *testing.T) {
+	// "@" alone, "@=value", and "@ " are not valid directives or rules.
+	for _, input := range []string{"@", "@=value", "@ "} {
+		_, err := Parse("test", []byte(input))
+		if err == nil {
+			t.Errorf("input %q: expected error", input)
 		}
 	}
 }
@@ -692,9 +689,9 @@ func FuzzParse(f *testing.F) {
 	seeds := []string{
 		"",
 		"# comment",
-		"#@fmt goimports",
-		"#@stubs=true",
-		"#@verbose",
+		"@fmt goimports",
+		"@stubs=true",
+		"@verbose",
 		"Server -> server.go",
 		"server.go <- Server",
 		"server.go <-\n\tServer\n\tHandler",
@@ -714,8 +711,8 @@ func FuzzParse(f *testing.F) {
 		"x.go <- A=B C#D=E",
 		"# comment\nServer -> server.go\n# end",
 		"server.go <-\r\n\tServer\r\n",
-		"#@ ",
-		"#@=val",
+		"@ ",
+		"@=val",
 	}
 	for _, s := range seeds {
 		f.Add(s)

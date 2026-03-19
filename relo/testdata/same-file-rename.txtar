@@ -3,8 +3,8 @@
 
 Foo=Bar
 
-#@warn constructor NewFoo exists but is not being moved with type Foo
-#@warn renaming type Foo to Bar will also change embedded field names
+@warn constructor NewFoo exists but is not being moved with type Foo
+@warn renaming type Foo to Bar will also change embedded field names
 
 -- input/go.mod --
 module example.com/pkg

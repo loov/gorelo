@@ -5,7 +5,7 @@
 Options -> options.go
 Options#Addr=Address
 
-#@warn constructor NewOptions exists but is not being moved with type Options
+@warn constructor NewOptions exists but is not being moved with type Options
 
 -- input/go.mod --
 module example.com/pkg

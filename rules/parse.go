@@ -16,12 +16,14 @@ func Parse(filename string, data []byte) (*File, error) {
 	for i, line := range lines {
 		lineno := i + 1
 
-		// Directives must be checked before comment stripping
-		// since they start with "#@".
+		// Directives must be checked before comment stripping.
 		if d, ok := parseDirective(line); ok {
 			file.Directives = append(file.Directives, d)
 			current = nil
 			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "@") {
+			return nil, fmt.Errorf("%s:%d: invalid directive", filename, lineno)
 		}
 
 		line = stripComment(line)
@@ -194,18 +196,18 @@ func parseItem(tok string) (Item, error) {
 	return item, nil
 }
 
-// parseDirective checks whether line is a "#@key value" or "#@key=value" directive.
+// parseDirective checks whether line is a "@key value" or "@key=value" directive.
 func parseDirective(line string) (Directive, bool) {
 	trimmed := strings.TrimSpace(line)
-	if !strings.HasPrefix(trimmed, "#@") {
+	if !strings.HasPrefix(trimmed, "@") {
 		return Directive{}, false
 	}
-	rest := trimmed[2:]
+	rest := trimmed[1:]
 	if rest == "" {
 		return Directive{}, false
 	}
 
-	// "#@key=value" form — only if "=" comes before any whitespace.
+	// "@key=value" form — only if "=" comes before any whitespace.
 	if eqIdx := strings.Index(rest, "="); eqIdx >= 0 {
 		spIdx := strings.IndexAny(rest, " \t")
 		if spIdx < 0 || eqIdx < spIdx {
@@ -220,7 +222,7 @@ func parseDirective(line string) (Directive, bool) {
 		}
 	}
 
-	// "#@key value" or "#@key\tvalue" form.
+	// "@key value" or "@key\tvalue" form.
 	key, value, _ := strings.Cut(rest, " ")
 	if value == "" {
 		key, value, _ = strings.Cut(rest, "\t")

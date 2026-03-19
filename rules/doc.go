@@ -100,21 +100,21 @@
 //
 // # Directives
 //
-// Lines starting with #@ declare key-value directives that configure
+// Lines starting with @ declare key-value directives that configure
 // processing behavior. They are not rules and do not move or rename
 // anything.
 //
 // Space-separated form:
 //
-//	#@fmt goimports
+//	@fmt goimports
 //
 // Equals-separated form:
 //
-//	#@stubs=true
+//	@stubs=true
 //
 // Flag form (no value):
 //
-//	#@verbose
+//	@verbose
 //
 // # Item grammar
 //
