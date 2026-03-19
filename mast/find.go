@@ -2,6 +2,7 @@ package mast
 
 import (
 	"go/ast"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,7 +19,7 @@ func (ix *Index) FindDef(name, source string) *ast.Ident {
 	for _, pkg := range ix.Pkgs {
 		pkgMatch := source == "" || pkg.Path == source
 		for _, file := range pkg.Files {
-			if !pkgMatch && !strings.HasSuffix(file.Path, source) {
+			if !pkgMatch && !fileMatchesSource(file.Path, source) {
 				continue
 			}
 			for _, decl := range file.Syntax.Decls {
@@ -67,7 +68,7 @@ func (ix *Index) FindFieldDef(typeName, fieldPath, source string) *ast.Ident {
 	for _, pkg := range ix.Pkgs {
 		pkgMatch := source == "" || pkg.Path == source
 		for _, file := range pkg.Files {
-			if !pkgMatch && !strings.HasSuffix(file.Path, source) {
+			if !pkgMatch && !fileMatchesSource(file.Path, source) {
 				continue
 			}
 			for _, decl := range file.Syntax.Decls {
@@ -112,7 +113,7 @@ func (ix *Index) FindFieldDef(typeName, fieldPath, source string) *ast.Ident {
 	for _, pkg := range ix.Pkgs {
 		pkgMatch := source == "" || pkg.Path == source
 		for _, file := range pkg.Files {
-			if !pkgMatch && !strings.HasSuffix(file.Path, source) {
+			if !pkgMatch && !fileMatchesSource(file.Path, source) {
 				continue
 			}
 			for _, decl := range file.Syntax.Decls {
@@ -201,6 +202,13 @@ func (ix *Index) findFieldByPath(expr ast.Expr, fieldPath string) *ast.Ident {
 		}
 	}
 	return nil
+}
+
+// fileMatchesSource reports whether the file path ends with the given source
+// fragment. It normalises path separators so that a forward-slash source like
+// "sub/file.go" matches a Windows path like "C:\proj\sub\file.go".
+func fileMatchesSource(filePath, source string) bool {
+	return strings.HasSuffix(filePath, filepath.FromSlash(source))
 }
 
 // valueSpecHasName reports whether the ValueSpec declares a name matching target.

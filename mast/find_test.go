@@ -151,6 +151,42 @@ func TestFindDefReturnsDefIdent(t *testing.T) {
 	}
 }
 
+func TestFindDefSourceFileWithDir(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// A forward-slash directory-qualified source must match even on Windows,
+	// where file.Path uses backslashes.
+	id := ix.FindDef("Name", "linux/linux.go")
+	if id == nil {
+		t.Fatal("FindDef(\"Name\", \"linux/linux.go\") = nil")
+	}
+	if id.Name != "Name" {
+		t.Errorf("ident name = %q, want \"Name\"", id.Name)
+	}
+
+	// Wrong directory should not match.
+	id = ix.FindDef("Name", "windows/linux.go")
+	if id != nil {
+		t.Errorf("FindDef(\"Name\", \"windows/linux.go\") = %s, want nil", id.Name)
+	}
+}
+
+func TestFindFieldDefSourceFileWithDir(t *testing.T) {
+	ix := loadTestdata(t)
+
+	// Directory-qualified source with forward slashes.
+	id := ix.FindFieldDef("Info", "Distro", "linux/linux.go")
+	if id == nil {
+		t.Fatal("FindFieldDef(\"Info\", \"Distro\", \"linux/linux.go\") = nil")
+	}
+
+	// Wrong directory should not match.
+	id = ix.FindFieldDef("Info", "Distro", "windows/linux.go")
+	if id != nil {
+		t.Error("FindFieldDef(\"Info\", \"Distro\", \"windows/linux.go\") should be nil")
+	}
+}
+
 func TestFindFieldDef(t *testing.T) {
 	ix := loadTestdata(t)
 
