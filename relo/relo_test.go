@@ -228,9 +228,47 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 		expNorm := strings.TrimRight(exp, "\n\r\t ")
 		actNorm := strings.TrimRight(act, "\n\r\t ")
 		if expNorm != actNorm {
-			t.Errorf("file %s differs:\n--- expected ---\n%s\n--- actual ---\n%s", k, exp, act)
+			t.Errorf("file %s differs:\n%s", k, lineDiff(expNorm, actNorm))
 		}
 	}
+}
+
+// lineDiff produces a unified-style diff between two strings.
+func lineDiff(want, got string) string {
+	wantLines := strings.Split(want, "\n")
+	gotLines := strings.Split(got, "\n")
+
+	var b strings.Builder
+	b.WriteString("--- want\n+++ got\n")
+
+	// Simple line-by-line comparison showing context around changes.
+	max := len(wantLines)
+	if len(gotLines) > max {
+		max = len(gotLines)
+	}
+	for i := 0; i < max; i++ {
+		var wl, gl string
+		haveW := i < len(wantLines)
+		haveG := i < len(gotLines)
+		if haveW {
+			wl = wantLines[i]
+		}
+		if haveG {
+			gl = gotLines[i]
+		}
+		switch {
+		case haveW && haveG && wl == gl:
+			b.WriteString("  " + wl + "\n")
+		case haveW && haveG:
+			b.WriteString("- " + wl + "\n")
+			b.WriteString("+ " + gl + "\n")
+		case haveW:
+			b.WriteString("- " + wl + "\n")
+		case haveG:
+			b.WriteString("+ " + gl + "\n")
+		}
+	}
+	return b.String()
 }
 
 // parseRules parses the txtar comment section using rules.Parse and
