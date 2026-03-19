@@ -322,10 +322,10 @@ func resolveImplied(base string) string {
 	return ""
 }
 
-// extractConstraintTag extracts a single tag from "//go:build <tag>".
+// extractConstraintTag extracts a single simple tag from a build constraint expression.
+// Returns "" if the constraint is compound (contains operators or parentheses).
 func extractConstraintTag(constraint string) string {
-	tag := strings.TrimPrefix(constraint, "//go:build ")
-	tag = strings.TrimSpace(tag)
+	tag := strings.TrimSpace(constraint)
 	check := strings.TrimPrefix(tag, "!")
 	if strings.ContainsAny(check, "&|!() ") {
 		return ""

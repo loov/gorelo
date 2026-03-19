@@ -16,53 +16,53 @@ func TestConstraintsMayOverlap(t *testing.T) {
 	}{
 		// Empty = always active.
 		{"", "", true},
-		{"", "//go:build linux", true},
-		{"//go:build linux", "", true},
+		{"", "linux", true},
+		{"linux", "", true},
 
 		// Same constraint.
-		{"//go:build linux", "//go:build linux", true},
+		{"linux", "linux", true},
 
 		// Negation pairs.
-		{"//go:build linux", "//go:build !linux", false},
-		{"//go:build !linux", "//go:build linux", false},
+		{"linux", "!linux", false},
+		{"!linux", "linux", false},
 
 		// Exclusive OS tags.
-		{"//go:build linux", "//go:build darwin", false},
-		{"//go:build windows", "//go:build linux", false},
-		{"//go:build freebsd", "//go:build openbsd", false},
+		{"linux", "darwin", false},
+		{"windows", "linux", false},
+		{"freebsd", "openbsd", false},
 
 		// Exclusive arch tags.
-		{"//go:build amd64", "//go:build arm64", false},
-		{"//go:build 386", "//go:build wasm", false},
+		{"amd64", "arm64", false},
+		{"386", "wasm", false},
 
 		// Non-exclusive tags.
-		{"//go:build cgo", "//go:build race", true},
+		{"cgo", "race", true},
 
 		// Complex constraints — conservative overlap.
-		{"//go:build linux && amd64", "//go:build darwin", true},
-		{"//go:build (linux || darwin)", "//go:build windows", true},
+		{"linux && amd64", "darwin", true},
+		{"(linux || darwin)", "windows", true},
 
 		// OS vs arch — not mutually exclusive categories.
-		{"//go:build linux", "//go:build amd64", true},
+		{"linux", "amd64", true},
 
-		// B3: Negated tags from exclusive sets may still overlap.
+		// Negated tags from exclusive sets may still overlap.
 		// !linux and !darwin are both true on FreeBSD → overlap.
-		{"//go:build !linux", "//go:build !darwin", true},
+		{"!linux", "!darwin", true},
 		// !linux and darwin → darwin implies !linux → overlap.
-		{"//go:build !linux", "//go:build darwin", true},
-		{"//go:build darwin", "//go:build !linux", true},
+		{"!linux", "darwin", true},
+		{"darwin", "!linux", true},
 
-		// B4: ios implies darwin, android implies linux → not exclusive.
-		{"//go:build ios", "//go:build darwin", true},
-		{"//go:build darwin", "//go:build ios", true},
-		{"//go:build android", "//go:build linux", true},
-		{"//go:build linux", "//go:build android", true},
+		// ios implies darwin, android implies linux → not exclusive.
+		{"ios", "darwin", true},
+		{"darwin", "ios", true},
+		{"android", "linux", true},
+		{"linux", "android", true},
 		// ios and android are still exclusive (different OS families).
-		{"//go:build ios", "//go:build android", false},
+		{"ios", "android", false},
 		// ios and linux are exclusive (ios implies darwin, not linux).
-		{"//go:build ios", "//go:build linux", false},
+		{"ios", "linux", false},
 		// android and darwin are exclusive (android implies linux, not darwin).
-		{"//go:build android", "//go:build darwin", false},
+		{"android", "darwin", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.a+"_vs_"+tt.b, func(t *testing.T) {
@@ -79,13 +79,13 @@ func TestExtractConstraintTag(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"//go:build linux", "linux"},
-		{"//go:build !linux", "!linux"},
-		{"//go:build amd64", "amd64"},
-		{"//go:build linux && amd64", ""},    // compound
-		{"//go:build linux || darwin", ""},   // compound
-		{"//go:build (linux)", ""},           // parentheses
-		{"//go:build !linux && !darwin", ""}, // compound negation
+		{"linux", "linux"},
+		{"!linux", "!linux"},
+		{"amd64", "amd64"},
+		{"linux && amd64", ""},    // compound
+		{"linux || darwin", ""},   // compound
+		{"(linux)", ""},           // parentheses
+		{"!linux && !darwin", ""}, // compound negation
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -226,11 +226,11 @@ func TestCheckConstraints_MixedWarning(t *testing.T) {
 	resolved := []*resolvedRelo{
 		{
 			TargetFile: "/tmp/target.go",
-			File:       &mast.File{BuildTag: "//go:build linux", Pkg: pkg},
+			File:       &mast.File{BuildTag: "linux", Pkg: pkg},
 		},
 		{
 			TargetFile: "/tmp/target.go",
-			File:       &mast.File{BuildTag: "//go:build darwin", Pkg: pkg},
+			File:       &mast.File{BuildTag: "darwin", Pkg: pkg},
 		},
 	}
 
@@ -248,11 +248,11 @@ func TestCheckConstraints_NoWarningForSameConstraint(t *testing.T) {
 	resolved := []*resolvedRelo{
 		{
 			TargetFile: "/tmp/target.go",
-			File:       &mast.File{BuildTag: "//go:build linux", Pkg: pkg},
+			File:       &mast.File{BuildTag: "linux", Pkg: pkg},
 		},
 		{
 			TargetFile: "/tmp/target.go",
-			File:       &mast.File{BuildTag: "//go:build linux", Pkg: pkg},
+			File:       &mast.File{BuildTag: "linux", Pkg: pkg},
 		},
 	}
 
@@ -308,8 +308,8 @@ func TestDetectConflicts_InterReloCollision_NonOverlappingConstraints(t *testing
 	ix := &mast.Index{Fset: token.NewFileSet()}
 	plan := &Plan{}
 
-	fileA := &mast.File{Path: "/tmp/a/a.go", BuildTag: "//go:build linux", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/a"}}
-	fileB := &mast.File{Path: "/tmp/b/b.go", BuildTag: "//go:build darwin", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/b"}}
+	fileA := &mast.File{Path: "/tmp/a/a.go", BuildTag: "linux", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/a"}}
+	fileB := &mast.File{Path: "/tmp/b/b.go", BuildTag: "darwin", Syntax: emptyFile, Pkg: &mast.Package{Path: "example.com/b"}}
 
 	resolved := []*resolvedRelo{
 		testResolvedRelo(grpA, "/tmp/target/target.go", "Foo", fileA),
