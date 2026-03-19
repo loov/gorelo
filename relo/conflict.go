@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/loov/gorelo/mast"
 )
@@ -317,7 +316,7 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 				plan.Warnings.AddAtf(rr, ix,
 					"moved decl %s references %q which stays in package main (main cannot be imported)",
 					rr.Group.Name, grp.Name)
-			} else if len(grp.Name) > 0 && !unicode.IsUpper(rune(grp.Name[0])) {
+			} else if !token.IsExported(grp.Name) {
 				plan.Warnings.AddAtf(rr, ix,
 					"moved decl %s references unexported %q which is not in the move set",
 					rr.Group.Name, grp.Name)

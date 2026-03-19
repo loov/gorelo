@@ -103,7 +103,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 				if name == "" {
 					name = grp.Name
 				}
-				if len(name) > 0 && !unicode.IsUpper(rune(name[0])) && grp.HasUses() {
+				if !token.IsExported(name) && grp.HasUses() {
 					return nil, fmt.Errorf("unexported name %q cannot be moved cross-package without a rename to an exported name", grp.Name)
 				}
 			}
@@ -241,7 +241,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 				var rename string
 				if defIdent.File != nil && defIdent.File.Pkg != nil &&
 					!isSamePackageDir(defIdent.File.Pkg, typeRelo.TargetFile) {
-					if len(grp.Name) > 0 && !unicode.IsUpper(rune(grp.Name[0])) &&
+					if !token.IsExported(grp.Name) &&
 						methodHasExternalUses(grp, recvType) {
 						runes := []rune(grp.Name)
 						runes[0] = unicode.ToUpper(runes[0])
