@@ -385,6 +385,33 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 			newSrc += newDeclSuffix
 		}
 
+		// Generate backward-compatibility stubs for cross-package moves.
+		if opts != nil && opts.Stubs {
+			var crossPkg []*resolvedRelo
+			for _, rr := range rrs {
+				if rr.TargetFile == sourcePath || rr.File == nil {
+					continue
+				}
+				targetDir := dirOf(rr.TargetFile)
+				srcDir := dirOf(rr.File.Path)
+				if targetDir != srcDir {
+					crossPkg = append(crossPkg, rr)
+				}
+			}
+			if len(crossPkg) > 0 {
+				targetPkgName := guessPackageName(dirOf(crossPkg[0].TargetFile))
+				stubs := generateAliases(crossPkg, targetPkgName, ix.Fset)
+				if len(stubs) > 0 {
+					newSrc += "\n" + strings.Join(stubs, "\n\n") + "\n"
+					// Add the import for the target package.
+					targetImportPath := guessImportPath(dirOf(crossPkg[0].TargetFile))
+					if targetImportPath != "" {
+						newSrc, _ = ensureImport(newSrc, importEntry{Path: targetImportPath})
+					}
+				}
+			}
+		}
+
 		// Clean up.
 		newSrc = removeEmptyDeclBlocks(newSrc)
 		newSrc = cleanBlankLines(newSrc)
