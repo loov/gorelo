@@ -1,0 +1,99 @@
+# Cross-package move splitting items to two different destination
+# packages, each with type and field renames. The two types reference
+# each other, so the target packages need cross-imports. Source code
+# and consumers must update all references.
+
+Config=Settings Config#Host=Address -> dst1/config.go
+Handler=Router Handler#Path=Route NewHandler=NewRouter -> dst2/handler.go
+
+@warn renaming type Handler to Router will also change embedded field names
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/code.go --
+package src
+
+import "fmt"
+
+type Config struct {
+	Host string
+	Port int
+}
+
+type Handler struct {
+	Path   string
+	Config *Config
+}
+
+func NewHandler(path string, cfg *Config) *Handler {
+	return &Handler{Path: path, Config: cfg}
+}
+
+func Setup() {
+	cfg := &Config{Host: "localhost", Port: 9090}
+	h := NewHandler("/api", cfg)
+	fmt.Println(h.Path, h.Config.Host)
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Run() {
+	cfg := &src.Config{Host: "example.com", Port: 443}
+	h := src.NewHandler("/v2", cfg)
+	_ = h.Path
+	_ = h.Config.Host
+}
+-- golden/dst1/config.go --
+package dst1
+
+type Settings struct {
+	Address string
+	Port int
+}
+-- golden/dst2/handler.go --
+package dst2
+
+import (
+	"example.com/test/dst1"
+)
+
+type Router struct {
+	Route   string
+	Config *dst1.Settings
+}
+
+func NewRouter(path string, cfg *dst1.Settings) *Router {
+	return &Router{Route: path, Config: cfg}
+}
+-- golden/src/code.go --
+package src
+
+import (
+	"fmt"
+	"example.com/test/dst1"
+	"example.com/test/dst2"
+)
+
+func Setup() {
+	cfg := &dst1.Settings{Address: "localhost", Port: 9090}
+	h := dst2.NewRouter("/api", cfg)
+	fmt.Println(h.Route, h.Config.Address)
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst1"
+	"example.com/test/dst2"
+)
+
+func Run() {
+	cfg := &dst1.Settings{Address: "example.com", Port: 443}
+	h := dst2.NewRouter("/v2", cfg)
+	_ = h.Route
+	_ = h.Config.Address
+}

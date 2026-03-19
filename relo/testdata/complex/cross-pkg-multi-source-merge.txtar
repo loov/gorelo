@@ -1,0 +1,115 @@
+# Cross-package move that gathers items from multiple source files
+# in the same package into a single target file. Two consumer packages
+# reference the moved items. Functions that stay behind in each source
+# file must have their references updated.
+
+Reader NewReader Writer NewWriter -> dst/io.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/reader.go --
+package src
+
+type Reader struct {
+	Data []byte
+}
+
+func NewReader(data []byte) *Reader {
+	return &Reader{Data: data}
+}
+
+func ReadHelper() string {
+	return "read"
+}
+-- input/src/writer.go --
+package src
+
+type Writer struct {
+	Buf []byte
+}
+
+func NewWriter() *Writer {
+	return &Writer{}
+}
+
+func WriteHelper(w *Writer) string {
+	return string(w.Buf)
+}
+-- input/app/app.go --
+package app
+
+import "example.com/test/src"
+
+func Run() {
+	r := src.NewReader([]byte("hello"))
+	w := src.NewWriter()
+	_ = r.Data
+	_ = w.Buf
+}
+-- input/cli/cli.go --
+package cli
+
+import "example.com/test/src"
+
+func Main() *src.Reader {
+	return src.NewReader([]byte("cli"))
+}
+-- golden/dst/io.go --
+package dst
+
+type Reader struct {
+	Data []byte
+}
+
+func NewReader(data []byte) *Reader {
+	return &Reader{Data: data}
+}
+
+type Writer struct {
+	Buf []byte
+}
+
+func NewWriter() *Writer {
+	return &Writer{}
+}
+-- golden/src/reader.go --
+package src
+
+func ReadHelper() string {
+	return "read"
+}
+-- golden/src/writer.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func WriteHelper(w *dst.Writer) string {
+	return string(w.Buf)
+}
+-- golden/app/app.go --
+package app
+
+import (
+	"example.com/test/dst"
+)
+
+func Run() {
+	r := dst.NewReader([]byte("hello"))
+	w := dst.NewWriter()
+	_ = r.Data
+	_ = w.Buf
+}
+-- golden/cli/cli.go --
+package cli
+
+import (
+	"example.com/test/dst"
+)
+
+func Main() *dst.Reader {
+	return dst.NewReader([]byte("cli"))
+}

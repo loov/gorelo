@@ -1,0 +1,96 @@
+# Cross-package move with stubs and field renames (no type rename).
+# The type keeps its name but fields are renamed. Consumers continue
+# importing from the source package through stubs, but field accesses
+# in both source and consumer code must use the new field names since
+# the stub alias resolves to the destination struct.
+
+@stubs
+Config Config#Host=Address Config#Port=ListenPort NewConfig -> dst/config.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+import "fmt"
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func NewConfig(host string, port int) *Config {
+	return &Config{Host: host, Port: port}
+}
+
+func DefaultConfig() *Config {
+	return &Config{
+		Host: "localhost",
+		Port: 8080,
+	}
+}
+
+func PrintConfig(c *Config) {
+	fmt.Printf("%s:%d\n", c.Host, c.Port)
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/src"
+)
+
+func Setup() {
+	c := src.NewConfig("0.0.0.0", 443)
+	fmt.Printf("%s:%d\n", c.Host, c.Port)
+}
+-- golden/dst/config.go --
+package dst
+
+type Config struct {
+	Address string
+	ListenPort int
+}
+
+func NewConfig(host string, port int) *Config {
+	return &Config{Address: host, ListenPort: port}
+}
+-- golden/src/config.go --
+package src
+
+import (
+	"fmt"
+	"example.com/test/dst"
+)
+
+func DefaultConfig() *Config {
+	return &Config{
+		Address: "localhost",
+		ListenPort: 8080,
+	}
+}
+
+func PrintConfig(c *Config) {
+	fmt.Printf("%s:%d\n", c.Address, c.ListenPort)
+}
+
+//go:fix inline
+type Config = dst.Config
+
+//go:fix inline
+func NewConfig(host string, port int) *Config { return dst.NewConfig(host, port) }
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+	"example.com/test/src"
+)
+
+func Setup() {
+	c := src.NewConfig("0.0.0.0", 443)
+	fmt.Printf("%s:%d\n", c.Address, c.ListenPort)
+}

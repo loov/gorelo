@@ -1,0 +1,81 @@
+# Same-package consolidation: items from four source files are
+# reorganized into two target files. Includes type renames, field
+# renames, and function renames. Cross-references between items
+# (both moved and remaining) must all be updated.
+
+# API types and constructors
+Request=HTTPRequest NewRequest=NewHTTPRequest -> api.go
+
+# Storage types
+Store Store#Items=Records -> storage.go
+
+Request#Method=Verb
+
+@warn renaming type Request to HTTPRequest will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/types.go --
+package pkg
+
+type Request struct {
+	Method string
+	Path   string
+}
+
+type Store struct {
+	Items []string
+}
+-- input/constructors.go --
+package pkg
+
+func NewRequest(method, path string) *Request {
+	return &Request{Method: method, Path: path}
+}
+-- input/handlers.go --
+package pkg
+
+import "fmt"
+
+func Handle(r *Request, s *Store) {
+	fmt.Printf("%s %s (%d items)\n", r.Method, r.Path, len(s.Items))
+}
+-- input/helpers.go --
+package pkg
+
+func DefaultStore() *Store {
+	return &Store{Items: []string{"default"}}
+}
+-- golden/api.go --
+package pkg
+
+func NewHTTPRequest(method, path string) *HTTPRequest {
+	return &HTTPRequest{Verb: method, Path: path}
+}
+
+type HTTPRequest struct {
+	Verb string
+	Path   string
+}
+-- golden/storage.go --
+package pkg
+
+type Store struct {
+	Records []string
+}
+-- golden/handlers.go --
+package pkg
+
+import "fmt"
+
+func Handle(r *HTTPRequest, s *Store) {
+	fmt.Printf("%s %s (%d items)\n", r.Verb, r.Path, len(s.Records))
+}
+-- golden/helpers.go --
+package pkg
+
+func DefaultStore() *Store {
+	return &Store{Records: []string{"default"}}
+}

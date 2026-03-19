@@ -1,0 +1,92 @@
+# Cross-package move with type rename, field rename, AND method rename
+# all at once. Consumer code must update all three kinds of references:
+# the type name, the field access, and the method call.
+
+Client=APIClient Client#URL=Endpoint Client#Send=Post NewClient=NewAPIClient -> dst/client.go
+
+@warn renaming type Client to APIClient will also change embedded field names
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/client.go --
+package src
+
+import "fmt"
+
+type Client struct {
+	URL string
+}
+
+func (c *Client) Send(msg string) {
+	fmt.Printf("%s: %s\n", c.URL, msg)
+}
+
+func (c *Client) Close() {
+	fmt.Println("closed", c.URL)
+}
+
+func NewClient(url string) *Client {
+	return &Client{URL: url}
+}
+
+func Ping(c *Client) {
+	c.Send("ping")
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Run() {
+	c := src.NewClient("http://api.example.com")
+	c.Send("hello")
+	c.Close()
+	_ = c.URL
+}
+-- golden/dst/client.go --
+package dst
+
+import (
+	"fmt"
+)
+
+type APIClient struct {
+	Endpoint string
+}
+
+func (c *APIClient) Post(msg string) {
+	fmt.Printf("%s: %s\n", c.Endpoint, msg)
+}
+
+func (c *APIClient) Close() {
+	fmt.Println("closed", c.Endpoint)
+}
+
+func NewAPIClient(url string) *APIClient {
+	return &APIClient{Endpoint: url}
+}
+-- golden/src/client.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Ping(c *dst.APIClient) {
+	c.Post("ping")
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func Run() {
+	c := dst.NewAPIClient("http://api.example.com")
+	c.Post("hello")
+	c.Close()
+	_ = c.Endpoint
+}
