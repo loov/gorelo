@@ -1,0 +1,32 @@
+# Method calls on a type that moved to a different package should not be
+# qualified with the package name. f.Do() must stay f.Do(), not f.pkg1.Do().
+
+Foo -> pkg1/foo.go
+caller=Caller -> pkg2/caller.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/main.go --
+package src
+
+type Foo struct{ x int }
+
+func (f *Foo) Do() int { return f.x }
+
+func caller(f *Foo) int { return f.Do() }
+-- golden/pkg1/foo.go --
+package pkg1
+
+type Foo struct{ x int }
+
+func (f *Foo) Do() int { return f.x }
+-- golden/pkg2/caller.go --
+package pkg2
+
+import (
+	"example.com/test/pkg1"
+)
+
+func Caller(f *pkg1.Foo) int { return f.Do() }

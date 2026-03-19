@@ -121,12 +121,12 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	actions := make(map[*mast.Group]*groupAction)
 
 	for _, r := range resolved {
-		// Fields never move independently — they travel with their
-		// parent type.  Treat field renames as same-target renames
+		// Fields and methods never move independently — they travel
+		// with their parent type.  Treat them as same-target renames
 		// so they produce plain rename edits, not cross-target
 		// package-qualified references.
 		rDir := filepath.Dir(r.TargetFile)
-		if rDir == targetDir || r.Group.Kind == mast.Field {
+		if rDir == targetDir || r.Group.Kind == mast.Field || r.Group.Kind == mast.Method {
 			// Same target — only needs a rename edit if the name changed.
 			if r.TargetName != r.Group.Name {
 				actions[r.Group] = &groupAction{newText: r.TargetName}
