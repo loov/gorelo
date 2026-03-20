@@ -447,6 +447,11 @@ func (a *assembler) assembleSources() {
 				if rr.TargetFile == sourcePath || rr.File == nil {
 					continue
 				}
+				// Detach/attach changes the declaration kind (method↔func),
+				// which makes backward-compatible stubs impossible.
+				if rr.Relo.Detach || rr.Relo.MethodOf != "" {
+					continue
+				}
 				targetDir := filepath.Dir(rr.TargetFile)
 				srcDir := filepath.Dir(rr.File.Path)
 				if targetDir != srcDir {

@@ -1,0 +1,57 @@
+# Detach a method and move cross-package with stubs enabled.
+# Stubs are incompatible with detach (kind conversion), so no stub
+# is generated. Call sites are rewritten directly.
+
+@stubs
+@detach
+Server#Start -> dst/start.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+type Server struct{}
+
+// Start starts the server.
+func (s *Server) Start() error {
+	return nil
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Do() {
+	s := &src.Server{}
+	s.Start()
+}
+-- golden/src/server.go --
+package src
+
+type Server struct{}
+-- golden/dst/start.go --
+package dst
+
+import (
+	"example.com/test/src"
+)
+
+// Start starts the server.
+func Start(s *src.Server) error {
+	return nil
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/src"
+	"example.com/test/dst"
+)
+
+func Do() {
+	s := &src.Server{}
+	dst.Start(s)
+}
