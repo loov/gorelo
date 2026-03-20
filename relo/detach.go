@@ -269,21 +269,23 @@ func attachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) [
 	tgtImportPath := guessImportPath(tgtDir)
 	if tgtImportPath != "" {
 		// Check if the first parameter's type references the target package.
+		// Unqualify the type when moving into the receiver's package.
 		if sel, ok := firstField.Type.(*ast.SelectorExpr); ok {
 			if qualIdent, ok := sel.X.(*ast.Ident); ok {
 				if qualImportPath := findImportPathForIdent(rr.File, qualIdent.Name); qualImportPath == tgtImportPath {
-					// Unqualify: "s *srv.Server" → "s *Server"
+					// Value receiver: "s srv.Server" → "s Server"
 					nameStr := ""
 					if len(firstField.Names) > 0 {
 						nameStr = firstField.Names[0].Name + " "
 					}
-					recvText = nameStr + "*" + sel.Sel.Name
+					recvText = nameStr + sel.Sel.Name
 				}
 			}
 		} else if star, ok := firstField.Type.(*ast.StarExpr); ok {
 			if sel, ok := star.X.(*ast.SelectorExpr); ok {
 				if qualIdent, ok := sel.X.(*ast.Ident); ok {
 					if qualImportPath := findImportPathForIdent(rr.File, qualIdent.Name); qualImportPath == tgtImportPath {
+						// Pointer receiver: "s *srv.Server" → "s *Server"
 						nameStr := ""
 						if len(firstField.Names) > 0 {
 							nameStr = firstField.Names[0].Name + " "
