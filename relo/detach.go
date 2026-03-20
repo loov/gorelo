@@ -250,6 +250,86 @@ func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit 
 	return edits
 }
 
+// attachDeclEditsTarget is like attachDeclEdits but unqualifies the receiver
+// type when the declaration moves to the receiver type's package (self-import
+// removal). E.g., `s *srv.Server` → `s *Server` when moving into package srv.
+func attachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit {
+	fset := ix.Fset
+	src := fileContent(rr.File)
+	var edits []edit
+
+	firstField := fd.Type.Params.List[0]
+	paramStart := fset.Position(firstField.Pos()).Offset
+	paramEnd := fset.Position(firstField.End()).Offset
+	recvText := string(src[paramStart:paramEnd])
+
+	// When moving to a different package, check if the receiver type's
+	// package qualifier should be removed (self-import).
+	tgtDir := filepath.Dir(rr.TargetFile)
+	tgtImportPath := guessImportPath(tgtDir)
+	if tgtImportPath != "" {
+		// Check if the first parameter's type references the target package.
+		if sel, ok := firstField.Type.(*ast.SelectorExpr); ok {
+			if qualIdent, ok := sel.X.(*ast.Ident); ok {
+				if qualImportPath := findImportPathForIdent(rr.File, qualIdent.Name); qualImportPath == tgtImportPath {
+					// Unqualify: "s *srv.Server" → "s *Server"
+					nameStr := ""
+					if len(firstField.Names) > 0 {
+						nameStr = firstField.Names[0].Name + " "
+					}
+					recvText = nameStr + "*" + sel.Sel.Name
+				}
+			}
+		} else if star, ok := firstField.Type.(*ast.StarExpr); ok {
+			if sel, ok := star.X.(*ast.SelectorExpr); ok {
+				if qualIdent, ok := sel.X.(*ast.Ident); ok {
+					if qualImportPath := findImportPathForIdent(rr.File, qualIdent.Name); qualImportPath == tgtImportPath {
+						nameStr := ""
+						if len(firstField.Names) > 0 {
+							nameStr = firstField.Names[0].Name + " "
+						}
+						recvText = nameStr + "*" + sel.Sel.Name
+					}
+				}
+			}
+		}
+	}
+
+	// Replace function name with receiver + name (possibly renamed).
+	nameStart := fset.Position(fd.Name.Pos()).Offset
+	nameEnd := nameStart + len(fd.Name.Name)
+	edits = append(edits, edit{
+		Start: nameStart, End: nameEnd,
+		New: "(" + recvText + ") " + rr.TargetName,
+	})
+
+	// Remove first parameter from parameter list.
+	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
+	removeEnd := paramEnd
+	if len(fd.Type.Params.List) > 1 {
+		nextStart := fset.Position(fd.Type.Params.List[1].Pos()).Offset
+		removeEnd = nextStart
+	}
+	edits = append(edits, edit{Start: paramsOpen + 1, End: removeEnd, New: ""})
+
+	return edits
+}
+
+// findImportPathForIdent returns the import path associated with a package
+// qualifier ident name in the given file, or "" if not found.
+func findImportPathForIdent(f *mast.File, name string) string {
+	if f == nil {
+		return ""
+	}
+	for _, imp := range f.Syntax.Imports {
+		localName := importLocalName(imp, importPath(imp))
+		if localName == name {
+			return importPath(imp)
+		}
+	}
+	return ""
+}
+
 // attachCallSites rewrites call sites from Func(s, args) → s.Method(args).
 func attachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, renames *renameSet, imports *importSet, plan *Plan) {
 	newName := rr.TargetName
@@ -342,7 +422,7 @@ func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span) []edit {
 		if fd == nil {
 			return nil
 		}
-		absEdits = attachDeclEdits(ix, rr, fd)
+		absEdits = attachDeclEditsTarget(ix, rr, fd)
 	}
 
 	// Convert to span-relative offsets.
@@ -498,13 +578,16 @@ func qualifyTypeStr(typeStr, pkg string) string {
 }
 
 // typeExprName returns the base type name from a type expression,
-// stripping pointer indirection.
+// stripping pointer indirection and package qualifiers.
 func typeExprName(expr ast.Expr) string {
 	if star, ok := expr.(*ast.StarExpr); ok {
 		expr = star.X
 	}
 	if ident, ok := expr.(*ast.Ident); ok {
 		return ident.Name
+	}
+	if sel, ok := expr.(*ast.SelectorExpr); ok {
+		return sel.Sel.Name
 	}
 	return ""
 }
