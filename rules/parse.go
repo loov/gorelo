@@ -13,12 +13,31 @@ func Parse(filename string, data []byte) (*File, error) {
 	file := &File{}
 	var current *Rule
 
+	// Pending item modifiers set by @detach / @method directives.
+	var pendingDetach bool
+	var pendingMethodOf string
+	var pendingConsumed bool
+
 	for i, line := range lines {
 		lineno := i + 1
 
 		// Directives must be checked before comment stripping.
 		if d, ok := parseDirective(line); ok {
-			file.Directives = append(file.Directives, d)
+			switch d.Key {
+			case "detach":
+				pendingDetach = true
+				pendingMethodOf = ""
+				pendingConsumed = false
+			case "method":
+				if d.Value == "" {
+					return nil, fmt.Errorf("%s:%d: @method requires a type name", filename, lineno)
+				}
+				pendingMethodOf = d.Value
+				pendingDetach = false
+				pendingConsumed = false
+			default:
+				file.Directives = append(file.Directives, d)
+			}
 			current = nil
 			continue
 		}
@@ -35,6 +54,11 @@ func Parse(filename string, data []byte) (*File, error) {
 		if trimmed == "" {
 			if !indented {
 				current = nil
+				if pendingConsumed {
+					pendingDetach = false
+					pendingMethodOf = ""
+					pendingConsumed = false
+				}
 			}
 			continue
 		}
@@ -46,19 +70,47 @@ func Parse(filename string, data []byte) (*File, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s:%d: %w", filename, lineno, err)
 			}
+			applyItemModifiers(items, pendingDetach, pendingMethodOf)
 			current.Items = append(current.Items, items...)
 			continue
 		}
 
+		// New non-indented rule: clear consumed pending modifiers.
+		if pendingConsumed {
+			pendingDetach = false
+			pendingMethodOf = ""
+			pendingConsumed = false
+		}
+
 		dest, items, err := parseLine(trimmed)
+		if err != nil && (pendingDetach || pendingMethodOf != "") {
+			// With pending modifiers, bare names are valid items.
+			items, err = parseItems(trimmed)
+			dest = ""
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", filename, lineno, err)
+		}
+		applyItemModifiers(items, pendingDetach, pendingMethodOf)
+		if pendingDetach || pendingMethodOf != "" {
+			pendingConsumed = true
 		}
 		file.Rules = append(file.Rules, Rule{Dest: dest, Items: items})
 		current = &file.Rules[len(file.Rules)-1]
 	}
 
 	return file, nil
+}
+
+// applyItemModifiers sets Detach/MethodOf on items from pending directive state.
+func applyItemModifiers(items []Item, detach bool, methodOf string) {
+	if !detach && methodOf == "" {
+		return
+	}
+	for i := range items {
+		items[i].Detach = detach
+		items[i].MethodOf = methodOf
+	}
 }
 
 // parseLine parses a single non-indented rule line.

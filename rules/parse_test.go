@@ -847,6 +847,186 @@ func TestParseFieldRenameInForwardBlock(t *testing.T) {
 	}
 }
 
+func TestParseDetach(t *testing.T) {
+	t.Parallel()
+
+	input := "@detach\nServer#Start -> util.go"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "util.go",
+		Items: []Item{
+			{Name: "Server", Field: "Start", Detach: true},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDetachWithRename(t *testing.T) {
+	t.Parallel()
+
+	input := "@detach\nServer#Start=StartServer -> util.go"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "util.go",
+		Items: []Item{
+			{Name: "Server", Field: "Start", FieldRename: "StartServer", Detach: true},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDetachMultiline(t *testing.T) {
+	t.Parallel()
+
+	input := "@detach\nutil.go <-\n\tServer#Start\n\tServer#Stop"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "util.go",
+		Items: []Item{
+			{Name: "Server", Field: "Start", Detach: true},
+			{Name: "Server", Field: "Stop", Detach: true},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDetachSameFile(t *testing.T) {
+	t.Parallel()
+
+	input := "@detach\nServer#Start"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Items: []Item{
+			{Name: "Server", Field: "Start", Detach: true},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseDetachDoesNotApplyToNextRule(t *testing.T) {
+	t.Parallel()
+
+	input := "@detach\nServer#Start\n\nHandler -> handler.go"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Rules) != 2 {
+		t.Fatalf("got %d rules, want 2", len(file.Rules))
+	}
+	if !file.Rules[0].Items[0].Detach {
+		t.Error("expected detach on first rule")
+	}
+	if file.Rules[1].Items[0].Detach {
+		t.Error("unexpected detach on second rule")
+	}
+}
+
+func TestParseDetachBlankLineBefore(t *testing.T) {
+	t.Parallel()
+
+	// A blank line between @detach and the rule should not eat the directive.
+	input := "@detach\n\nServer#Start"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(file.Rules))
+	}
+	if !file.Rules[0].Items[0].Detach {
+		t.Error("expected detach on rule after blank line")
+	}
+}
+
+func TestParseMethod(t *testing.T) {
+	t.Parallel()
+
+	input := "@method Server\nStart -> server.go"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "Start", MethodOf: "Server"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseMethodWithRename(t *testing.T) {
+	t.Parallel()
+
+	input := "@method Server\nStartServer=Start -> server.go"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest: "server.go",
+		Items: []Item{
+			{Name: "StartServer", Rename: "Start", MethodOf: "Server"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseMethodNoTypeName(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse("test", []byte("@method\nStart"))
+	if err == nil {
+		t.Fatal("expected error for @method without type name")
+	}
+}
+
+func TestParseDetachThenMethod(t *testing.T) {
+	t.Parallel()
+
+	// @method after @detach should override.
+	input := "@detach\n@method Server\nStart"
+	file, err := Parse("test", []byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(file.Rules))
+	}
+	item := file.Rules[0].Items[0]
+	if item.Detach {
+		t.Error("expected detach to be overridden by @method")
+	}
+	if item.MethodOf != "Server" {
+		t.Errorf("got MethodOf=%q, want Server", item.MethodOf)
+	}
+}
+
 func FuzzParse(f *testing.F) {
 	seeds := []string{
 		"",
@@ -875,6 +1055,9 @@ func FuzzParse(f *testing.F) {
 		"server.go <-\r\n\tServer\r\n",
 		"@ ",
 		"@=val",
+		"@detach\nServer#Start -> util.go",
+		"@method Server\nStart -> server.go",
+		"@detach\nutil.go <-\n\tServer#Start\n\tServer#Stop",
 	}
 	for _, s := range seeds {
 		f.Add(s)
@@ -897,6 +1080,9 @@ func FuzzParse(f *testing.F) {
 				}
 				if item.FieldRename != "" && item.Field == "" {
 					t.Fatalf("rule %d item %d: has field rename %q without field", ri, ii, item.FieldRename)
+				}
+				if item.Detach && item.MethodOf != "" {
+					t.Fatalf("rule %d item %d: has both Detach and MethodOf", ri, ii)
 				}
 			}
 		}
