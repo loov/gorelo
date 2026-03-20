@@ -1,0 +1,49 @@
+# Convert a standalone function with multiple parameters to a method.
+
+@method Server
+Listen
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/server.go --
+package mypkg
+
+import "fmt"
+
+type Server struct {
+	addr string
+}
+
+// Listen starts listening on the given address.
+func Listen(s *Server, addr string, port int) error {
+	s.addr = fmt.Sprintf("%s:%d", addr, port)
+	return nil
+}
+
+func run() {
+	s := &Server{}
+	Listen(s, "localhost", 8080)
+	Listen(s, "0.0.0.0", 9090)
+}
+-- golden/server.go --
+package mypkg
+
+import "fmt"
+
+type Server struct {
+	addr string
+}
+
+// Listen starts listening on the given address.
+func (s *Server) Listen(addr string, port int) error {
+	s.addr = fmt.Sprintf("%s:%d", addr, port)
+	return nil
+}
+
+func run() {
+	s := &Server{}
+	s.Listen("localhost", 8080)
+	s.Listen("0.0.0.0", 9090)
+}

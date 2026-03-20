@@ -1,0 +1,39 @@
+# Detach a method and rename it.
+
+@detach
+Server#Start=StartServer
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/server.go --
+package mypkg
+
+type Server struct {
+	addr string
+}
+
+func (s *Server) Start() error {
+	return nil
+}
+
+func main() {
+	s := &Server{addr: ":8080"}
+	s.Start()
+}
+-- golden/server.go --
+package mypkg
+
+type Server struct {
+	addr string
+}
+
+func StartServer(s *Server) error {
+	return nil
+}
+
+func main() {
+	s := &Server{addr: ":8080"}
+	StartServer(s)
+}

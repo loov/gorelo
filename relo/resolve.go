@@ -75,6 +75,23 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 			return nil, fmt.Errorf("cannot relocate %q (kind %d)", grp.Name, grp.Kind)
 		}
 
+		// Validate detach/attach.
+		if r.Detach && grp.Kind != mast.Method {
+			return nil, fmt.Errorf("@detach requires a method, but %q is %v", grp.Name, grp.Kind)
+		}
+		if r.MethodOf != "" && grp.Kind != mast.Func {
+			return nil, fmt.Errorf("@method requires a function, but %q is %v", grp.Name, grp.Kind)
+		}
+
+		// Update group Kind for detach/attach so the rest of the
+		// pipeline treats the declaration with its new kind.
+		if r.Detach {
+			grp.Kind = mast.Func
+		}
+		if r.MethodOf != "" {
+			grp.Kind = mast.Method
+		}
+
 		// Validate rename target is a valid Go identifier.
 		if r.Rename != "" && !token.IsIdentifier(r.Rename) {
 			return nil, fmt.Errorf("rename target %q is not a valid Go identifier", r.Rename)

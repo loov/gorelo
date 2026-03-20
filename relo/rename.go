@@ -27,6 +27,15 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	renamedGroups := make(map[*mast.Group]string)
 	movedSpans := buildMovedSpanIndex(resolved, spans)
 
+	// Groups with detach/attach are handled by the detach phase,
+	// which integrates the rename into its structural edits.
+	detachGroups := make(map[*mast.Group]bool)
+	for _, rr := range resolved {
+		if rr.Relo.Detach || rr.Relo.MethodOf != "" {
+			detachGroups[rr.Group] = true
+		}
+	}
+
 	// When stubs are enabled, track groups with cross-package moves.
 	// The stubs provide backward-compatible aliases using the old name,
 	// so all references (source files, same-package files, and consumer
@@ -79,7 +88,11 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	}
 
 	// For each renamed group, iterate through all its idents and create edits.
+	// Skip groups handled by the detach/attach phase.
 	for grp, newName := range renamedGroups {
+		if detachGroups[grp] {
+			continue
+		}
 		for _, id := range grp.Idents {
 			if id.File == nil {
 				continue
