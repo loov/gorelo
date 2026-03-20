@@ -1,0 +1,39 @@
+# Detach a method with a value receiver (not pointer).
+
+@detach
+Server#String
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/server.go --
+package mypkg
+
+type Server struct {
+	addr string
+}
+
+func (s Server) String() string {
+	return s.addr
+}
+
+func main() {
+	s := Server{addr: ":8080"}
+	_ = s.String()
+}
+-- golden/server.go --
+package mypkg
+
+type Server struct {
+	addr string
+}
+
+func String(s Server) string {
+	return s.addr
+}
+
+func main() {
+	s := Server{addr: ":8080"}
+	_ = String(s)
+}
