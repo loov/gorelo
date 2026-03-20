@@ -1,0 +1,23 @@
+# Detaching an interface method should warn (no FuncDecl to transform).
+
+@warn cannot find declaration for Read
+@warn cannot find method declaration for Read
+@detach
+Reader#Read
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/iface.go --
+package mypkg
+
+type Reader interface {
+	Read(p []byte) (int, error)
+}
+-- golden/iface.go --
+package mypkg
+
+type Reader interface {
+	Read(p []byte) (int, error)
+}
