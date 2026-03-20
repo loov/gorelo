@@ -1,0 +1,49 @@
+# Detach a method while also moving its receiver type.
+# The synthesize phase should NOT auto-add the detached method
+# as a method of the moved type.
+
+@detach
+Server#Start
+
+Server -> types.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/server.go --
+package mypkg
+
+type Server struct{}
+
+func (s *Server) Start() error {
+	return nil
+}
+
+// Stop stays as a method and should be synthesized.
+func (s *Server) Stop() {}
+
+func run() {
+	s := &Server{}
+	s.Start()
+	s.Stop()
+}
+-- golden/types.go --
+package mypkg
+
+type Server struct{}
+
+// Stop stays as a method and should be synthesized.
+func (s *Server) Stop() {}
+-- golden/server.go --
+package mypkg
+
+func Start(s *Server) error {
+	return nil
+}
+
+func run() {
+	s := &Server{}
+	Start(s)
+	s.Stop()
+}
