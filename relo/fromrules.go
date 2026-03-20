@@ -17,14 +17,41 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, error) 
 	for _, rule := range parsed {
 		for _, item := range rule.Items {
 			var r Relo
-			if item.Field != "" {
+
+			switch {
+			case item.Detach:
+				// @detach: Server#Start — find method Start on type Server.
+				id := ix.FindFieldDef(item.Name, item.Field, item.Source)
+				if id == nil {
+					return nil, fmt.Errorf("could not find method %q on type %q", item.Field, item.Name)
+				}
+				r.Ident = id
+				r.Rename = item.FieldRename
+				r.Detach = true
+
+			case item.MethodOf != "":
+				// @method Server: Start — find function Start.
+				id := ix.FindDef(item.Name, item.Source)
+				if id == nil {
+					src := ""
+					if item.Source != "" {
+						src = " in " + item.Source
+					}
+					return nil, fmt.Errorf("could not find definition for %q%s", item.Name, src)
+				}
+				r.Ident = id
+				r.Rename = item.Rename
+				r.MethodOf = item.MethodOf
+
+			case item.Field != "":
 				id := ix.FindFieldDef(item.Name, item.Field, item.Source)
 				if id == nil {
 					return nil, fmt.Errorf("could not find field %q in struct %q", item.Field, item.Name)
 				}
 				r.Ident = id
 				r.Rename = item.FieldRename
-			} else {
+
+			default:
 				id := ix.FindDef(item.Name, item.Source)
 				if id == nil {
 					src := ""
@@ -36,6 +63,7 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, error) 
 				r.Ident = id
 				r.Rename = item.Rename
 			}
+
 			if rule.Dest != "" {
 				// Fields cannot be moved, only renamed. Skip MoveTo
 				// for field renames so they work inside <- / -> blocks.

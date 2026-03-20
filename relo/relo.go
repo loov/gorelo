@@ -8,9 +8,11 @@ import (
 
 // Relo describes a single relocation or rename instruction.
 type Relo struct {
-	Ident  *ast.Ident // must be tracked by Index.Group() with Kind == Def
-	MoveTo string     // target file path; empty = same file (rename only)
-	Rename string     // new name; empty = keep original
+	Ident    *ast.Ident // must be tracked by Index.Group() with Kind == Def
+	MoveTo   string     // target file path; empty = same file (rename only)
+	Rename   string     // new name; empty = keep original
+	Detach   bool       // convert method to standalone function
+	MethodOf string     // convert function to method on this type
 }
 
 // Plan is the result of Compile: a set of file edits that implement the relos.
