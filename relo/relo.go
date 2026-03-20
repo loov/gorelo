@@ -67,11 +67,11 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	// Phase 6: compute rename edits.
 	renameEdits := computeRenames(ix, resolved, spans, opts, plan)
 
-	// Phase 6b: compute detach/attach edits.
-	computeDetachEdits(ix, resolved, renameEdits, plan)
-
 	// Phase 7: compute import changes.
 	importChanges := computeImports(ix, resolved, spans, plan)
+
+	// Phase 7a: compute detach/attach edits (after imports for cross-pkg qualification).
+	computeDetachEdits(ix, resolved, renameEdits, importChanges, plan)
 
 	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).
 	computeConsumerEdits(ix, resolved, spans, renameEdits, importChanges, opts, plan)

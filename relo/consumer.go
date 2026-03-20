@@ -20,6 +20,14 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		tgtName    string // name at the target (may differ if renamed)
 	}
 
+	// Groups with detach/attach handle their own cross-package qualification.
+	detachGroups := make(map[*mast.Group]bool)
+	for _, rr := range resolved {
+		if rr.Relo.Detach || rr.Relo.MethodOf != "" {
+			detachGroups[rr.Group] = true
+		}
+	}
+
 	// Collect cross-package moves keyed by group.
 	movedGroups := make(map[*mast.Group]*moveInfo)
 
@@ -91,6 +99,9 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	movedSpans := buildMovedSpanIndex(resolved, spans)
 
 	for grp, info := range movedGroups {
+		if detachGroups[grp] {
+			continue
+		}
 		for _, id := range grp.Idents {
 			if id.Kind != mast.Use || id.File == nil {
 				continue

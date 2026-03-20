@@ -343,6 +343,12 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 					break
 				}
 			}
+			// Skip true no-op edits: same name, no qualifier to strip.
+			// Emitting them would collide with structural edits that
+			// rewrite the same ident range (e.g. detach/attach).
+			if editStart == off && act.newText == ident.Name {
+				return true
+			}
 			edits = append(edits, edit{
 				Start: editStart - s.Start,
 				End:   endOff - s.Start,

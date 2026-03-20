@@ -132,6 +132,9 @@ func (a *assembler) assembleTargets() {
 			// Get rename and cross-target qualification edits for this span.
 			er := computeExtractedEdits(a.ix, rr, s, a.resolved)
 			edits := er.edits
+
+			// Add structural edits for detach/attach declarations.
+			edits = append(edits, structuralDeclEdits(a.ix, rr, s)...)
 			for impPath := range er.imports {
 				crossTargetImports[impPath] = true
 			}
