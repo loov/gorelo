@@ -184,6 +184,10 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports 
 		plan.Warnings.AddAtf(rr, ix, "%s is already a method", rr.Group.Name)
 		return
 	}
+	if fd.Type.TypeParams != nil && len(fd.Type.TypeParams.List) > 0 {
+		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: generic functions cannot become methods", rr.Group.Name)
+		return
+	}
 	if fd.Type.Params == nil || len(fd.Type.Params.List) == 0 {
 		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: no parameters", rr.Group.Name)
 		return
