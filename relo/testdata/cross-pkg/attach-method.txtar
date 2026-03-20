@@ -1,7 +1,7 @@
 # Convert a function to a method, moving it to the receiver type's package.
 # Start lives in util, Server lives in srv. Attach moves Start to srv.
 
-@method Server
+@attach Server
 Start -> srv/methods.go
 
 -- input/go.mod --

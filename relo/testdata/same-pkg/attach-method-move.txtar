@@ -1,6 +1,6 @@
 # Convert a function to a method and move it to a new file.
 
-@method Server
+@attach Server
 Start -> methods.go
 
 -- input/go.mod --

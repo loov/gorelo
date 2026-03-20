@@ -80,7 +80,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 			return nil, fmt.Errorf("@detach requires a method, but %q is %v", grp.Name, grp.Kind)
 		}
 		if r.MethodOf != "" && grp.Kind != mast.Func {
-			return nil, fmt.Errorf("@method requires a function, but %q is %v", grp.Name, grp.Kind)
+			return nil, fmt.Errorf("@attach requires a function, but %q is %v", grp.Name, grp.Kind)
 		}
 
 		// Update group Kind for detach/attach so the rest of the

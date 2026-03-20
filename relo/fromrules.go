@@ -30,7 +30,7 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, error) 
 				r.Detach = true
 
 			case item.MethodOf != "":
-				// @method Server: Start — find function Start.
+				// @attach Server: Start — find function Start.
 				id := ix.FindDef(item.Name, item.Source)
 				if id == nil {
 					src := ""

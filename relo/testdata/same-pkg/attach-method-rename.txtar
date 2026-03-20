@@ -1,6 +1,6 @@
 # Convert a function to a method with rename.
 
-@method Server
+@attach Server
 StartServer=Start
 
 -- input/go.mod --

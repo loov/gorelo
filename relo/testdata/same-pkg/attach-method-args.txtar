@@ -1,6 +1,6 @@
 # Convert a standalone function with multiple parameters to a method.
 
-@method Server
+@attach Server
 Listen
 
 -- input/go.mod --

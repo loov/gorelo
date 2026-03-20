@@ -959,10 +959,10 @@ func TestParseDetachBlankLineBefore(t *testing.T) {
 	}
 }
 
-func TestParseMethod(t *testing.T) {
+func TestParseAttach(t *testing.T) {
 	t.Parallel()
 
-	input := "@method Server\nStart -> server.go"
+	input := "@attach Server\nStart -> server.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -978,10 +978,10 @@ func TestParseMethod(t *testing.T) {
 	}
 }
 
-func TestParseMethodWithRename(t *testing.T) {
+func TestParseAttachWithRename(t *testing.T) {
 	t.Parallel()
 
-	input := "@method Server\nStartServer=Start -> server.go"
+	input := "@attach Server\nStartServer=Start -> server.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -997,20 +997,20 @@ func TestParseMethodWithRename(t *testing.T) {
 	}
 }
 
-func TestParseMethodNoTypeName(t *testing.T) {
+func TestParseAttachNoTypeName(t *testing.T) {
 	t.Parallel()
 
-	_, err := Parse("test", []byte("@method\nStart"))
+	_, err := Parse("test", []byte("@attach\nStart"))
 	if err == nil {
-		t.Fatal("expected error for @method without type name")
+		t.Fatal("expected error for @attach without type name")
 	}
 }
 
-func TestParseDetachThenMethod(t *testing.T) {
+func TestParseDetachThenAttach(t *testing.T) {
 	t.Parallel()
 
-	// @method after @detach should override.
-	input := "@detach\n@method Server\nStart"
+	// @attach after @detach should override.
+	input := "@detach\n@attach Server\nStart"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -1020,7 +1020,7 @@ func TestParseDetachThenMethod(t *testing.T) {
 	}
 	item := file.Rules[0].Items[0]
 	if item.Detach {
-		t.Error("expected detach to be overridden by @method")
+		t.Error("expected detach to be overridden by @attach")
 	}
 	if item.MethodOf != "Server" {
 		t.Errorf("got MethodOf=%q, want Server", item.MethodOf)
@@ -1056,7 +1056,7 @@ func FuzzParse(f *testing.F) {
 		"@ ",
 		"@=val",
 		"@detach\nServer#Start -> util.go",
-		"@method Server\nStart -> server.go",
+		"@attach Server\nStart -> server.go",
 		"@detach\nutil.go <-\n\tServer#Start\n\tServer#Stop",
 	}
 	for _, s := range seeds {

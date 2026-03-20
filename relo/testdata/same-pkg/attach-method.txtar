@@ -1,6 +1,6 @@
 # Convert a standalone function to a method.
 
-@method Server
+@attach Server
 Start
 
 -- input/go.mod --

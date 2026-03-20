@@ -28,9 +28,9 @@ func Parse(filename string, data []byte) (*File, error) {
 				pendingDetach = true
 				pendingMethodOf = ""
 				pendingConsumed = false
-			case "method":
+			case "attach":
 				if d.Value == "" {
-					return nil, fmt.Errorf("%s:%d: @method requires a type name", filename, lineno)
+					return nil, fmt.Errorf("%s:%d: @attach requires a type name", filename, lineno)
 				}
 				pendingMethodOf = d.Value
 				pendingDetach = false
