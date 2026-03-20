@@ -202,6 +202,10 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports 
 		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: first parameter has no name", rr.Group.Name)
 		return
 	}
+	if len(firstField.Names) > 1 {
+		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: first parameter field has multiple names", rr.Group.Name)
+		return
+	}
 
 	recvTypeName := typeExprName(firstField.Type)
 	if recvTypeName != rr.Relo.MethodOf {
