@@ -13,7 +13,7 @@ func Parse(filename string, data []byte) (*File, error) {
 	file := &File{}
 	var current *Rule
 
-	// Pending item modifiers set by @detach / @method directives.
+	// Pending item modifiers set by @detach / @attach directives.
 	var pendingDetach bool
 	var pendingMethodOf string
 	var pendingConsumed bool
