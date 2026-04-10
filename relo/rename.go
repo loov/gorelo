@@ -179,6 +179,23 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		}
 	}
 
+	// Propagate renames to embedded field groups so that composite
+	// literal keys (e.g., notesView{notesPage: page}) are also updated
+	// when the embedded type is renamed.
+	for _, r := range resolved {
+		if r.Group.Kind != mast.TypeName || r.TargetName == r.Group.Name {
+			continue
+		}
+		// Composite literal field keys are always unqualified, even
+		// when the embedded type is in a different package.
+		for _, fgrp := range ix.EmbeddedFieldGroups(r.Group.Name, r.Group.Pkg) {
+			if _, ok := actions[fgrp]; ok {
+				continue
+			}
+			actions[fgrp] = &groupAction{newText: r.TargetName}
+		}
+	}
+
 	// For cross-package moves, compute the source package import path
 	// so we can qualify references to symbols that stay in the source.
 	var srcPkgPath, srcLocalName string
