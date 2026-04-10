@@ -57,10 +57,13 @@ func TestReceiverTypeName(t *testing.T) {
 func TestIsSamePackageDir(t *testing.T) {
 	t.Parallel()
 
+	base := t.TempDir()
+	pkgDir := filepath.Join(base, "project", "pkg")
+
 	pkg := &mast.Package{
 		Name: "pkg",
 		Files: []*mast.File{
-			{Path: "/home/user/project/pkg/foo.go"},
+			{Path: filepath.Join(pkgDir, "foo.go")},
 		},
 	}
 
@@ -68,9 +71,9 @@ func TestIsSamePackageDir(t *testing.T) {
 		target string
 		want   bool
 	}{
-		{"/home/user/project/pkg/bar.go", true},
-		{"/home/user/project/pkg/sub/baz.go", false},
-		{"/home/user/project/other/baz.go", false},
+		{filepath.Join(pkgDir, "bar.go"), true},
+		{filepath.Join(pkgDir, "sub", "baz.go"), false},
+		{filepath.Join(base, "project", "other", "baz.go"), false},
 	}
 
 	for _, tt := range tests {
