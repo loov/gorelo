@@ -1,0 +1,54 @@
+# References to a moved constant inside switch case clauses should be
+# qualified when the referencing function moves to a different package.
+
+fieldName=FieldName -> auth/auth.go
+validateForm=ValidateForm -> forms/forms.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/auth.go --
+package src
+
+const fieldName = "csrf_token"
+-- input/src/form.go --
+package src
+
+func validateForm(form map[string][]string) bool {
+	for key, values := range form {
+		switch key {
+		case "body", fieldName:
+			if len(values) != 1 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+-- golden/auth/auth.go --
+package auth
+
+const FieldName = "csrf_token"
+-- golden/forms/forms.go --
+package forms
+
+import (
+	"example.com/test/auth"
+)
+
+func ValidateForm(form map[string][]string) bool {
+	for key, values := range form {
+		switch key {
+		case "body", auth.FieldName:
+			if len(values) != 1 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}

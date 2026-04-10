@@ -1,0 +1,48 @@
+# When a function moves cross-package, references inside it to exported
+# symbols that stay in the source package should be qualified with the
+# source package name.
+
+BuildPage -> pages/page.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+func MaxLength() int {
+	return 100
+}
+
+var DefaultTitle = "Untitled"
+-- input/src/page.go --
+package src
+
+func BuildPage() string {
+	if MaxLength() > 50 {
+		return DefaultTitle
+	}
+	return ""
+}
+-- golden/src/config.go --
+package src
+
+func MaxLength() int {
+	return 100
+}
+
+var DefaultTitle = "Untitled"
+-- golden/pages/page.go --
+package pages
+
+import (
+	"example.com/test/src"
+)
+
+func BuildPage() string {
+	if src.MaxLength() > 50 {
+		return src.DefaultTitle
+	}
+	return ""
+}

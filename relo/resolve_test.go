@@ -85,6 +85,46 @@ func TestIsSamePackageDir(t *testing.T) {
 	}
 }
 
+func TestIsSamePackageDir_RelativeTarget(t *testing.T) {
+	t.Parallel()
+
+	// Simulate the real scenario: package files have absolute paths
+	// (from mast.Load), but the target comes from a rules file as a
+	// relative path like "render_assets.go".
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkg := &mast.Package{
+		Name: "pkg",
+		Files: []*mast.File{
+			{Path: filepath.Join(cwd, "existing.go")},
+		},
+	}
+
+	tests := []struct {
+		name   string
+		target string
+		want   bool
+	}{
+		{"bare filename", "new_file.go", true},
+		{"dot-slash prefix", "./new_file.go", true},
+		{"subdirectory", "sub/new_file.go", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := isSamePackageDir(pkg, tt.target)
+			if got != tt.want {
+				t.Errorf("isSamePackageDir(%q) = %v, want %v", tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsSamePackageDir_EmptyPackage(t *testing.T) {
 	t.Parallel()
 
@@ -516,6 +556,39 @@ func TestResolve_SynthesizedUnexportedMethodNoExternalUse(t *testing.T) {
 		}
 	}
 	t.Errorf("unexported method 'helper' should have been synthesized")
+}
+
+// TestResolve_UnexportedSamePackageMove tests that unexported declarations
+// can be moved to a different file within the same package, even when the
+// target path is relative (the common case from rules files).
+func TestResolve_UnexportedSamePackageMove(t *testing.T) {
+	t.Parallel()
+
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nvar secret = 42\n\nfunc use() int { return secret }\n",
+	})
+
+	varIdent := findDefIdentInIndex(ix, "secret")
+	if varIdent == nil {
+		t.Fatal("var secret not found")
+	}
+
+	// Use a path in the same directory as the package files — simulating
+	// what FromRules produces with filepath.Join(".", "target.go").
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
+	target := filepath.Join(pkgDir, "target.go")
+
+	plan := &Plan{}
+	resolved, err := resolve(ix, []Relo{{Ident: varIdent, MoveTo: target}}, plan)
+	if err != nil {
+		t.Fatalf("unexported same-package move should succeed, got: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved relo, got %d", len(resolved))
+	}
+	if resolved[0].TargetName != "secret" {
+		t.Errorf("name should stay unexported, got %q", resolved[0].TargetName)
+	}
 }
 
 // loadTestIndex creates a temporary Go module from the given files,

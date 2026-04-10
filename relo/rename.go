@@ -2,6 +2,7 @@ package relo
 
 import (
 	"go/ast"
+	"go/token"
 	"path/filepath"
 
 	"github.com/loov/gorelo/mast"
@@ -123,15 +124,19 @@ type extractedEditsResult struct {
 }
 
 // computeExtractedEdits builds edits for an extracted span's text in a single
-// AST walk. It handles both renames (same-target groups) and cross-target
-// qualification (groups moving to a different target package). Edits are
-// relative to the span's start offset.
+// AST walk. It handles renames (same-target groups), cross-target
+// qualification (groups moving to a different target package), and
+// source-stay qualification (groups staying in the source package that
+// need a package prefix when the extracted code moves elsewhere).
+// Edits are relative to the span's start offset.
 func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) extractedEditsResult {
 	if rr.File == nil || s == nil {
 		return extractedEditsResult{}
 	}
 
 	targetDir := filepath.Dir(rr.TargetFile)
+	srcDir := filepath.Dir(rr.File.Path)
+	isCrossPkg := srcDir != targetDir
 
 	// Classify each resolved relo's group as either a same-target rename or
 	// a cross-target reference that needs package qualification.
@@ -141,7 +146,13 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	}
 	actions := make(map[*mast.Group]*groupAction)
 
+	// Track which groups are in the resolved set so we can detect
+	// references to non-moving source-package symbols.
+	resolvedGroups := make(map[*mast.Group]bool)
+
 	for _, r := range resolved {
+		resolvedGroups[r.Group] = true
+
 		// Fields and methods travel with their parent type — treat
 		// them as same-target renames so they produce plain rename
 		// edits, not cross-target package-qualified references.
@@ -157,10 +168,6 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		if r.File == nil {
 			continue
 		}
-		srcDir := filepath.Dir(r.File.Path)
-		if srcDir == targetDir {
-			continue // declaration is already in our target package
-		}
 		tgtPkgPath := guessImportPath(rDir)
 		if tgtPkgPath == "" {
 			continue
@@ -171,8 +178,15 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			impPath: tgtPkgPath,
 		}
 	}
-	if len(actions) == 0 {
-		return extractedEditsResult{}
+
+	// For cross-package moves, compute the source package import path
+	// so we can qualify references to symbols that stay in the source.
+	var srcPkgPath, srcLocalName string
+	if isCrossPkg {
+		srcPkgPath = guessImportPath(srcDir)
+		if srcPkgPath != "" {
+			srcLocalName = guessImportLocalName(srcPkgPath)
+		}
 	}
 
 	var edits []edit
@@ -187,14 +201,14 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		if grp == nil {
 			return true
 		}
-		act, ok := actions[grp]
-		if !ok {
-			return true
-		}
 
 		off := ix.Fset.Position(ident.Pos()).Offset
 		endOff := off + len(ident.Name)
-		if off >= s.Start && endOff <= s.End {
+		if off < s.Start || endOff > s.End {
+			return true
+		}
+
+		if act, ok := actions[grp]; ok {
 			edits = append(edits, edit{
 				Start: off - s.Start,
 				End:   endOff - s.Start,
@@ -203,7 +217,47 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			if act.impPath != "" {
 				neededImports[act.impPath] = true
 			}
+			return true
 		}
+
+		// Reference to a symbol not in the move set. If this is a
+		// cross-package extraction and the symbol belongs to the source
+		// package, qualify it with the source package name.
+		if isCrossPkg && srcPkgPath != "" && !resolvedGroups[grp] &&
+			!grp.Kind.TravelsWithType() && grp.IsPackageScope() {
+			// Skip symbols whose definition is inside the extracted
+			// span (e.g. type parameters, local declarations inside
+			// a moved function) — they travel with the code.
+			definedInSpan := false
+			inSourcePkg := false
+			for _, gid := range grp.Idents {
+				if gid.Kind == mast.Def && gid.File != nil {
+					defOff := ix.Fset.Position(gid.Ident.Pos()).Offset
+					defEnd := defOff + len(gid.Ident.Name)
+					if gid.File.Path == rr.File.Path && defOff >= s.Start && defEnd <= s.End {
+						definedInSpan = true
+						break
+					}
+					if gid.File.Pkg == rr.File.Pkg {
+						inSourcePkg = true
+					}
+				}
+			}
+			if definedInSpan {
+				// Defined within extracted code — no qualification needed.
+			} else
+			if inSourcePkg {
+				if token.IsExported(grp.Name) {
+					edits = append(edits, edit{
+						Start: off - s.Start,
+						End:   endOff - s.Start,
+						New:   srcLocalName + "." + grp.Name,
+					})
+					neededImports[srcPkgPath] = true
+				}
+			}
+		}
+
 		return true
 	})
 

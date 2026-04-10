@@ -398,9 +398,14 @@ func TestCollectBuildConstraint(t *testing.T) {
 func TestDetermineTargetPkgName_SameDir(t *testing.T) {
 	t.Parallel()
 
+	file := mastFileWithSyntax("/tmp/pkg/source.go", "mypkg")
+	file.Pkg = &mast.Package{
+		Name:  "mypkg",
+		Files: []*mast.File{file},
+	}
 	rrs := []*resolvedRelo{
 		{
-			File:       mastFileWithSyntax("/tmp/pkg/source.go", "mypkg"),
+			File:       file,
 			TargetFile: "/tmp/pkg/target.go",
 		},
 	}
@@ -509,6 +514,60 @@ func TestAssemble_SourceTargetOverlap(t *testing.T) {
 	}
 	if !foundC {
 		t.Error("expected C.go edit to be created")
+	}
+}
+
+// TestAssemble_SamePackageMoveRemovesFromSource tests that moving a
+// declaration to a different file within the same package removes it
+// from the source file. This was a bug where same-package moves created
+// the target file but left the declaration duplicated in the source.
+func TestAssemble_SamePackageMoveRemovesFromSource(t *testing.T) {
+	t.Parallel()
+
+	ix := loadTestIndex(t, map[string]string{
+		"source.go": "package p\n\nvar x = 1\n\nvar y = 2\n",
+	})
+
+	identX := findDefIdentInIndex(ix, "x")
+	if identX == nil {
+		t.Fatal("var x not found")
+	}
+
+	pkgDir := filepath.Dir(ix.Pkgs[0].Files[0].Path)
+	targetPath := filepath.Join(pkgDir, "target.go")
+	sourcePath := filepath.Join(pkgDir, "source.go")
+
+	plan, err := Compile(ix, []Relo{
+		{Ident: identX, MoveTo: targetPath},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// target.go should contain x.
+	targetFound := false
+	for _, fe := range plan.Edits {
+		if fe.Path == targetPath {
+			targetFound = true
+			if !strings.Contains(fe.Content, "var x") {
+				t.Errorf("target.go should contain var x, got:\n%s", fe.Content)
+			}
+		}
+	}
+	if !targetFound {
+		t.Error("expected target.go edit to be created")
+	}
+
+	// source.go should no longer contain x, but should still contain y.
+	for _, fe := range plan.Edits {
+		if fe.Path == sourcePath {
+			if strings.Contains(fe.Content, "var x") {
+				t.Errorf("source.go should not contain var x after move, got:\n%s", fe.Content)
+			}
+			if !strings.Contains(fe.Content, "var y") {
+				t.Errorf("source.go should still contain var y, got:\n%s", fe.Content)
+			}
+		}
 	}
 }
 

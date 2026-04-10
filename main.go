@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime/pprof"
 	"strings"
 
@@ -142,8 +143,13 @@ func run(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []s
 		return fmt.Errorf("loading packages: %w", err)
 	}
 
-	// Convert rules to relos.
-	relos, err := relo.FromRules(ix, merged.Rules, ".")
+	// Convert rules to relos. Use absolute dir so that target paths
+	// are absolute, matching the absolute paths from mast.Load.
+	absDir, err := filepath.Abs(".")
+	if err != nil {
+		return fmt.Errorf("resolving working directory: %w", err)
+	}
+	relos, err := relo.FromRules(ix, merged.Rules, absDir)
 	if err != nil {
 		return err
 	}

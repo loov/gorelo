@@ -354,7 +354,7 @@ func (a *assembler) assembleSources() {
 		seen := make(map[[2]int]bool)
 		var ranges []byteRange
 		for _, rr := range rrs {
-			if rr.TargetFile == sourcePath {
+			if !rr.isCrossFileMove() {
 				continue // not being moved, just renamed
 			}
 			s := a.spans[rr]
@@ -623,10 +623,8 @@ func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImpor
 // determineTargetPkgName figures out the package name for a new target file.
 func determineTargetPkgName(rrs []*resolvedRelo) string {
 	for _, rr := range rrs {
-		if rr.File != nil {
-			srcDir := filepath.Dir(rr.File.Path)
-			targetDir := filepath.Dir(rr.TargetFile)
-			if srcDir == targetDir {
+		if rr.File != nil && rr.File.Pkg != nil {
+			if isSamePackageDir(rr.File.Pkg, rr.TargetFile) {
 				return rr.File.Syntax.Name.Name
 			}
 		}

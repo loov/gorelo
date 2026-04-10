@@ -1,0 +1,35 @@
+# Move declarations from different source files in the same package to
+# different target packages with renames. References between moved
+# declarations should be qualified with the target package and renamed.
+
+tokenName=TokenName -> auth/auth.go
+validateForm=ValidateForm -> forms/forms.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/token.go --
+package src
+
+const tokenName = "csrf_token"
+-- input/src/form.go --
+package src
+
+func validateForm(key string) bool {
+	return key == tokenName
+}
+-- golden/auth/auth.go --
+package auth
+
+const TokenName = "csrf_token"
+-- golden/forms/forms.go --
+package forms
+
+import (
+	"example.com/test/auth"
+)
+
+func ValidateForm(key string) bool {
+	return key == auth.TokenName
+}

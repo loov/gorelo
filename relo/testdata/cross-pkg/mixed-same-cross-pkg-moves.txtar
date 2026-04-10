@@ -1,0 +1,168 @@
+# Mix of same-package file moves and cross-package moves with renames.
+# Declarations that move cross-package should have their references
+# qualified everywhere — both in other cross-package targets and in
+# same-package target files.
+
+@warn embedded field names
+
+# Same-package move (no rename needed)
+src/render_assets.go <- cssBytes writeCSS
+
+# Cross-package moves with renames
+access/auth.go <- requireAuth=RequireAuth
+access/csrf.go <- csrfField=CSRFField requireCSRF=RequireCSRF
+
+# Cross-package page extraction
+pages/notes/page.go <- notesPage=Page buildNotes=BuildPage validateNotes=ValidateForm
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/render.go --
+package src
+
+var cssBytes = []byte("body{}")
+
+func writeCSS() string {
+	return string(cssBytes)
+}
+
+type notesView struct {
+	notesPage
+	Frame string
+}
+
+func renderNotes() string {
+	page := buildNotes()
+	view := notesView{
+		notesPage: page,
+		Frame:     writeCSS(),
+	}
+	return view.Title
+}
+-- input/src/auth.go --
+package src
+
+func requireAuth() bool {
+	return true
+}
+-- input/src/csrf.go --
+package src
+
+const csrfField = "csrf_token"
+
+func requireCSRF(form map[string]string) bool {
+	return form[csrfField] != ""
+}
+-- input/src/notes.go --
+package src
+
+type notesPage struct {
+	Title string
+}
+
+func buildNotes() notesPage {
+	return notesPage{Title: "Notes"}
+}
+
+func validateNotes(form map[string]string) bool {
+	_, ok := form[csrfField]
+	return ok
+}
+-- input/src/handler.go --
+package src
+
+func handleNotes(form map[string]string) string {
+	if !requireAuth() {
+		return "denied"
+	}
+	if !requireCSRF(form) {
+		return "csrf"
+	}
+	if !validateNotes(form) {
+		return "invalid"
+	}
+	return renderNotes()
+}
+-- golden/src/render_assets.go --
+package src
+
+var cssBytes = []byte("body{}")
+
+func writeCSS() string {
+	return string(cssBytes)
+}
+-- golden/access/auth.go --
+package access
+
+func RequireAuth() bool {
+	return true
+}
+-- golden/access/csrf.go --
+package access
+
+const CSRFField = "csrf_token"
+
+func RequireCSRF(form map[string]string) bool {
+	return form[CSRFField] != ""
+}
+-- golden/pages/notes/page.go --
+package notes
+
+import (
+	"example.com/test/access"
+)
+
+type Page struct {
+	Title string
+}
+
+func BuildPage() Page {
+	return Page{Title: "Notes"}
+}
+
+func ValidateForm(form map[string]string) bool {
+	_, ok := form[access.CSRFField]
+	return ok
+}
+-- golden/src/render.go --
+package src
+
+import (
+	"example.com/test/pages/notes"
+)
+
+type notesView struct {
+	notes.Page
+	Frame string
+}
+
+func renderNotes() string {
+	page := notes.BuildPage()
+	view := notesView{
+		Page: page,
+		Frame:     writeCSS(),
+	}
+	return view.Title
+}
+-- golden/src/handler.go --
+package src
+
+import (
+	"example.com/test/access"
+	"example.com/test/pages/notes"
+)
+
+func handleNotes(form map[string]string) string {
+	if !access.RequireAuth() {
+		return "denied"
+	}
+	if !access.RequireCSRF(form) {
+		return "csrf"
+	}
+	if !notes.ValidateForm(form) {
+		return "invalid"
+	}
+	return renderNotes()
+}

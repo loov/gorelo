@@ -1,11 +1,11 @@
 # Move a function out of package main that references an exported symbol
-# staying in main. Since main cannot be imported, the warning tells the
-# user the resulting code won't compile.
+# staying in main. Since main cannot be imported, the qualification
+# produces an import cycle — go vet catches this.
 
 Handler -> dst/handler.go
 
 @warn moved decl Handler references "DefaultAddr" which stays in package main
-@vet undefined: DefaultAddr
+@vet import cycle not allowed
 
 -- input/go.mod --
 module example.com/test
@@ -38,6 +38,10 @@ func main() {
 -- golden/dst/handler.go --
 package dst
 
+import (
+	"example.com/test/cmd"
+)
+
 func Handler() string {
-	return DefaultAddr
+	return cmd.DefaultAddr
 }

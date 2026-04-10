@@ -410,5 +410,9 @@ func isSamePackageDir(pkg *mast.Package, targetFile string) bool {
 	if len(pkg.Files) == 0 {
 		return false
 	}
-	return filepath.Dir(pkg.Files[0].Path) == filepath.Dir(targetFile)
+	absTarget, err := filepath.Abs(targetFile)
+	if err != nil {
+		return false
+	}
+	return filepath.Dir(pkg.Files[0].Path) == filepath.Dir(absTarget)
 }

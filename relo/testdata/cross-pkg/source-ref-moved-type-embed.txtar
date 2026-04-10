@@ -1,0 +1,56 @@
+# A type is moved to a sub-package with a rename. The source package
+# embeds the moved type in a struct and uses it as a function parameter.
+# Both the embed and the parameter type should be qualified.
+
+notesPage=Page -> pages/notes/page.go
+
+@warn embedded field names
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/page.go --
+package src
+
+type notesPage struct {
+	Title string
+}
+-- input/src/render.go --
+package src
+
+type notesView struct {
+	notesPage
+	Frame string
+}
+
+func renderNotes(page notesPage) notesView {
+	return notesView{
+		notesPage: page,
+		Frame:     "default",
+	}
+}
+-- golden/pages/notes/page.go --
+package notes
+
+type Page struct {
+	Title string
+}
+-- golden/src/render.go --
+package src
+
+import (
+	"example.com/test/pages/notes"
+)
+
+type notesView struct {
+	notes.Page
+	Frame string
+}
+
+func renderNotes(page notes.Page) notesView {
+	return notesView{
+		Page: page,
+		Frame:     "default",
+	}
+}
