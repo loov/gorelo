@@ -262,8 +262,7 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			}
 			if definedInSpan {
 				// Defined within extracted code — no qualification needed.
-			} else
-			if inSourcePkg {
+			} else if inSourcePkg {
 				if token.IsExported(grp.Name) {
 					edits = append(edits, edit{
 						Start: off - s.Start,
