@@ -398,7 +398,10 @@ func TestCollectBuildConstraint(t *testing.T) {
 func TestDetermineTargetPkgName_SameDir(t *testing.T) {
 	t.Parallel()
 
-	file := mastFileWithSyntax("/tmp/pkg/source.go", "mypkg")
+	base := t.TempDir()
+	pkgDir := filepath.Join(base, "pkg")
+
+	file := mastFileWithSyntax(filepath.Join(pkgDir, "source.go"), "mypkg")
 	file.Pkg = &mast.Package{
 		Name:  "mypkg",
 		Files: []*mast.File{file},
@@ -406,7 +409,7 @@ func TestDetermineTargetPkgName_SameDir(t *testing.T) {
 	rrs := []*resolvedRelo{
 		{
 			File:       file,
-			TargetFile: "/tmp/pkg/target.go",
+			TargetFile: filepath.Join(pkgDir, "target.go"),
 		},
 	}
 	got := determineTargetPkgName(rrs)
@@ -418,10 +421,12 @@ func TestDetermineTargetPkgName_SameDir(t *testing.T) {
 func TestDetermineTargetPkgName_DifferentDir(t *testing.T) {
 	t.Parallel()
 
+	base := t.TempDir()
+
 	rrs := []*resolvedRelo{
 		{
-			File:       mastFileWithSyntax("/tmp/src/source.go", "srcpkg"),
-			TargetFile: "/tmp/dst/target.go",
+			File:       mastFileWithSyntax(filepath.Join(base, "src", "source.go"), "srcpkg"),
+			TargetFile: filepath.Join(base, "dst", "target.go"),
 		},
 	}
 	got := determineTargetPkgName(rrs)
