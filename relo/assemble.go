@@ -633,7 +633,7 @@ func determineTargetPkgName(rrs []*resolvedRelo) string {
 	if len(rrs) > 0 {
 		return guessPackageName(filepath.Dir(rrs[0].TargetFile))
 	}
-	return "pkg"
+	return "unable_to_determine_package"
 }
 
 // collectBuildConstraint determines constraint for a new target file.
@@ -925,7 +925,7 @@ func guessPackageName(dir string) string {
 	base = strings.ReplaceAll(base, "-", "")
 	base = strings.ReplaceAll(base, ".", "")
 	if base == "" {
-		return "pkg"
+		return "unable_to_determine_package"
 	}
 	return base
 }
