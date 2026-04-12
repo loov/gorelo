@@ -158,10 +158,10 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		// edits, not cross-target package-qualified references.
 		rDir := filepath.Dir(r.TargetFile)
 		if rDir == targetDir || r.Group.Kind.TravelsWithType() {
-			// Same target — only needs a rename edit if the name changed.
-			if r.TargetName != r.Group.Name {
-				actions[r.Group] = &groupAction{newText: r.TargetName}
-			}
+			// Same target — record the target name so that qualified
+			// references (e.g., pkg.Name from an external test file)
+			// get their qualifier stripped during extraction.
+			actions[r.Group] = &groupAction{newText: r.TargetName}
 			continue
 		}
 		// Different target — needs package-qualified reference.
@@ -226,8 +226,20 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		}
 
 		if act, ok := actions[grp]; ok {
+			editStart := off
+			// If this ident has a package qualifier (e.g., pkg.Name),
+			// extend the edit to cover the qualifier so the entire
+			// qualified expression is replaced. This handles both
+			// cross-target moves (pkg.X → newpkg.Y) and same-target
+			// moves where the qualifier becomes unnecessary (pkg.X → Y).
+			for _, gid := range grp.Idents {
+				if gid.Ident == ident && gid.Qualifier != nil {
+					editStart = ix.Fset.Position(gid.Qualifier.Pos()).Offset
+					break
+				}
+			}
 			edits = append(edits, edit{
-				Start: off - s.Start,
+				Start: editStart - s.Start,
 				End:   endOff - s.Start,
 				New:   act.newText,
 			})

@@ -1,0 +1,50 @@
+# An external test file (_test.go with package source_test) references
+# source.Handler() via a qualified expression. Both Handler and the test
+# helper that calls it move to the same subpackage. The qualified reference
+# source.Handler should become just Serve (unqualified, now local).
+
+Handler=Serve -> sub/sub.go
+UseHandler=Use -> sub/sub_test.go
+
+-- input/go.mod --
+module example.com/sametarget
+
+go 1.21
+-- input/source/source.go --
+package source
+
+import "net/http"
+
+func Handler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+-- input/source/helpers_test.go --
+package source_test
+
+import "example.com/sametarget/source"
+
+func UseHandler() {
+	h := source.Handler()
+	_ = h
+}
+-- golden/sub/sub.go --
+package sub
+
+import (
+	"net/http"
+)
+
+func Serve() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+-- golden/sub/sub_test.go --
+package sub
+
+func Use() {
+	h := Serve()
+	_ = h
+}

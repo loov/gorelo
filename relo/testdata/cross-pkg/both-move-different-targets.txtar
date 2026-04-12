@@ -1,0 +1,54 @@
+# An external test file (_test.go with package source_test) references
+# source.Handler(). Both Handler and the test helper UseHandler move to
+# different subpackages. The qualified reference source.Handler should
+# become handlers.Handler, not source.handlers.Handler.
+
+Handler=Serve -> handlers/handlers.go
+UseHandler=Use -> helpers/helpers.go
+
+-- input/go.mod --
+module example.com/bothmove
+
+go 1.21
+-- input/source/source.go --
+package source
+
+import "net/http"
+
+func Handler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+-- input/source/helpers_test.go --
+package source_test
+
+import "example.com/bothmove/source"
+
+func UseHandler() {
+	h := source.Handler()
+	_ = h
+}
+-- golden/handlers/handlers.go --
+package handlers
+
+import (
+	"net/http"
+)
+
+func Serve() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+-- golden/helpers/helpers.go --
+package helpers
+
+import (
+	"example.com/bothmove/handlers"
+)
+
+func Use() {
+	h := handlers.Serve()
+	_ = h
+}
