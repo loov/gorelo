@@ -1,0 +1,42 @@
+# Move a function referenced from a build-constrained external test
+# file via a qualified expression. Both the function and the test
+# helper move. The qualified reference source.Config() should become
+# just Config() (same target, qualifier stripped).
+
+Config -> sub/sub.go
+UseConfig -> sub/sub_test.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/source/source.go --
+package source
+
+func Config() string {
+	return "default"
+}
+-- input/source/use_test.go --
+//go:build !race
+
+package source_test
+
+import "example.com/test/source"
+
+func UseConfig() string {
+	return source.Config()
+}
+-- golden/sub/sub.go --
+package sub
+
+func Config() string {
+	return "default"
+}
+-- golden/sub/sub_test.go --
+//go:build !race
+
+package sub
+
+func UseConfig() string {
+	return Config()
+}
