@@ -1,0 +1,50 @@
+# When a function moves cross-package, type references to source-stay
+# types in variable declarations, parameters, return types, and type
+# assertions should be qualified.
+
+Process -> dst/process.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/types.go --
+package src
+
+type Config struct {
+	Name string
+}
+
+type Result struct {
+	OK bool
+}
+-- input/src/process.go --
+package src
+
+func Process(cfg Config) Result {
+	var r Result
+	r.OK = cfg.Name != ""
+	return r
+}
+-- golden/src/types.go --
+package src
+
+type Config struct {
+	Name string
+}
+
+type Result struct {
+	OK bool
+}
+-- golden/dst/process.go --
+package dst
+
+import (
+	"example.com/test/src"
+)
+
+func Process(cfg src.Config) src.Result {
+	var r src.Result
+	r.OK = cfg.Name != ""
+	return r
+}
