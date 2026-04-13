@@ -136,6 +136,12 @@ func (a *assembler) assembleTargets() {
 				crossTargetImports[impPath] = true
 			}
 			for impPath, alias := range er.aliases {
+				if existing, ok := crossTargetAliases[impPath]; ok && existing != alias {
+					// Two spans disagree on the alias. Keep the first
+					// one — this is rare and both qualify the same
+					// package, so the result compiles either way.
+					continue
+				}
 				crossTargetAliases[impPath] = alias
 			}
 
