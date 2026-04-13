@@ -645,6 +645,12 @@ func determineTargetPkgName(ix *mast.Index, rrs []*resolvedRelo) string {
 			if len(pkg.Files) == 0 {
 				continue
 			}
+			// Skip external test packages (package foo_test) — they
+			// share the directory but shouldn't determine the package
+			// name for new production files.
+			if strings.HasSuffix(pkg.Name, "_test") {
+				continue
+			}
 			if filepath.Dir(pkg.Files[0].Path) == targetDir {
 				return pkg.Name
 			}

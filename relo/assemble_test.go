@@ -437,6 +437,44 @@ func TestDetermineTargetPkgName_DifferentDir(t *testing.T) {
 	}
 }
 
+func TestDetermineTargetPkgName_SkipsTestPackage(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	targetDir := filepath.Join(base, "lib")
+
+	// Simulate a directory where the _test package appears before the
+	// main package in ix.Pkgs. determineTargetPkgName should skip it.
+	testFile := mastFileWithSyntax(filepath.Join(targetDir, "lib_test.go"), "mylib_test")
+	testPkg := &mast.Package{
+		Name:  "mylib_test",
+		Files: []*mast.File{testFile},
+	}
+	testFile.Pkg = testPkg
+
+	mainFile := mastFileWithSyntax(filepath.Join(targetDir, "lib.go"), "mylib")
+	mainPkg := &mast.Package{
+		Name:  "mylib",
+		Files: []*mast.File{mainFile},
+	}
+	mainFile.Pkg = mainPkg
+
+	ix := &mast.Index{
+		Pkgs: []*mast.Package{testPkg, mainPkg},
+	}
+
+	rrs := []*resolvedRelo{
+		{
+			File:       mastFileWithSyntax(filepath.Join(base, "src", "source.go"), "srcpkg"),
+			TargetFile: filepath.Join(targetDir, "new.go"),
+		},
+	}
+	got := determineTargetPkgName(ix, rrs)
+	if got != "mylib" {
+		t.Errorf("determineTargetPkgName = %q, want %q (should skip _test package)", got, "mylib")
+	}
+}
+
 func TestSortedKeys(t *testing.T) {
 	t.Parallel()
 
