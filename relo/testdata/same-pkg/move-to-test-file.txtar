@@ -1,0 +1,58 @@
+# Move a test helper between _test.go files within the same package.
+# Also move a declaration from a production file into a _test.go file
+# when only test code references it.
+
+testHelper -> helpers_test.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/source.go --
+package pkg
+
+func Public() string {
+	return "ok"
+}
+-- input/source_test.go --
+package pkg
+
+import "testing"
+
+func testHelper() string {
+	return "help"
+}
+
+func TestPublic(t *testing.T) {
+	if testHelper() != "help" {
+		t.Fatal()
+	}
+	if Public() != "ok" {
+		t.Fatal()
+	}
+}
+-- golden/source.go --
+package pkg
+
+func Public() string {
+	return "ok"
+}
+-- golden/source_test.go --
+package pkg
+
+import "testing"
+
+func TestPublic(t *testing.T) {
+	if testHelper() != "help" {
+		t.Fatal()
+	}
+	if Public() != "ok" {
+		t.Fatal()
+	}
+}
+-- golden/helpers_test.go --
+package pkg
+
+func testHelper() string {
+	return "help"
+}
