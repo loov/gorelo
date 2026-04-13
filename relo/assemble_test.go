@@ -412,7 +412,8 @@ func TestDetermineTargetPkgName_SameDir(t *testing.T) {
 			TargetFile: filepath.Join(pkgDir, "target.go"),
 		},
 	}
-	got := determineTargetPkgName(rrs)
+	ix := &mast.Index{}
+	got := determineTargetPkgName(ix, rrs)
 	if got != "mypkg" {
 		t.Errorf("determineTargetPkgName = %q, want %q", got, "mypkg")
 	}
@@ -429,7 +430,8 @@ func TestDetermineTargetPkgName_DifferentDir(t *testing.T) {
 			TargetFile: filepath.Join(base, "dst", "target.go"),
 		},
 	}
-	got := determineTargetPkgName(rrs)
+	ix := &mast.Index{}
+	got := determineTargetPkgName(ix, rrs)
 	if got != "dst" {
 		t.Errorf("determineTargetPkgName = %q, want %q", got, "dst")
 	}

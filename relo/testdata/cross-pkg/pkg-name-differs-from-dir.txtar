@@ -1,0 +1,48 @@
+# Move a function to a package where the package name differs from the
+# directory name. The package is "mylib" but lives in directory "lib".
+# References from extracted code should use the actual package name.
+
+Process -> lib/process.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+func Helper() string {
+	return "help"
+}
+
+func Process() string {
+	return Helper()
+}
+-- input/lib/existing.go --
+package mylib
+
+func Existing() string {
+	return "exists"
+}
+-- golden/src/source.go --
+package src
+
+func Helper() string {
+	return "help"
+}
+-- golden/lib/existing.go --
+package mylib
+
+func Existing() string {
+	return "exists"
+}
+-- golden/lib/process.go --
+package mylib
+
+import (
+	"example.com/test/src"
+)
+
+func Process() string {
+	return src.Helper()
+}

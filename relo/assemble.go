@@ -259,7 +259,7 @@ func (a *assembler) assembleTargets() {
 			a.es.Set(FileEdit{Path: targetPath, Content: content})
 		} else {
 			// New file.
-			targetPkgName := determineTargetPkgName(rrs)
+			targetPkgName := determineTargetPkgName(a.ix, rrs)
 
 			// Collect build constraint.
 			constraint := collectBuildConstraint(rrs)
@@ -629,7 +629,7 @@ func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImpor
 }
 
 // determineTargetPkgName figures out the package name for a new target file.
-func determineTargetPkgName(rrs []*resolvedRelo) string {
+func determineTargetPkgName(ix *mast.Index, rrs []*resolvedRelo) string {
 	for _, rr := range rrs {
 		if rr.File != nil && rr.File.Pkg != nil {
 			if isSamePackageDir(rr.File.Pkg, rr.TargetFile) {
@@ -637,9 +637,19 @@ func determineTargetPkgName(rrs []*resolvedRelo) string {
 			}
 		}
 	}
-	// Guess from directory name.
+	// Check if there are existing files in the target directory whose
+	// package name we should match (handles package name != dir name).
 	if len(rrs) > 0 {
-		return guessPackageName(filepath.Dir(rrs[0].TargetFile))
+		targetDir := filepath.Dir(rrs[0].TargetFile)
+		for _, pkg := range ix.Pkgs {
+			if len(pkg.Files) == 0 {
+				continue
+			}
+			if filepath.Dir(pkg.Files[0].Path) == targetDir {
+				return pkg.Name
+			}
+		}
+		return guessPackageName(targetDir)
 	}
 	return "unable_to_determine_package"
 }
