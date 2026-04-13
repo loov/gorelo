@@ -266,6 +266,9 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			localName = alias
 		}
 		r := resolvedForGroup(resolved, grp)
+		if r == nil {
+			continue
+		}
 		actions[grp] = &groupAction{
 			newText: localName + "." + r.TargetName,
 			impPath: info.impPath,
