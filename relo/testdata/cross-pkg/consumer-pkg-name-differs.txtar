@@ -1,0 +1,52 @@
+# Move a declaration to a package where the package name differs from
+# the directory name. A consumer package should use the actual package
+# name as the qualifier, not the directory name.
+
+Helper -> lib/helper.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+func Helper() string {
+	return "help"
+}
+-- input/lib/existing.go --
+package mylib
+
+func Existing() string {
+	return "exists"
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Use() string {
+	return src.Helper()
+}
+-- golden/lib/existing.go --
+package mylib
+
+func Existing() string {
+	return "exists"
+}
+-- golden/lib/helper.go --
+package mylib
+
+func Helper() string {
+	return "help"
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	mylib "example.com/test/lib"
+)
+
+func Use() string {
+	return mylib.Helper()
+}

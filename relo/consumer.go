@@ -16,6 +16,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	type moveInfo struct {
 		srcPkgPath string // source package import path
 		tgtPkgPath string // target package import path
+		tgtDir     string // target directory (absolute path)
 		tgtName    string // name at the target (may differ if renamed)
 	}
 
@@ -54,6 +55,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		movedGroups[rr.Group] = &moveInfo{
 			srcPkgPath: srcPkgPath,
 			tgtPkgPath: tgtPkgPath,
+			tgtDir:     tgtDir,
 			tgtName:    rr.TargetName,
 		}
 	}
@@ -70,7 +72,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	type fileEdits struct {
 		qualifierEdits []edit
 		nameEdits      []edit
-		addImports     map[string]bool // target import paths to add
+		addImports     map[string]string // target import path -> target dir
 	}
 	byFile := make(map[string]*fileEdits)
 
@@ -78,7 +80,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		fe, ok := byFile[path]
 		if !ok {
 			fe = &fileEdits{
-				addImports: make(map[string]bool),
+				addImports: make(map[string]string),
 			}
 			byFile[path] = fe
 		}
@@ -156,13 +158,13 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 				}
 
 				fe := ensureFile(filePath)
-				tgtLocalName := guessImportLocalName(info.tgtPkgPath)
+				tgtLocalName := packageLocalName(ix, info.tgtDir)
 				fe.nameEdits = append(fe.nameEdits, edit{
 					Start: identOff,
 					End:   identEnd,
 					New:   tgtLocalName + "." + info.tgtName,
 				})
-				fe.addImports[info.tgtPkgPath] = true
+				fe.addImports[info.tgtPkgPath] = info.tgtDir
 				continue
 			}
 
@@ -176,8 +178,8 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			fe := ensureFile(filePath)
 
 			// Determine what the new qualifier text should be.
-			// We'll use the target package's guessed local name.
-			tgtLocalName := guessImportLocalName(info.tgtPkgPath)
+			// Use the actual package name from the index when available.
+			tgtLocalName := packageLocalName(ix, info.tgtDir)
 
 			// Edit the qualifier ident (e.g., "oldpkg" -> "newpkg").
 			qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
@@ -201,7 +203,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 				})
 			}
 
-			fe.addImports[info.tgtPkgPath] = true
+			fe.addImports[info.tgtPkgPath] = info.tgtDir
 		}
 	}
 
@@ -254,7 +256,16 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 				}
 			}
 
-			ic.Add = append(ic.Add, importEntry{Path: tgtPath})
+			entry := importEntry{Path: tgtPath}
+			// If the actual package name differs from the import path's
+			// base name, add an explicit alias so the import matches the
+			// qualifier used in the rewritten code.
+			tgtDir := fe.addImports[tgtPath]
+			pkgName := packageLocalName(ix, tgtDir)
+			if pkgName != guessImportLocalName(tgtPath) {
+				entry.Alias = pkgName
+			}
+			ic.Add = append(ic.Add, entry)
 		}
 
 		// Sort added imports for deterministic output.

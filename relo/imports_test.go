@@ -207,6 +207,107 @@ func TestResolveCollisions_NoCollision(t *testing.T) {
 	}
 }
 
+func TestPackageLocalName(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	libDir := filepath.Join(base, "lib")
+
+	// Index with a package named "mylib" in directory "lib".
+	mainFile := mastFileWithSyntax(filepath.Join(libDir, "lib.go"), "mylib")
+	mainPkg := &mast.Package{
+		Name:  "mylib",
+		Files: []*mast.File{mainFile},
+	}
+
+	// Also has a _test package in the same directory.
+	testFile := mastFileWithSyntax(filepath.Join(libDir, "lib_test.go"), "mylib_test")
+	testPkg := &mast.Package{
+		Name:  "mylib_test",
+		Files: []*mast.File{testFile},
+	}
+
+	ix := &mast.Index{
+		Pkgs: []*mast.Package{testPkg, mainPkg}, // _test first
+	}
+
+	got := packageLocalName(ix, libDir)
+	if got != "mylib" {
+		t.Errorf("packageLocalName = %q, want %q", got, "mylib")
+	}
+}
+
+func TestPackageLocalName_Integration(t *testing.T) {
+	t.Parallel()
+
+	// Create a module with a package whose name differs from the dir.
+	dir := t.TempDir()
+	modContent := "module example.com/test\n\ngo 1.21\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(modContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	libDir := filepath.Join(dir, "lib")
+	if err := os.MkdirAll(libDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(libDir, "lib.go"), []byte("package mylib\n\nfunc F() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ix, err := mast.Load(&mast.Config{Dir: dir}, "./...")
+	if err != nil {
+		t.Fatal("mast.Load:", err)
+	}
+
+	// Verify that lib package is loaded.
+	found := false
+	for _, pkg := range ix.Pkgs {
+		if pkg.Name == "mylib" {
+			found = true
+			t.Logf("found pkg %q with dir %q", pkg.Name, filepath.Dir(pkg.Files[0].Path))
+			break
+		}
+	}
+	if !found {
+		t.Log("packages in index:")
+		for _, pkg := range ix.Pkgs {
+			dir := ""
+			if len(pkg.Files) > 0 {
+				dir = filepath.Dir(pkg.Files[0].Path)
+			}
+			t.Logf("  pkg=%q path=%q dir=%q", pkg.Name, pkg.Path, dir)
+		}
+		t.Fatal("mylib package not found in index")
+	}
+
+	got := packageLocalName(ix, libDir)
+	if got != "mylib" {
+		t.Errorf("packageLocalName = %q, want %q", got, "mylib")
+	}
+}
+
+func TestPackageLocalName_Fallback(t *testing.T) {
+	t.Parallel()
+
+	// When the directory has no packages in the index, fall back to
+	// guessImportLocalName.
+	dir := t.TempDir()
+	modContent := "module example.com/test\n\ngo 1.21\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(modContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	subDir := filepath.Join(dir, "mylib")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	ix := &mast.Index{}
+	got := packageLocalName(ix, subDir)
+	if got != "mylib" {
+		t.Errorf("packageLocalName fallback = %q, want %q", got, "mylib")
+	}
+}
+
 func TestBlankImportWarning(t *testing.T) {
 	t.Parallel()
 

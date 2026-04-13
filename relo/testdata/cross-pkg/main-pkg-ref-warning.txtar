@@ -39,9 +39,9 @@ func main() {
 package dst
 
 import (
-	"example.com/test/cmd"
+	main "example.com/test/cmd"
 )
 
 func Handler() string {
-	return cmd.DefaultAddr
+	return main.DefaultAddr
 }

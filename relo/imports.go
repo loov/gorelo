@@ -219,6 +219,42 @@ func importLocalName(imp *ast.ImportSpec, impPath string) string {
 	return guessImportLocalName(impPath)
 }
 
+// packageLocalName returns the actual package name for a directory by
+// checking the index. Falls back to guessImportLocalName when the
+// package is not in the index (e.g., new target directories).
+func packageLocalName(ix *mast.Index, dir string) string {
+	realDir := evalDir(dir)
+	for _, pkg := range ix.Pkgs {
+		if len(pkg.Files) == 0 || strings.HasSuffix(pkg.Name, "_test") {
+			continue
+		}
+		pkgDir := evalDir(filepath.Dir(pkg.Files[0].Path))
+		if pkgDir == realDir {
+			// Return the actual declared name, even "main". Using
+			// "main" as the qualifier makes it obvious why the result
+			// doesn't compile (main packages can't be imported), and
+			// the warning from checkCrossPkgRefs already explains the
+			// situation to the user.
+			return pkg.Name
+		}
+	}
+	return guessImportLocalName(guessImportPath(dir))
+}
+
+// evalDir resolves a directory path to a canonical form by applying
+// filepath.Abs and filepath.EvalSymlinks (for macOS /var → /private/var).
+func evalDir(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return real
+}
+
 // guessImportLocalName derives the package name from an import path.
 func guessImportLocalName(impPath string) string {
 	base := path.Base(impPath)

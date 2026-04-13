@@ -186,7 +186,7 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		if tgtPkgPath == "" {
 			continue
 		}
-		tgtLocalName := guessImportLocalName(tgtPkgPath)
+		tgtLocalName := packageLocalName(ix, rDir)
 		crossTargetByGroup[r.Group] = &crossTargetInfo{
 			impPath:   tgtPkgPath,
 			localName: tgtLocalName,
@@ -198,7 +198,7 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	if isCrossPkg {
 		srcPkgPath = guessImportPath(srcDir)
 		if srcPkgPath != "" {
-			srcLocalName = guessImportLocalName(srcPkgPath)
+			srcLocalName = packageLocalName(ix, srcDir)
 		}
 	}
 
