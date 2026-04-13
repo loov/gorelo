@@ -1,0 +1,39 @@
+# Move a function cross-package that uses symbols from a dot import.
+# The dot-imported symbols (ToUpper, TrimSpace) should cause a warning
+# since they cannot be automatically transferred to the target.
+
+Format -> dst/format.go
+
+@warn moved decl Format uses dot import "strings"
+@vet undefined: ToUpper
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+import . "strings"
+
+func Format(s string) string {
+	return ToUpper(TrimSpace(s))
+}
+
+func Other() string {
+	return "hello"
+}
+-- golden/src/source.go --
+package src
+
+import . "strings"
+
+func Other() string {
+	return "hello"
+}
+-- golden/dst/format.go --
+package dst
+
+func Format(s string) string {
+	return ToUpper(TrimSpace(s))
+}
