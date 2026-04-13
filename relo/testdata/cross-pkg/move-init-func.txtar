@@ -1,0 +1,43 @@
+# Move an init function cross-package. It references an unexported var
+# that stays behind, producing a broken reference. The init function
+# will now run in the new package's init sequence instead.
+
+init -> dst/init.go
+
+@warn moved decl init references unexported "initialized" which is not in the move set
+@vet undefined: initialized
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/init.go --
+package src
+
+var initialized bool
+
+func init() {
+	initialized = true
+}
+-- input/src/other.go --
+package src
+
+func IsInit() bool {
+	return initialized
+}
+-- golden/src/init.go --
+package src
+
+var initialized bool
+-- golden/src/other.go --
+package src
+
+func IsInit() bool {
+	return initialized
+}
+-- golden/dst/init.go --
+package dst
+
+func init() {
+	initialized = true
+}
