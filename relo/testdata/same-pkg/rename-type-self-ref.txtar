@@ -1,0 +1,52 @@
+# Rename a type that references itself in its own field types and in
+# composite literals. All occurrences should be updated.
+
+Node=TreeNode
+
+@warn constructor NewNode exists but is not being moved with type Node
+@warn renaming type Node to TreeNode will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/types.go --
+package pkg
+
+type Node struct {
+	Name     string
+	Children []Node
+	Parent   *Node
+}
+
+func NewNode(name string) Node {
+	return Node{
+		Name:     name,
+		Children: []Node{},
+	}
+}
+
+func WithChild(parent Node, child Node) Node {
+	parent.Children = append(parent.Children, child)
+	return parent
+}
+-- golden/types.go --
+package pkg
+
+type TreeNode struct {
+	Name     string
+	Children []TreeNode
+	Parent   *TreeNode
+}
+
+func NewNode(name string) TreeNode {
+	return TreeNode{
+		Name:     name,
+		Children: []TreeNode{},
+	}
+}
+
+func WithChild(parent TreeNode, child TreeNode) TreeNode {
+	parent.Children = append(parent.Children, child)
+	return parent
+}
