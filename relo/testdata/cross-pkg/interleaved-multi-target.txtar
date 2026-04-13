@@ -1,0 +1,65 @@
+# Multiple declarations from the same source file move to different
+# target packages. Tests that source file removal handles interleaved
+# spans correctly when removing non-adjacent declarations.
+
+Alpha -> pkg_a/a.go
+Beta -> pkg_b/b.go
+Gamma -> pkg_a/a.go
+Delta -> pkg_b/b.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/defs.go --
+package src
+
+func Alpha() string {
+	return "a"
+}
+
+func Beta() int {
+	return 1
+}
+
+func Gamma() string {
+	return "g"
+}
+
+func Delta() int {
+	return 2
+}
+
+func Stays() string {
+	return Alpha() + Gamma()
+}
+-- golden/pkg_a/a.go --
+package pkg_a
+
+func Alpha() string {
+	return "a"
+}
+
+func Gamma() string {
+	return "g"
+}
+-- golden/pkg_b/b.go --
+package pkg_b
+
+func Beta() int {
+	return 1
+}
+
+func Delta() int {
+	return 2
+}
+-- golden/src/defs.go --
+package src
+
+import (
+	"example.com/test/pkg_a"
+)
+
+func Stays() string {
+	return pkg_a.Alpha() + pkg_a.Gamma()
+}
