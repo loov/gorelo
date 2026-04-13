@@ -1,0 +1,54 @@
+# Rename a generic type used as an embedded field.
+# The embedded field name changes with the type, including for
+# generic instantiations like Cache[string].
+
+Cache=Store
+
+@warn renaming type Cache to Store will also change embedded field names
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/types.go --
+package pkg
+
+// Cache is a generic cache.
+type Cache[T any] struct {
+	Items []T
+}
+
+// StringCache embeds a generic instantiation.
+type StringCache struct {
+	Cache[string]
+	Label string
+}
+
+// NewStringCache creates a StringCache.
+func NewStringCache() StringCache {
+	return StringCache{
+		Cache: Cache[string]{Items: []string{"a"}},
+		Label: "default",
+	}
+}
+-- golden/types.go --
+package pkg
+
+// Cache is a generic cache.
+type Store[T any] struct {
+	Items []T
+}
+
+// StringCache embeds a generic instantiation.
+type StringCache struct {
+	Store[string]
+	Label string
+}
+
+// NewStringCache creates a StringCache.
+func NewStringCache() StringCache {
+	return StringCache{
+		Store: Store[string]{Items: []string{"a"}},
+		Label: "default",
+	}
+}

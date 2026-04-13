@@ -318,26 +318,8 @@ func typeHasEmbeddedUses(ix *mast.Index, grp *mast.Group) bool {
 				return true
 			}
 			// Check if the field type is our ident.
-			switch t := field.Type.(type) {
-			case *ast.Ident:
-				if t == id.Ident {
-					found = true
-				}
-			case *ast.SelectorExpr:
-				if t.Sel == id.Ident {
-					found = true
-				}
-			case *ast.StarExpr:
-				switch x := t.X.(type) {
-				case *ast.Ident:
-					if x == id.Ident {
-						found = true
-					}
-				case *ast.SelectorExpr:
-					if x.Sel == id.Ident {
-						found = true
-					}
-				}
+			if embeddedFieldIdent(field.Type) == id.Ident {
+				found = true
 			}
 			return !found
 		})
@@ -346,4 +328,29 @@ func typeHasEmbeddedUses(ix *mast.Index, grp *mast.Group) bool {
 		}
 	}
 	return false
+}
+
+// embeddedFieldIdent returns the type name ident for an embedded field
+// type expression, handling plain idents, selector expressions, pointer
+// types, and generic instantiations (IndexExpr / IndexListExpr).
+func embeddedFieldIdent(expr ast.Expr) *ast.Ident {
+	// Unwrap pointer.
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	// Unwrap generic instantiation: T[X] or T[X, Y].
+	if idx, ok := expr.(*ast.IndexExpr); ok {
+		expr = idx.X
+	}
+	if idx, ok := expr.(*ast.IndexListExpr); ok {
+		expr = idx.X
+	}
+	// Now extract the ident.
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t
+	case *ast.SelectorExpr:
+		return t.Sel
+	}
+	return nil
 }
