@@ -317,7 +317,13 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			// moves where the qualifier becomes unnecessary (pkg.X → Y).
 			for _, gid := range grp.Idents {
 				if gid.Ident == ident && gid.Qualifier != nil {
-					editStart = ix.Fset.Position(gid.Qualifier.Pos()).Offset
+					qualOff := ix.Fset.Position(gid.Qualifier.Pos()).Offset
+					// Only extend if the qualifier is inside the span.
+					// A qualifier straddling the span boundary can't be
+					// safely rewritten.
+					if qualOff >= s.Start {
+						editStart = qualOff
+					}
 					break
 				}
 			}
