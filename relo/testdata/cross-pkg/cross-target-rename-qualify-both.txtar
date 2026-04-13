@@ -1,0 +1,33 @@
+# Both declarations move to different target packages with renames.
+# The function references the constant — in the extracted code this
+# should become a qualified reference with the new name.
+
+tokenName=TokenName -> auth/auth.go
+checkToken=CheckToken -> checker/checker.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/defs.go --
+package src
+
+const tokenName = "csrf"
+
+func checkToken(key string) bool {
+	return key == tokenName
+}
+-- golden/auth/auth.go --
+package auth
+
+const TokenName = "csrf"
+-- golden/checker/checker.go --
+package checker
+
+import (
+	"example.com/test/auth"
+)
+
+func CheckToken(key string) bool {
+	return key == auth.TokenName
+}
