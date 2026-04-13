@@ -103,6 +103,7 @@ func (a *assembler) assembleTargets() {
 		var extracted []extractedItem
 		seenDecls := make(map[ast.Decl]bool)
 		crossTargetImports := make(map[string]bool)
+		crossTargetAliases := make(map[string]string)
 
 		// Get import changes for this target (used for alias edits).
 		ic := a.imports.byFile[targetPath]
@@ -133,6 +134,9 @@ func (a *assembler) assembleTargets() {
 			edits := er.edits
 			for impPath := range er.imports {
 				crossTargetImports[impPath] = true
+			}
+			for impPath, alias := range er.aliases {
+				crossTargetAliases[impPath] = alias
 			}
 
 			// Apply self-import unqualification.
@@ -178,7 +182,11 @@ func (a *assembler) assembleTargets() {
 					}
 				}
 				if !already {
-					ic.Add = append(ic.Add, importEntry{Path: impPath})
+					entry := importEntry{Path: impPath}
+					if alias, ok := crossTargetAliases[impPath]; ok {
+						entry.Alias = alias
+					}
+					ic.Add = append(ic.Add, entry)
 				}
 			}
 		}

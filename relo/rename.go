@@ -3,7 +3,10 @@ package relo
 import (
 	"go/ast"
 	"go/token"
+	"path"
 	"path/filepath"
+	"sort"
+	"strconv"
 
 	"github.com/loov/gorelo/mast"
 )
@@ -121,6 +124,9 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 type extractedEditsResult struct {
 	edits   []edit
 	imports map[string]bool
+	// aliases maps import path to alias when collision resolution
+	// required a non-default local name.
+	aliases map[string]string
 }
 
 // computeExtractedEdits builds edits for an extracted span's text in a single
@@ -150,6 +156,14 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	// references to non-moving source-package symbols.
 	resolvedGroups := make(map[*mast.Group]bool)
 
+	// Collect all cross-target import paths so we can resolve name
+	// collisions before generating qualifier text.
+	type crossTargetInfo struct {
+		impPath   string
+		localName string
+	}
+	crossTargetByGroup := make(map[*mast.Group]*crossTargetInfo)
+
 	for _, r := range resolved {
 		resolvedGroups[r.Group] = true
 
@@ -173,9 +187,88 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			continue
 		}
 		tgtLocalName := guessImportLocalName(tgtPkgPath)
-		actions[r.Group] = &groupAction{
-			newText: tgtLocalName + "." + r.TargetName,
-			impPath: tgtPkgPath,
+		crossTargetByGroup[r.Group] = &crossTargetInfo{
+			impPath:   tgtPkgPath,
+			localName: tgtLocalName,
+		}
+	}
+
+	// For cross-package moves, compute the source package import path.
+	var srcPkgPath, srcLocalName string
+	if isCrossPkg {
+		srcPkgPath = guessImportPath(srcDir)
+		if srcPkgPath != "" {
+			srcLocalName = guessImportLocalName(srcPkgPath)
+		}
+	}
+
+	// Resolve import local name collisions. Collect all import paths
+	// that will be used (cross-target + source-stay) and detect
+	// collisions among their local names.
+	importAliases := make(map[string]string) // impPath -> resolved local name
+	{
+		usedNames := make(map[string]string) // localName -> first impPath using it
+		type pending struct {
+			impPath   string
+			localName string
+		}
+		var allImports []pending
+
+		// Source-stay import (if any) gets priority.
+		if srcPkgPath != "" && srcLocalName != "" {
+			allImports = append(allImports, pending{srcPkgPath, srcLocalName})
+		}
+		// Cross-target imports, sorted for deterministic alias assignment.
+		seen := make(map[string]bool)
+		for _, info := range crossTargetByGroup {
+			if seen[info.impPath] {
+				continue
+			}
+			seen[info.impPath] = true
+			allImports = append(allImports, pending{info.impPath, info.localName})
+		}
+		sort.Slice(allImports, func(i, j int) bool {
+			return allImports[i].impPath < allImports[j].impPath
+		})
+
+		for _, imp := range allImports {
+			name := imp.localName
+			if existing, ok := usedNames[name]; ok && existing != imp.impPath {
+				// Collision — try parent-prefixed name, then numeric suffix.
+				parent := path.Base(path.Dir(imp.impPath))
+				candidate := parent + name
+				if _, taken := usedNames[candidate]; taken || candidate == name {
+					for i := 2; ; i++ {
+						candidate = name + strconv.Itoa(i)
+						if _, taken := usedNames[candidate]; !taken {
+							break
+						}
+					}
+				}
+				name = candidate
+			}
+			usedNames[name] = imp.impPath
+			importAliases[imp.impPath] = name
+		}
+
+		// Update srcLocalName if it was aliased.
+		if srcPkgPath != "" {
+			if alias, ok := importAliases[srcPkgPath]; ok {
+				srcLocalName = alias
+			}
+		}
+	}
+
+	// Build cross-target actions using resolved local names.
+	for grp, info := range crossTargetByGroup {
+		localName := info.localName
+		if alias, ok := importAliases[info.impPath]; ok {
+			localName = alias
+		}
+		r := resolvedForGroup(resolved, grp)
+		actions[grp] = &groupAction{
+			newText: localName + "." + r.TargetName,
+			impPath: info.impPath,
 		}
 	}
 
@@ -193,16 +286,6 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 				continue
 			}
 			actions[fgrp] = &groupAction{newText: r.TargetName}
-		}
-	}
-
-	// For cross-package moves, compute the source package import path
-	// so we can qualify references to symbols that stay in the source.
-	var srcPkgPath, srcLocalName string
-	if isCrossPkg {
-		srcPkgPath = guessImportPath(srcDir)
-		if srcPkgPath != "" {
-			srcLocalName = guessImportLocalName(srcPkgPath)
 		}
 	}
 
@@ -289,10 +372,33 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		return true
 	})
 
+	// Build aliases map: only include entries where the resolved name
+	// differs from the default guessImportLocalName.
+	var resultAliases map[string]string
+	for impPath, alias := range importAliases {
+		if alias != guessImportLocalName(impPath) {
+			if resultAliases == nil {
+				resultAliases = make(map[string]string)
+			}
+			resultAliases[impPath] = alias
+		}
+	}
+
 	return extractedEditsResult{
 		edits:   deduplicateEdits(edits),
 		imports: neededImports,
+		aliases: resultAliases,
 	}
+}
+
+// resolvedForGroup finds the resolvedRelo for a given group.
+func resolvedForGroup(resolved []*resolvedRelo, grp *mast.Group) *resolvedRelo {
+	for _, r := range resolved {
+		if r.Group == grp {
+			return r
+		}
+	}
+	return nil
 }
 
 // typeHasEmbeddedUses checks if a TypeName group has any Use idents

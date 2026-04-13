@@ -1,0 +1,48 @@
+# Two declarations move to packages with the same base name (both called
+# "util"). When a third function references both and moves to a different
+# target, it needs imports for both "util" packages. The second import
+# should get an alias to avoid collision.
+
+MaxRetries -> svc/util/retries.go
+Timeout -> net/util/timeout.go
+RunJob -> jobs/jobs.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+const MaxRetries = 3
+
+var Timeout = 30
+
+func RunJob() int {
+	if MaxRetries > 0 && Timeout > 0 {
+		return MaxRetries
+	}
+	return 0
+}
+-- golden/svc/util/retries.go --
+package util
+
+const MaxRetries = 3
+-- golden/net/util/timeout.go --
+package util
+
+var Timeout = 30
+-- golden/jobs/jobs.go --
+package jobs
+
+import (
+	"example.com/test/net/util"
+	svcutil "example.com/test/svc/util"
+)
+
+func RunJob() int {
+	if svcutil.MaxRetries > 0 && util.Timeout > 0 {
+		return svcutil.MaxRetries
+	}
+	return 0
+}
