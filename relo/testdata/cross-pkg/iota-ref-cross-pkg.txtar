@@ -1,0 +1,53 @@
+# Move a function cross-package that references a const from an iota
+# group where only some consts are moved. The iota dependency warning
+# should fire for the partially-moved const.
+
+Green -> dst/colors.go
+UseGreen -> dst/use.go
+
+@warn const Green depends on iota
+@vet missing init expr for Green
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/colors.go --
+package src
+
+type Color int
+
+const (
+	Red   Color = iota
+	Green
+	Blue
+)
+-- input/src/use.go --
+package src
+
+func UseGreen() Color {
+	return Green
+}
+-- golden/src/colors.go --
+package src
+
+type Color int
+
+const (
+	Red   Color = iota
+	Blue
+)
+-- golden/dst/colors.go --
+package dst
+
+const Green
+-- golden/dst/use.go --
+package dst
+
+import (
+	"example.com/test/src"
+)
+
+func UseGreen() src.Color {
+	return Green
+}
