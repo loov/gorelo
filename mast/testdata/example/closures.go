@@ -24,3 +24,11 @@ func TransformAll(x int) func(int) int {
 		return x * 2
 	}
 }
+
+// Package-level var initialized with a function literal.
+// Its parameters live inside a GenDecl rather than a FuncDecl,
+// so IsPackageScope must still recognise them as local bindings.
+var LogFn = func(page string, err error) {
+	_ = page
+	_ = err
+}

@@ -145,6 +145,27 @@ func TestIsPackageScope_LocalVar(t *testing.T) {
 	}
 }
 
+func TestIsPackageScope_FuncLitParamInGenDecl(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	// "page" is a parameter of a function literal assigned to the
+	// package-level var LogFn. It lives inside a GenDecl, not a
+	// FuncDecl, so the naive FuncDecl-only check used to misreport
+	// it as package-scope.
+	ids := findIdentsInFile(ix, "page", "closures.go")
+	if len(ids) == 0 {
+		t.Fatal("no page idents found in closures.go")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("func-literal param 'page' has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("func-literal param 'page' should NOT be package-scope")
+	}
+}
+
 func TestIsPackageScope_ShortVarDecl(t *testing.T) {
 	t.Parallel()
 	ix := loadTestdata(t)

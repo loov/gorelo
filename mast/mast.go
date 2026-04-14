@@ -80,33 +80,48 @@ type Group struct {
 
 // IsPackageScope reports whether the group represents a package-scope
 // declaration (as opposed to a local variable, parameter, or result).
-// A package-scope group has at least one Def ident at file top-level
-// (not inside any FuncDecl).
+// A package-scope group has at least one Def ident at file top-level —
+// not nested inside any FuncDecl or FuncLit.
 func (grp *Group) IsPackageScope() bool {
 	for _, id := range grp.Idents {
 		if id.Kind != Def || id.File == nil {
 			continue
 		}
-		inside := false
-		for _, decl := range id.File.Syntax.Decls {
-			fd, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			if id.Ident.Pos() >= fd.Pos() && id.Ident.End() <= fd.End() {
-				// Inside this FuncDecl — package-scope only if
-				// it IS the function's name ident itself.
-				if id.Ident != fd.Name {
-					inside = true
-				}
-				break
-			}
-		}
-		if !inside {
+		if !isInsideFuncBody(id.Ident, id.File.Syntax) {
 			return true
 		}
 	}
 	return false
+}
+
+// isInsideFuncBody reports whether ident is nested inside any FuncDecl
+// (other than being that FuncDecl's own Name) or any FuncLit. The Name
+// ident of a top-level FuncDecl is considered package-scope even though
+// it is syntactically inside the FuncDecl node.
+func isInsideFuncBody(ident *ast.Ident, file *ast.File) bool {
+	var found bool
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found || n == nil {
+			return false
+		}
+		switch fn := n.(type) {
+		case *ast.FuncDecl:
+			if ident == fn.Name {
+				return true
+			}
+			if ident.Pos() >= fn.Pos() && ident.End() <= fn.End() {
+				found = true
+				return false
+			}
+		case *ast.FuncLit:
+			if ident.Pos() >= fn.Pos() && ident.End() <= fn.End() {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // HasUses reports whether the group has any Use idents.

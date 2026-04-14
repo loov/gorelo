@@ -1,0 +1,46 @@
+# Move a package-level var whose initializer is a function literal
+# with parameter names. The reference scanner treats the function-
+# literal parameter idents as package-scope because IsPackageScope
+# only excludes *ast.FuncDecl containment, not function literals
+# nested inside an *ast.GenDecl (e.g., `var log = func(page, err) {}`).
+# That causes the parameter idents to be falsely reported as
+# references to unexported package-level names.
+#
+# The generated code compiles correctly because Go resolves each
+# parameter in its local scope — the test asserts that no spurious
+# "references unexported" warnings are emitted for the parameters.
+
+Log -> dst/dst.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/src.go --
+package src
+
+// Keep keeps the source package non-empty.
+func Keep() {}
+
+// Log is a package-level var initialized from a function literal.
+// Its parameters "page" and "err" should not be reported as
+// references to unexported package-level names.
+var Log = func(page string, err error) {
+	_ = page
+	_ = err
+}
+-- golden/src/src.go --
+package src
+
+// Keep keeps the source package non-empty.
+func Keep() {}
+-- golden/dst/dst.go --
+package dst
+
+// Log is a package-level var initialized from a function literal.
+// Its parameters "page" and "err" should not be reported as
+// references to unexported package-level names.
+var Log = func(page string, err error) {
+	_ = page
+	_ = err
+}
