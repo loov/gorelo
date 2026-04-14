@@ -1,0 +1,90 @@
+# Detach three methods from a single type, each moved to a different
+# target package. Each call site must be rewritten with the correct
+# per-target package qualifier and imports.
+
+@detach
+Server#RenderA -> pkga/a.go
+
+@detach
+Server#RenderB -> pkgb/b.go
+
+@detach
+Server#RenderC -> pkgc/c.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+import "io"
+
+type Server struct{}
+
+func (server *Server) RenderA(w io.Writer) {}
+func (server *Server) RenderB(w io.Writer) {}
+func (server *Server) RenderC(w io.Writer) {}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"io"
+
+	"example.com/test/src"
+)
+
+func Render(s *src.Server, w io.Writer) {
+	s.RenderA(w)
+	s.RenderB(w)
+	s.RenderC(w)
+}
+-- golden/src/server.go --
+package src
+
+
+type Server struct{}
+-- golden/pkga/a.go --
+package pkga
+
+import (
+	"example.com/test/src"
+	"io"
+)
+
+func RenderA(server *src.Server, w io.Writer) {}
+-- golden/pkgb/b.go --
+package pkgb
+
+import (
+	"example.com/test/src"
+	"io"
+)
+
+func RenderB(server *src.Server, w io.Writer) {}
+-- golden/pkgc/c.go --
+package pkgc
+
+import (
+	"example.com/test/src"
+	"io"
+)
+
+func RenderC(server *src.Server, w io.Writer) {}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"io"
+
+	"example.com/test/src"
+	"example.com/test/pkga"
+	"example.com/test/pkgb"
+	"example.com/test/pkgc"
+)
+
+func Render(s *src.Server, w io.Writer) {
+	pkga.RenderA(s, w)
+	pkgb.RenderB(s, w)
+	pkgc.RenderC(s, w)
+}
