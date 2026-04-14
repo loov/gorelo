@@ -68,12 +68,15 @@ Rule syntax:
   Type#Field=NewField                  # rename a struct field
   Type#Outer.Inner=NewInner            # rename nested anonymous struct field
 
+  fn=Type#Method                       # attach function as a method
+  fn=Type#Method -> server.go          # attach and move
+  Type#Method=!                        # detach method, keep the name
+  Type#Method=!newFn                   # detach and rename
+  Type#Method=! -> util.go             # detach and move
+
   file.go:Server -> target.go          # disambiguate by source file
   ./pkg.Name -> target.go              # disambiguate by relative package
   github.com/x/y.Name -> target.go     # disambiguate by full package path
-
-  @detach
-  Server.ServePage -> serve.go         # detach method
 
 Directives (in rules files):
   # run formatter on modified files

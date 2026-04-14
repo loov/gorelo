@@ -13,31 +13,18 @@ func Parse(filename string, data []byte) (*File, error) {
 	file := &File{}
 	var current *Rule
 
-	// Pending item modifiers set by @detach / @attach directives.
-	var pendingDetach bool
-	var pendingMethodOf string
-	var pendingConsumed bool
-
 	for i, line := range lines {
 		lineno := i + 1
 
 		// Directives must be checked before comment stripping.
 		if d, ok := parseDirective(line); ok {
 			switch d.Key {
-			case "detach":
-				pendingDetach = true
-				pendingMethodOf = ""
-				pendingConsumed = false
 			case "attach":
-				if d.Value == "" {
-					return nil, fmt.Errorf("%s:%d: @attach requires a type name", filename, lineno)
-				}
-				pendingMethodOf = d.Value
-				pendingDetach = false
-				pendingConsumed = false
-			default:
-				file.Directives = append(file.Directives, d)
+				return nil, fmt.Errorf("%s:%d: @attach is no longer supported; use \"fn=Type#Method\" instead", filename, lineno)
+			case "detach":
+				return nil, fmt.Errorf("%s:%d: @detach is no longer supported; use \"Type#Method=!name\" instead", filename, lineno)
 			}
+			file.Directives = append(file.Directives, d)
 			current = nil
 			continue
 		}
@@ -54,11 +41,6 @@ func Parse(filename string, data []byte) (*File, error) {
 		if trimmed == "" {
 			if !indented {
 				current = nil
-				if pendingConsumed {
-					pendingDetach = false
-					pendingMethodOf = ""
-					pendingConsumed = false
-				}
 			}
 			continue
 		}
@@ -70,47 +52,19 @@ func Parse(filename string, data []byte) (*File, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s:%d: %w", filename, lineno, err)
 			}
-			applyItemModifiers(items, pendingDetach, pendingMethodOf)
 			current.Items = append(current.Items, items...)
 			continue
 		}
 
-		// New non-indented rule: clear consumed pending modifiers.
-		if pendingConsumed {
-			pendingDetach = false
-			pendingMethodOf = ""
-			pendingConsumed = false
-		}
-
 		dest, items, err := parseLine(trimmed)
-		if err != nil && (pendingDetach || pendingMethodOf != "") {
-			// With pending modifiers, bare names are valid items.
-			items, err = parseItems(trimmed)
-			dest = ""
-		}
 		if err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", filename, lineno, err)
-		}
-		applyItemModifiers(items, pendingDetach, pendingMethodOf)
-		if pendingDetach || pendingMethodOf != "" {
-			pendingConsumed = true
 		}
 		file.Rules = append(file.Rules, Rule{Dest: dest, Items: items})
 		current = &file.Rules[len(file.Rules)-1]
 	}
 
 	return file, nil
-}
-
-// applyItemModifiers sets Detach/MethodOf on items from pending directive state.
-func applyItemModifiers(items []Item, detach bool, methodOf string) {
-	if !detach && methodOf == "" {
-		return
-	}
-	for i := range items {
-		items[i].Detach = detach
-		items[i].MethodOf = methodOf
-	}
 }
 
 // parseLine parses a single non-indented rule line.
@@ -187,9 +141,14 @@ func parseItems(s string) ([]Item, error) {
 //
 // Grammar:
 //
-//	[source:]name[=rename]
-//	[source:]name#field[=fieldrename]
-//	package.name[#field[=fieldrename]]
+//	[source:]name                        bare reference
+//	[source:]name=new                    rename
+//	[source:]name=Type#Method            attach function as method
+//	[source:]Type#field                  bare field/method reference
+//	[source:]Type#field=new              field rename
+//	[source:]Type#method=!               detach method (keep name)
+//	[source:]Type#method=!new            detach method and rename
+//	package.name[...]                    package-qualified form of any above
 func parseItem(tok string) (Item, error) {
 	var item Item
 
@@ -216,33 +175,80 @@ func parseItem(tok string) (Item, error) {
 		return Item{}, fmt.Errorf("missing name in %q", tok)
 	}
 
-	// Split field path from name.
-	if before, after, ok := strings.Cut(rest, "#"); ok {
-		item.Name = before
-		fieldSpec := after
-		if fieldSpec == "" {
+	// Route on the relative position of the first '#' and first '='.
+	h := strings.Index(rest, "#")
+	e := strings.Index(rest, "=")
+
+	switch {
+	case h < 0 && e < 0:
+		item.Name = rest
+
+	case e < 0:
+		// Bare field/method reference: Type#Name.
+		item.Name = rest[:h]
+		item.Field = rest[h+1:]
+		if item.Name == "" {
+			return Item{}, fmt.Errorf("missing type before '#' in %q", tok)
+		}
+		if item.Field == "" {
 			return Item{}, fmt.Errorf("missing field name after '#' in %q", tok)
 		}
-		if before, after, ok := strings.Cut(fieldSpec, "="); ok {
-			item.Field = before
-			item.FieldRename = after
-			if item.Field == "" {
-				return Item{}, fmt.Errorf("missing field name before '=' in %q", tok)
+
+	case h < 0 || e < h:
+		// Top-level rename or attach: name=rhs.
+		item.Name = rest[:e]
+		rhs := rest[e+1:]
+		if item.Name == "" {
+			return Item{}, fmt.Errorf("missing name before '=' in %q", tok)
+		}
+		if rhs == "" {
+			return Item{}, fmt.Errorf("missing rename after '=' in %q", tok)
+		}
+		if strings.HasPrefix(rhs, "!") {
+			return Item{}, fmt.Errorf("'=!' only valid after a method reference in %q", tok)
+		}
+		if typ, method, ok := strings.Cut(rhs, "#"); ok {
+			// Attach: fn=Type#Method.
+			item.MethodOf = typ
+			item.Rename = method
+			if item.MethodOf == "" {
+				return Item{}, fmt.Errorf("missing type before '#' on right side of %q", tok)
 			}
+			if item.Rename == "" {
+				return Item{}, fmt.Errorf("missing method name after '#' on right side of %q", tok)
+			}
+			if strings.Contains(item.Rename, "#") {
+				return Item{}, fmt.Errorf("unexpected '#' in method name %q", item.Rename)
+			}
+		} else {
+			item.Rename = rhs
+		}
+
+	default: // h < e: field form with rename or detach
+		item.Name = rest[:h]
+		item.Field = rest[h+1 : e]
+		rhs := rest[e+1:]
+		if item.Name == "" {
+			return Item{}, fmt.Errorf("missing type before '#' in %q", tok)
+		}
+		if item.Field == "" {
+			return Item{}, fmt.Errorf("missing field name before '=' in %q", tok)
+		}
+		if strings.HasPrefix(rhs, "!") {
+			item.Detach = true
+			item.FieldRename = rhs[1:]
+			if strings.ContainsAny(item.FieldRename, "#=") {
+				return Item{}, fmt.Errorf("unexpected '#' or '=' in detach name %q", item.FieldRename)
+			}
+		} else {
+			item.FieldRename = rhs
 			if item.FieldRename == "" {
 				return Item{}, fmt.Errorf("missing field rename after '=' in %q", tok)
 			}
-		} else {
-			item.Field = fieldSpec
+			if strings.ContainsAny(item.FieldRename, "#=") {
+				return Item{}, fmt.Errorf("unexpected '#' or '=' in rename %q", item.FieldRename)
+			}
 		}
-	} else if before, after, ok := strings.Cut(rest, "="); ok {
-		item.Name = before
-		item.Rename = after
-		if item.Rename == "" {
-			return Item{}, fmt.Errorf("missing rename after '=' in %q", tok)
-		}
-	} else {
-		item.Name = rest
 	}
 
 	if item.Name == "" {

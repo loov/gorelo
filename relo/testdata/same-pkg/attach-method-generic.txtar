@@ -2,8 +2,7 @@
 # Go does not allow type parameters on methods.
 
 @warn generic functions cannot become methods
-@attach Server
-Start
+Start=Server#Start
 
 -- input/go.mod --
 module example.com/pkg

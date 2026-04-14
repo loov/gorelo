@@ -1,8 +1,7 @@
 # Attaching a function whose first parameter is variadic should warn.
 
 @warn first parameter is variadic
-@attach Server
-Start
+Start=Server#Start
 
 -- input/go.mod --
 module example.com/pkg

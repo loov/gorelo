@@ -1,7 +1,6 @@
 # Detach a method with parameters and multiple call sites.
 
-@detach
-Server#Listen
+Server#Listen=!
 
 -- input/go.mod --
 module example.com/pkg

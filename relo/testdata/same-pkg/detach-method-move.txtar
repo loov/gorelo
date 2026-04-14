@@ -1,7 +1,6 @@
 # Detach a method and move it to a new file.
 
-@detach
-Server#Start -> funcs.go
+Server#Start=! -> funcs.go
 
 -- input/go.mod --
 module example.com/pkg

@@ -3,8 +3,7 @@
 
 @warn method value reference
 @vet declared and not used
-@detach
-Server#Start
+Server#Start=!
 
 -- input/go.mod --
 module example.com/pkg

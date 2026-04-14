@@ -1,8 +1,7 @@
 # Detach a method with an unnamed receiver.
 # The parameter remains unnamed in the detached function.
 
-@detach
-Server#Start
+Server#Start=!
 
 -- input/go.mod --
 module example.com/pkg

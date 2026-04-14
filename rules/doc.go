@@ -73,6 +73,23 @@
 //	server/core.go <-
 //	    ServerOptions#Listen
 //
+// # Attaching and detaching methods
+//
+// A top-level function can be turned into a method on a type by
+// writing the target method on the right of the rename:
+//
+//	start=Server#Start                # attach 'start' as (*Server).Start
+//	StartServer=Server#Start          # attach 'StartServer' as (*Server).Start
+//	start=Server#Start -> server.go   # attach and move in one rule
+//
+// A method can be detached into a standalone function with "=!"
+// (read as "cut"). The name after "!" becomes the function name;
+// leave it empty to keep the method's name:
+//
+//	Server#Start=!                      # detach, keep the name "Start"
+//	Server#Start=!startServer           # detach and rename to startServer
+//	Server#Start=! -> util.go           # detach and move
+//
 // # Source specifiers
 //
 // By default an item is resolved in the current package. A source
@@ -120,11 +137,12 @@
 //
 // The full grammar for a single item token is:
 //
-//	item   = [source] name [rename | field]
-//	source = path ":"           # file source
-//	       | pkg "."            # package source (any path with "/")
-//	name   = identifier
-//	rename = "=" identifier
-//	field  = "#" fieldpath ["=" identifier]
+//	item     = [source] name ["#" fieldpath] ["=" rhs]
+//	source   = path ":"                      # file source
+//	         | pkg "."                       # package source (any path with "/")
+//	name     = identifier
+//	rhs      = identifier                    # plain rename
+//	         | "!" [identifier]              # detach (requires '#' on the left)
+//	         | identifier "#" identifier     # attach (requires no '#' on the left)
 //	fieldpath = identifier {"." identifier}
 package rules

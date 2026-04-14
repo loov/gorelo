@@ -1,7 +1,6 @@
 # Convert a standalone function to a method.
 
-@attach Server
-Start
+Start=Server#Start
 
 -- input/go.mod --
 module example.com/pkg

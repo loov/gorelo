@@ -1,7 +1,6 @@
 # Detach a method to a standalone function in the same file.
 
-@detach
-Server#Start
+Server#Start=!
 
 -- input/go.mod --
 module example.com/pkg

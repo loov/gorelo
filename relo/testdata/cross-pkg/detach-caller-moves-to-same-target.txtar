@@ -8,8 +8,7 @@
 # call correctly to `dst.Start(s)`. This test covers the same-destination
 # case.
 
-@detach
-Widget#Use=Use -> target/use.go
+Widget#Use=!Use -> target/use.go
 
 target/caller.go <-
     Run

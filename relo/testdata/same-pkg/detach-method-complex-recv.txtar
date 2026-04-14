@@ -1,7 +1,6 @@
 # Detach with complex receiver expressions in call sites.
 
-@detach
-Server#Start
+Server#Start=!
 
 -- input/go.mod --
 module example.com/pkg

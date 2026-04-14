@@ -1,7 +1,6 @@
 # Detach a method, call sites in a different file.
 
-@detach
-Server#Start
+Server#Start=!
 
 -- input/go.mod --
 module example.com/pkg

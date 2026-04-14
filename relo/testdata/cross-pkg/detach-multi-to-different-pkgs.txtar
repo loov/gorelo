@@ -2,14 +2,9 @@
 # target package. Each call site must be rewritten with the correct
 # per-target package qualifier and imports.
 
-@detach
-Server#RenderA -> pkga/a.go
-
-@detach
-Server#RenderB -> pkgb/b.go
-
-@detach
-Server#RenderC -> pkgc/c.go
+Server#RenderA=! -> pkga/a.go
+Server#RenderB=! -> pkgb/b.go
+Server#RenderC=! -> pkgc/c.go
 
 -- input/go.mod --
 module example.com/test

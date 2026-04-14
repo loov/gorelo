@@ -25,6 +25,6 @@ type Item struct {
 	Rename      string // optional new name for the declaration
 	Field       string // optional field path (e.g. "Listen", "Limits.min")
 	FieldRename string // optional new field name
-	Detach      bool   // convert method to standalone function (@detach)
-	MethodOf    string // convert function to method on this type (@attach)
+	Detach      bool   // convert method to standalone function (Type#Name=!newName)
+	MethodOf    string // convert function to method on this type (name=Type#Method)
 }

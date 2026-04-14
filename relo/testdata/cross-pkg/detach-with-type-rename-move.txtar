@@ -3,8 +3,7 @@
 # must be rewritten as a parameter using the type's POST-rename name and
 # POST-move package qualifier.
 
-@detach
-frontendSession#pageCSRFState=PageCSRFState -> target/csrf.go
+frontendSession#pageCSRFState=!PageCSRFState -> target/csrf.go
 
 webtest/session.go <-
     frontendSession=Session

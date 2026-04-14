@@ -1,7 +1,6 @@
 # Convert a function to a method and move it to a new file.
 
-@attach Server
-Start -> methods.go
+Start=Server#Start -> methods.go
 
 -- input/go.mod --
 module example.com/pkg

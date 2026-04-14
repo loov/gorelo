@@ -3,8 +3,7 @@
 # is generated. Call sites are rewritten directly.
 
 @stubs
-@detach
-Server#Start -> dst/start.go
+Server#Start=! -> dst/start.go
 
 -- input/go.mod --
 module example.com/test

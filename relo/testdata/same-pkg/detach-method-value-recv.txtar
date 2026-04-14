@@ -1,7 +1,6 @@
 # Detach a method with a value receiver (not pointer).
 
-@detach
-Server#String
+Server#String=!
 
 -- input/go.mod --
 module example.com/pkg

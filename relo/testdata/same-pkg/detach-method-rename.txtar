@@ -1,7 +1,6 @@
 # Detach a method and rename it.
 
-@detach
-Server#Start=StartServer
+Server#Start=!StartServer
 
 -- input/go.mod --
 module example.com/pkg

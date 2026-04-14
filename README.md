@@ -93,6 +93,26 @@ Rename a nested anonymous struct field with a dotted path:
 ServerOptions#Limits.Min=MinValue
 ```
 
+### Attaching and detaching methods
+
+Turn a standalone function into a method by writing the target
+method on the right of the rename:
+
+```
+start=Server#Start                # attach 'start' as (*Server).Start
+StartServer=Server#Start          # attach 'StartServer' as (*Server).Start
+start=Server#Start -> server.go   # attach and move in one rule
+```
+
+Turn a method into a standalone function with `=!` ("cut"). Leave
+the name after `!` empty to keep the method's name:
+
+```
+Server#Start=!                    # detach, keep the name "Start"
+Server#Start=!startServer         # detach and rename to startServer
+Server#Start=! -> util.go         # detach and move
+```
+
 ### Source specifiers
 
 Disambiguate by source file:

@@ -1,8 +1,7 @@
 # Detach a method and move it cross-package.
 # Call sites in a consumer package get updated.
 
-@detach
-Server#Start -> dst/start.go
+Server#Start=! -> dst/start.go
 
 -- input/go.mod --
 module example.com/test

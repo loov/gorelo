@@ -1,7 +1,6 @@
 # Convert a function to a method with rename.
 
-@attach Server
-StartServer=Start
+StartServer=Server#Start
 
 -- input/go.mod --
 module example.com/pkg

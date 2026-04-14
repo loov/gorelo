@@ -850,7 +850,7 @@ func TestParseFieldRenameInForwardBlock(t *testing.T) {
 func TestParseDetach(t *testing.T) {
 	t.Parallel()
 
-	input := "@detach\nServer#Start -> util.go"
+	input := "Server#Start=! -> util.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -869,7 +869,7 @@ func TestParseDetach(t *testing.T) {
 func TestParseDetachWithRename(t *testing.T) {
 	t.Parallel()
 
-	input := "@detach\nServer#Start=StartServer -> util.go"
+	input := "Server#Start=!StartServer -> util.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -888,7 +888,7 @@ func TestParseDetachWithRename(t *testing.T) {
 func TestParseDetachMultiline(t *testing.T) {
 	t.Parallel()
 
-	input := "@detach\nutil.go <-\n\tServer#Start\n\tServer#Stop"
+	input := "util.go <-\n\tServer#Start=!\n\tServer#Stop=!"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -908,7 +908,7 @@ func TestParseDetachMultiline(t *testing.T) {
 func TestParseDetachSameFile(t *testing.T) {
 	t.Parallel()
 
-	input := "@detach\nServer#Start"
+	input := "Server#Start=!"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -923,46 +923,28 @@ func TestParseDetachSameFile(t *testing.T) {
 	}
 }
 
-func TestParseDetachDoesNotApplyToNextRule(t *testing.T) {
+func TestParseDetachExplicitSameName(t *testing.T) {
 	t.Parallel()
 
-	input := "@detach\nServer#Start\n\nHandler -> handler.go"
+	input := "Server#Start=!Start"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(file.Rules) != 2 {
-		t.Fatalf("got %d rules, want 2", len(file.Rules))
-	}
-	if !file.Rules[0].Items[0].Detach {
-		t.Error("expected detach on first rule")
-	}
-	if file.Rules[1].Items[0].Detach {
-		t.Error("unexpected detach on second rule")
-	}
-}
-
-func TestParseDetachBlankLineBefore(t *testing.T) {
-	t.Parallel()
-
-	// A blank line between @detach and the rule should not eat the directive.
-	input := "@detach\n\nServer#Start"
-	file, err := Parse("test", []byte(input))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(file.Rules) != 1 {
-		t.Fatalf("got %d rules, want 1", len(file.Rules))
-	}
-	if !file.Rules[0].Items[0].Detach {
-		t.Error("expected detach on rule after blank line")
+	want := &File{Rules: []Rule{{
+		Items: []Item{
+			{Name: "Server", Field: "Start", FieldRename: "Start", Detach: true},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
 	}
 }
 
 func TestParseAttach(t *testing.T) {
 	t.Parallel()
 
-	input := "@attach Server\nStart -> server.go"
+	input := "start=Server#Start -> server.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -970,7 +952,7 @@ func TestParseAttach(t *testing.T) {
 	want := &File{Rules: []Rule{{
 		Dest: "server.go",
 		Items: []Item{
-			{Name: "Start", MethodOf: "Server"},
+			{Name: "start", Rename: "Start", MethodOf: "Server"},
 		},
 	}}}
 	if !reflect.DeepEqual(file, want) {
@@ -981,7 +963,7 @@ func TestParseAttach(t *testing.T) {
 func TestParseAttachWithRename(t *testing.T) {
 	t.Parallel()
 
-	input := "@attach Server\nStartServer=Start -> server.go"
+	input := "StartServer=Server#Start -> server.go"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -997,33 +979,68 @@ func TestParseAttachWithRename(t *testing.T) {
 	}
 }
 
-func TestParseAttachNoTypeName(t *testing.T) {
+func TestParseAttachSameFile(t *testing.T) {
 	t.Parallel()
 
-	_, err := Parse("test", []byte("@attach\nStart"))
-	if err == nil {
-		t.Fatal("expected error for @attach without type name")
-	}
-}
-
-func TestParseDetachThenAttach(t *testing.T) {
-	t.Parallel()
-
-	// @attach after @detach should override.
-	input := "@detach\n@attach Server\nStart"
+	input := "start=Server#Start"
 	file, err := Parse("test", []byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(file.Rules) != 1 {
-		t.Fatalf("got %d rules, want 1", len(file.Rules))
+	want := &File{Rules: []Rule{{
+		Items: []Item{
+			{Name: "start", Rename: "Start", MethodOf: "Server"},
+		},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
 	}
-	item := file.Rules[0].Items[0]
-	if item.Detach {
-		t.Error("expected detach to be overridden by @attach")
+}
+
+func TestParseDirectiveAttachRejected(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse("test", []byte("@attach Server\nStart"))
+	if err == nil {
+		t.Fatal("expected error for legacy @attach directive")
 	}
-	if item.MethodOf != "Server" {
-		t.Errorf("got MethodOf=%q, want Server", item.MethodOf)
+}
+
+func TestParseDirectiveDetachRejected(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse("test", []byte("@detach\nServer#Start"))
+	if err == nil {
+		t.Fatal("expected error for legacy @detach directive")
+	}
+}
+
+func TestParseAttachDoubleHashRHS(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse("test", []byte("fn=A#B#C"))
+	if err == nil {
+		t.Fatal("expected error for two '#' on the right side")
+	}
+}
+
+func TestParseDetachHashInRename(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse("test", []byte("Server#Start=!Other#Method"))
+	if err == nil {
+		t.Fatal("expected error for '#' inside detach name")
+	}
+}
+
+func TestParseBangOnRenameRejected(t *testing.T) {
+	t.Parallel()
+
+	// "=!" is only meaningful after a '#' (detach); a plain rename
+	// to a name starting with '!' should error out.
+	_, err := Parse("test", []byte("Foo=!Bar"))
+	if err == nil {
+		t.Fatal("expected error for '=!' without preceding '#'")
 	}
 }
 
@@ -1055,9 +1072,9 @@ func FuzzParse(f *testing.F) {
 		"server.go <-\r\n\tServer\r\n",
 		"@ ",
 		"@=val",
-		"@detach\nServer#Start -> util.go",
-		"@attach Server\nStart -> server.go",
-		"@detach\nutil.go <-\n\tServer#Start\n\tServer#Stop",
+		"Server#Start=! -> util.go",
+		"Start=Server#Start -> server.go",
+		"util.go <-\n\tServer#Start=!\n\tServer#Stop=!",
 	}
 	for _, s := range seeds {
 		f.Add(s)

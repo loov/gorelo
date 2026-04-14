@@ -2,8 +2,7 @@
 # The synthesize phase should NOT auto-add the detached method
 # as a method of the moved type.
 
-@detach
-Server#Start
+Server#Start=!
 
 Server -> types.go
 

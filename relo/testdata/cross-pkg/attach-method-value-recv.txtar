@@ -1,7 +1,6 @@
 # Cross-package attach with a value receiver type (not pointer).
 
-@attach Server
-Start -> srv/methods.go
+Start=Server#Start -> srv/methods.go
 
 -- input/go.mod --
 module example.com/test

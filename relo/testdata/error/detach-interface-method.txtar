@@ -2,8 +2,7 @@
 
 @warn cannot find declaration for Read
 @warn cannot find method declaration for Read
-@detach
-Reader#Read
+Reader#Read=!
 
 -- input/go.mod --
 module example.com/pkg

@@ -1,8 +1,7 @@
 # Attaching a function whose first parameter field has multiple names should warn.
 
 @warn first parameter field has multiple names
-@attach Server
-Start
+Start=Server#Start
 
 -- input/go.mod --
 module example.com/pkg
