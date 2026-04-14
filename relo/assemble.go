@@ -158,6 +158,22 @@ func (a *assembler) assembleTargets() {
 			// Apply import alias edits for collision resolution.
 			edits = append(edits, computeImportAliasEdits(a.ix, rr, s, ic)...)
 
+			// Apply rename edits that fall inside the span (e.g., detach
+			// call-site rewrites whose enclosing decl is itself moving).
+			// Source-file processing filters these out for the source path,
+			// so applying them here is the only place they take effect.
+			if inSpan := a.renames.byFile[rr.File.Path]; len(inSpan) > 0 {
+				for _, e := range inSpan {
+					if e.Start >= s.Start && e.End <= s.End {
+						edits = append(edits, edit{
+							Start: e.Start - s.Start,
+							End:   e.End - s.Start,
+							New:   e.New,
+						})
+					}
+				}
+			}
+
 			var text string
 			if len(edits) > 0 {
 				text = applyEdits(src[s.Start:s.End], edits)

@@ -1,0 +1,58 @@
+# A caller whose file moves to the SAME target package as a detached method
+# must have its call site rewritten from method syntax to free-function
+# syntax (no package qualifier, because caller and detached function end up
+# in the same package).
+#
+# Analogous cross-package case (caller stays put while detached function
+# moves away) is covered by detach-method.txtar and already rewrites the
+# call correctly to `dst.Start(s)`. This test covers the same-destination
+# case.
+
+@detach
+Widget#Use=Use -> target/use.go
+
+target/caller.go <-
+    Run
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/widget.go --
+package src
+
+type Widget struct{}
+
+func (w *Widget) Use() error {
+	return nil
+}
+-- input/src/caller.go --
+package src
+
+func Run(w *Widget) error {
+	return w.Use()
+}
+-- golden/src/widget.go --
+package src
+
+type Widget struct{}
+-- golden/target/use.go --
+package target
+
+import (
+	"example.com/test/src"
+)
+
+func Use(w *src.Widget) error {
+	return nil
+}
+-- golden/target/caller.go --
+package target
+
+import (
+	"example.com/test/src"
+)
+
+func Run(w *src.Widget) error {
+	return Use(w)
+}

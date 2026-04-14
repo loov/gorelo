@@ -16,11 +16,11 @@ import (
 //
 // For cross-file moves, declaration edits must also be applied during span
 // extraction — see structuralDeclEdits used in assembleTargets.
-func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, renames *renameSet, imports *importSet, plan *Plan) {
+func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
 	for _, rr := range resolved {
 		switch {
 		case rr.Relo.Detach:
-			detachMethod(ix, rr, resolved, renames, imports, plan)
+			detachMethod(ix, rr, resolved, spans, renames, imports, plan)
 		case rr.Relo.MethodOf != "":
 			attachMethod(ix, rr, renames, imports, plan)
 		}
@@ -28,7 +28,7 @@ func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, renames *renam
 }
 
 // detachMethod converts a method to a standalone function.
-func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, renames *renameSet, imports *importSet, plan *Plan) {
+func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
 	if rr.File == nil {
 		return
 	}
@@ -39,10 +39,14 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, re
 		return
 	}
 
-	// Add declaration edits to renameSet (used for same-file operations;
-	// filtered out for cross-file moves, which use structuralDeclEdits).
+	// Add declaration edits to renameSet for same-file (rename-only)
+	// operations. Cross-file moves use structuralDeclEdits during
+	// extraction — emitting decl edits here as well would double-apply
+	// the receiver insertion through the in-span rename pass.
 	filePath := rr.File.Path
-	renames.byFile[filePath] = append(renames.byFile[filePath], detachDeclEdits(ix, rr, fd)...)
+	if !rr.isCrossFileMove() {
+		renames.byFile[filePath] = append(renames.byFile[filePath], detachDeclEdits(ix, rr, fd)...)
+	}
 
 	// For cross-package moves, the detached function's parameter references
 	// the receiver type. Add the import for the receiver type's final
@@ -55,7 +59,7 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, re
 		}
 	}
 
-	detachCallSites(ix, rr, fd, renames, imports, plan)
+	detachCallSites(ix, rr, fd, resolved, spans, renames, imports, plan)
 }
 
 // detachedReceiverImportPath returns the import path the detached
@@ -161,23 +165,16 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit 
 }
 
 // detachCallSites rewrites call sites from s.Method(args) → Func(s, args)
-// or pkg.Func(s, args) when moving cross-package.
-func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, renames *renameSet, imports *importSet, plan *Plan) {
+// or pkg.Func(s, args) when moving cross-package. Qualification is
+// based on the caller's FINAL location — if the caller is itself being
+// moved to the same target package as the detached function, no
+// qualifier is needed.
+func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
 	newName := rr.TargetName
 
-	// Determine cross-package qualification.
-	var tgtDir string
-	var tgtImportPath string
-	var tgtLocalName string
-	if rr.File != nil && rr.TargetFile != "" {
-		srcDir := filepath.Dir(rr.File.Path)
-		tgtDir = filepath.Dir(rr.TargetFile)
-		if srcDir != tgtDir {
-			tgtImportPath = guessImportPath(tgtDir)
-			if tgtImportPath != "" {
-				tgtLocalName = guessImportLocalName(tgtImportPath)
-			}
-		}
+	var detachTgtDir string
+	if rr.TargetFile != "" {
+		detachTgtDir = filepath.Dir(rr.TargetFile)
 	}
 
 	for _, id := range rr.Group.Idents {
@@ -197,14 +194,33 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, renames
 		xEnd := fset.Position(sel.X.End()).Offset
 		recvText := string(src[xStart:xEnd])
 
+		// Determine the caller's final dir + file, accounting for any
+		// enclosing decl that is itself being moved in this run.
+		callerFinalDir := filepath.Dir(filePath)
+		callerFinalFile := filePath
+		identOff := fset.Position(id.Ident.Pos()).Offset
+		for _, r := range resolved {
+			if r.File == nil || r.File.Path != filePath || !r.isCrossFileMove() {
+				continue
+			}
+			s := spans[r]
+			if s == nil {
+				continue
+			}
+			if identOff >= s.Start && identOff < s.End {
+				callerFinalDir = filepath.Dir(r.TargetFile)
+				callerFinalFile = r.TargetFile
+				break
+			}
+		}
+
 		// Determine the qualified function name for this call site.
 		qualName := newName
-		if tgtImportPath != "" {
-			callDir := filepath.Dir(filePath)
-			if callDir != tgtDir {
-				qualName = tgtLocalName + "." + newName
-				// Add import for the target package.
-				addImportToFile(imports, ix, filePath, tgtImportPath)
+		if detachTgtDir != "" && callerFinalDir != detachTgtDir {
+			if tgtImportPath := guessImportPath(detachTgtDir); tgtImportPath != "" {
+				qualName = guessImportLocalName(tgtImportPath) + "." + newName
+				// Add import to the caller's FINAL file.
+				addImportToFile(imports, ix, callerFinalFile, tgtImportPath)
 			}
 		}
 
