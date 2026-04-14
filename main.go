@@ -1,14 +1,16 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/pprof"
+	"strconv"
 	"strings"
+
+	"github.com/zeebo/clingy"
 
 	"github.com/loov/gorelo/mast"
 	"github.com/loov/gorelo/relo"
@@ -16,40 +18,44 @@ import (
 )
 
 func main() {
-	verbose := flag.Bool("v", false, "print each file edit to stderr")
-	dryRun := flag.Bool("dry", false, "print plan without applying")
-	rulesFile := flag.String("f", "gorelo.rules", "path to a .rules file")
-	stubs := flag.Bool("stubs", false, "generate //go:fix inline backward-compatibility stubs")
-
-	var inlineRules []string
-	flag.Func("r", "inline rule (repeatable, same syntax as rules file lines)", func(val string) error {
-		inlineRules = append(inlineRules, val)
-		return nil
+	ctx := context.Background()
+	ok, err := (clingy.Environment{
+		Name: "gorelo",
+	}).Run(ctx, func(cmds clingy.Commands) {
+		cmds.New("apply", "apply rules from file and/or --rule flags", new(cmdApply))
+		cmds.New("check", "dry-run: print plan without writing", &cmdApply{dryRun: true})
+		cmds.New("do", "apply inline rule arguments directly", new(cmdDo))
+		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gorelo: %v\n", err)
+	}
+	if !ok || err != nil {
+		os.Exit(1)
+	}
+}
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `gorelo — move and rename Go declarations across files and packages.
+type cmdHelp struct{}
 
-Gorelo loads all Go packages in the current module (including all build
-constraints), applies the requested moves and renames, and rewrites every
-file that references the affected declarations.
+func (c *cmdHelp) Setup(params clingy.Parameters) {}
 
-Usage:
-  gorelo [flags]
+func (c *cmdHelp) Execute(ctx context.Context) error {
+	fmt.Fprint(clingy.Stdout(ctx), helpText)
+	return nil
+}
 
-Flags:
-`)
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, `
-Rules can come from a file (-f, default "gorelo.rules") and/or from
-inline -r flags. Both sources are merged.
+const helpText = `gorelo is a tool for refactoring Go codebases.
+It applies moves, renames and rewrites to every file that
+references the affected declarations. It tries to do the refactoring
+across taking into account build tags.
 
 Examples:
-  gorelo                                          # apply gorelo.rules
-  gorelo -f refactor.rules                        # use a different rules file
-  gorelo -r "Server -> server.go"                 # inline rule
-  gorelo -r "server.go <- Server Client" -v       # reverse notation, verbose
-  gorelo -dry -f gorelo.rules                     # preview without writing
+  gorelo apply                                    # apply gorelo.rules
+  gorelo apply -f refactor.rules                  # different rules file
+  gorelo apply -r "Server -> server.go"           # file plus inline rule
+  gorelo check -f gorelo.rules                    # preview without writing
+  gorelo do "Server -> server.go"                 # inline, no file
+  gorelo do -v "server.go <- Server Client"       # inline, verbose
 
 Rule syntax:
   Server -> server.go                  # move declaration to file (forward)
@@ -64,50 +70,99 @@ Rule syntax:
 
   file.go:Server -> target.go          # disambiguate by source file
   ./pkg.Name -> target.go              # disambiguate by relative package
-  github.com/x/y.Name -> target.go    # disambiguate by full package path
+  github.com/x/y.Name -> target.go     # disambiguate by full package path
+
+  @detach
+  Server.ServePage -> serve.go         # detach method
 
 Directives (in rules files):
-  @fmt goimports                       # run formatter on modified files
-  @stubs=true                          # generate //go:fix backward-compat stubs
-`)
-	}
+  # run formatter on modified files
+  @fmt goimports -w -local example.com/project
+  # generate //go:fix backward-compat stubs
+  @stubs=true
+`
 
-	cpuprofile := flag.String("cpuprofile", "", "write CPU profile to file")
-
-	flag.Parse()
-
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal(err)
-		}
-		defer pprof.StopCPUProfile()
-	}
-
-	if err := run(*verbose, *dryRun, *rulesFile, *stubs, inlineRules); err != nil {
-		fmt.Fprintf(os.Stderr, "gorelo: %v\n", err)
-		os.Exit(1)
-	}
+type cmdApply struct {
+	rulesFile   string
+	inlineRules []string
+	verbose     bool
+	stubs       bool
+	cpuprofile  string
+	dryRun      bool
 }
 
-func run(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []string) error {
+func (c *cmdApply) Setup(params clingy.Parameters) {
+	c.rulesFile = params.Flag("file", "path to a .rules file", "gorelo.rules",
+		clingy.Short('f')).(string)
+	c.inlineRules = params.Flag("rule", "inline rule (repeatable, same syntax as rules file lines)",
+		[]string(nil), clingy.Short('r'), clingy.Repeated).([]string)
+	c.verbose = params.Flag("verbose", "print each file edit to stderr", false,
+		clingy.Short('v'), clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	c.stubs = params.Flag("stubs", "generate //go:fix inline backward-compatibility stubs", false,
+		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	c.cpuprofile = params.Flag("cpuprofile", "write CPU profile to file", "").(string)
+}
+
+func (c *cmdApply) Execute(ctx context.Context) error {
+	return withProfile(c.cpuprofile, func() error {
+		return runRelo(c.verbose, c.dryRun, c.rulesFile, c.stubs, c.inlineRules)
+	})
+}
+
+type cmdDo struct {
+	rules      []string
+	verbose    bool
+	stubs      bool
+	cpuprofile string
+}
+
+func (c *cmdDo) Setup(params clingy.Parameters) {
+	c.verbose = params.Flag("verbose", "print each file edit to stderr", false,
+		clingy.Short('v'), clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	c.stubs = params.Flag("stubs", "generate //go:fix inline backward-compatibility stubs", false,
+		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	c.cpuprofile = params.Flag("cpuprofile", "write CPU profile to file", "").(string)
+	c.rules = params.Arg("rule", "inline rule (repeatable)", clingy.Repeated).([]string)
+}
+
+func (c *cmdDo) Execute(ctx context.Context) error {
+	return withProfile(c.cpuprofile, func() error {
+		return runRelo(c.verbose, false, "", c.stubs, c.rules)
+	})
+}
+
+func withProfile(path string, fn func() error) error {
+	if path == "" {
+		return fn()
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := pprof.StartCPUProfile(f); err != nil {
+		return err
+	}
+	defer pprof.StopCPUProfile()
+	return fn()
+}
+
+func runRelo(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []string) error {
 	// Collect rules from file and -r flags.
 	var merged rules.File
 
-	data, err := os.ReadFile(rulesPath)
-	if err == nil {
-		f, err := rules.Parse(rulesPath, data)
-		if err != nil {
-			return fmt.Errorf("parsing %s: %w", rulesPath, err)
+	if rulesPath != "" {
+		data, err := os.ReadFile(rulesPath)
+		if err == nil {
+			f, err := rules.Parse(rulesPath, data)
+			if err != nil {
+				return fmt.Errorf("parsing %s: %w", rulesPath, err)
+			}
+			merged.Directives = append(merged.Directives, f.Directives...)
+			merged.Rules = append(merged.Rules, f.Rules...)
+		} else if !os.IsNotExist(err) {
+			return err
 		}
-		merged.Directives = append(merged.Directives, f.Directives...)
-		merged.Rules = append(merged.Rules, f.Rules...)
-	} else if !os.IsNotExist(err) {
-		return err
 	}
 
 	for i, r := range inlineRules {

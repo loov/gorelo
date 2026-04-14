@@ -15,25 +15,33 @@ go install github.com/loov/gorelo@latest
 ## Usage
 
 ```
-gorelo [flags]
+gorelo <command> [flags]
 ```
 
-| Flag     | Default         | Description                                         |
-|----------|-----------------|-----------------------------------------------------|
-| `-f`     | `gorelo.rules`  | Path to a rules file                                |
-| `-r`     | (repeatable)    | Inline rule, same syntax as a rules file line       |
-| `-dry`   | `false`         | Print plan without applying changes                 |
-| `-v`     | `false`         | Print each file edit to stderr                      |
-| `-stubs` | `false`         | Generate `//go:fix` inline backward-compat stubs    |
+| Command | Description                                            |
+|---------|--------------------------------------------------------|
+| `apply` | Apply rules from a file and/or `--rule` flags          |
+| `check` | Print the plan without writing (dry-run of `apply`)    |
+| `do`    | Apply inline rule arguments directly (no file)         |
 
-Rules can come from a file (`-f`) and/or inline (`-r`). Both are merged.
+`apply` and `check` share these flags:
+
+| Flag              | Default        | Description                                      |
+|-------------------|----------------|--------------------------------------------------|
+| `-f`, `--file`    | `gorelo.rules` | Path to a rules file                             |
+| `-r`, `--rule`    | (repeatable)   | Inline rule, same syntax as a rules file line    |
+| `-v`, `--verbose` | `false`        | Print each file edit to stderr                   |
+| `--stubs`         | `false`        | Generate `//go:fix` inline backward-compat stubs |
+
+`do` takes rule arguments positionally and accepts `-v` / `--stubs`.
 
 ```bash
-gorelo                                        # apply gorelo.rules
-gorelo -f refactor.rules                      # different rules file
-gorelo -r "Server -> server.go"               # inline rule
-gorelo -r "server.go <- Server Client" -v     # reverse notation, verbose
-gorelo -dry -f gorelo.rules                   # preview without writing
+gorelo apply                                       # apply gorelo.rules
+gorelo apply -f refactor.rules                     # different rules file
+gorelo apply -r "Server -> server.go"              # file plus inline rule
+gorelo check -f gorelo.rules                       # preview without writing
+gorelo do "Server -> server.go"                    # inline, no file
+gorelo do -v "server.go <- Server Client"          # inline, verbose
 ```
 
 See [EXAMPLE.md](EXAMPLE.md) for a walkthrough of splitting a flat package

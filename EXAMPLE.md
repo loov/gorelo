@@ -143,13 +143,13 @@ service/service.go <-
 Preview the changes first:
 
 ```bash
-gorelo -dry -f gorelo.rules
+gorelo check -f gorelo.rules
 ```
 
 Then apply:
 
 ```bash
-gorelo -f gorelo.rules
+gorelo apply -f gorelo.rules
 ```
 
 ## After
@@ -247,10 +247,10 @@ automatically updated to use the new package paths and exported names.
 ## Generating backward-compatibility stubs
 
 If you want to keep the old `app.Server` etc. working during a transition
-period, add `-stubs`:
+period, add `--stubs`:
 
 ```bash
-gorelo -stubs -f gorelo.rules
+gorelo apply --stubs -f gorelo.rules
 ```
 
 This generates `//go:fix` type aliases and wrapper functions in the original
