@@ -134,7 +134,7 @@ func (a *assembler) assembleTargets() {
 			edits := er.edits
 
 			// Add structural edits for detach/attach declarations.
-			edits = append(edits, structuralDeclEdits(a.ix, rr, s)...)
+			edits = append(edits, structuralDeclEdits(a.ix, rr, s, a.resolved)...)
 			for impPath := range er.imports {
 				crossTargetImports[impPath] = true
 			}

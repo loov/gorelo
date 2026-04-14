@@ -1,0 +1,42 @@
+# Detach a method whose receiver type is ALSO being renamed and moved to a
+# different target package in the same run. The detached function's receiver
+# must be rewritten as a parameter using the type's POST-rename name and
+# POST-move package qualifier.
+
+@detach
+frontendSession#pageCSRFState=PageCSRFState -> target/csrf.go
+
+webtest/session.go <-
+    frontendSession=Session
+    frontendSession#token=Token
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/session.go --
+package src
+
+type frontendSession struct {
+	token string
+}
+
+func (s *frontendSession) pageCSRFState(path string) string {
+	return s.token + ":" + path
+}
+-- golden/webtest/session.go --
+package webtest
+
+type Session struct {
+	Token string
+}
+-- golden/target/csrf.go --
+package target
+
+import (
+	"example.com/test/webtest"
+)
+
+func PageCSRFState(s *webtest.Session, path string) string {
+	return s.Token + ":" + path
+}

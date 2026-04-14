@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"path/filepath"
+	"strings"
 
 	"github.com/loov/gorelo/mast"
 )
@@ -19,7 +20,7 @@ func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, renames *renam
 	for _, rr := range resolved {
 		switch {
 		case rr.Relo.Detach:
-			detachMethod(ix, rr, renames, imports, plan)
+			detachMethod(ix, rr, resolved, renames, imports, plan)
 		case rr.Relo.MethodOf != "":
 			attachMethod(ix, rr, renames, imports, plan)
 		}
@@ -27,7 +28,7 @@ func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, renames *renam
 }
 
 // detachMethod converts a method to a standalone function.
-func detachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports *importSet, plan *Plan) {
+func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, renames *renameSet, imports *importSet, plan *Plan) {
 	if rr.File == nil {
 		return
 	}
@@ -44,20 +45,83 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports 
 	renames.byFile[filePath] = append(renames.byFile[filePath], detachDeclEdits(ix, rr, fd)...)
 
 	// For cross-package moves, the detached function's parameter references
-	// the receiver type from the source package. Add the source import
-	// to the target file.
+	// the receiver type. Add the import for the receiver type's final
+	// location — which may differ from the source package when the type
+	// itself is being moved in the same run.
 	if rr.isCrossFileMove() {
-		srcDir := filepath.Dir(rr.File.Path)
-		tgtDir := filepath.Dir(rr.TargetFile)
-		if srcDir != tgtDir {
-			srcImportPath := guessImportPath(srcDir)
-			if srcImportPath != "" {
-				addImportToFile(imports, ix, rr.TargetFile, srcImportPath)
-			}
+		recvImportPath := detachedReceiverImportPath(ix, rr, fd, resolved)
+		if recvImportPath != "" {
+			addImportToFile(imports, ix, rr.TargetFile, recvImportPath)
 		}
 	}
 
 	detachCallSites(ix, rr, fd, renames, imports, plan)
+}
+
+// detachedReceiverImportPath returns the import path the detached
+// function's target file needs to import in order to reference the
+// receiver type. It takes into account concurrent renames/moves of
+// the receiver type. Returns "" when no import is needed (receiver
+// type resolves to the same package as the detach target).
+func detachedReceiverImportPath(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) string {
+	tgtDir := filepath.Dir(rr.TargetFile)
+	var recvDir string
+	if _, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {
+		recvDir = filepath.Dir(recvTargetFile)
+	} else {
+		recvDir = filepath.Dir(rr.File.Path)
+	}
+	if recvDir == tgtDir {
+		return ""
+	}
+	return guessImportPath(recvDir)
+}
+
+// receiverTypeResolved returns the post-rename name and target file of
+// the method receiver's type when that type is itself being moved or
+// renamed in the same run. Returns (_, _, false) when the receiver
+// type is not in the resolved set.
+func receiverTypeResolved(ix *mast.Index, fd *ast.FuncDecl, resolved []*resolvedRelo) (name string, targetFile string, ok bool) {
+	id := receiverTypeIdent(fd.Recv)
+	if id == nil {
+		return "", "", false
+	}
+	grp := ix.Group(id)
+	if grp == nil {
+		return "", "", false
+	}
+	for _, r := range resolved {
+		if r.Group == grp {
+			return r.TargetName, r.TargetFile, true
+		}
+	}
+	return "", "", false
+}
+
+// receiverTypeIdent returns the *ast.Ident naming the receiver type
+// (the T in `func (r *T)`, `func (r T)`, `func (r *T[P])`, or
+// `func (r T[P, Q])`). Returns nil for shapes we don't rewrite.
+func receiverTypeIdent(recv *ast.FieldList) *ast.Ident {
+	if recv == nil || len(recv.List) == 0 {
+		return nil
+	}
+	t := recv.List[0].Type
+	if star, ok := t.(*ast.StarExpr); ok {
+		t = star.X
+	}
+	switch x := t.(type) {
+	case *ast.Ident:
+		return x
+	case *ast.IndexExpr:
+		if id, ok := x.X.(*ast.Ident); ok {
+			return id
+		}
+	case *ast.IndexListExpr:
+		if id, ok := x.X.(*ast.Ident); ok {
+			return id
+		}
+	}
+	return nil
 }
 
 // detachDeclEdits returns edits to convert a method declaration to a function.
@@ -84,7 +148,7 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit 
 	}
 
 	// Insert receiver as first parameter.
-	recvParam := formatRecvAsParam(fd.Recv, fset, "")
+	recvParam := formatRecvAsParam(fd.Recv, fset, "", "")
 	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
 	hasParams := fd.Type.Params != nil && len(fd.Type.Params.List) > 0
 	insertText := recvParam
@@ -409,7 +473,7 @@ func addImportToFile(imports *importSet, ix *mast.Index, filePath, impPath strin
 
 // structuralDeclEdits computes span-relative edits for the declaration
 // of a detach/attach relo. Used during span extraction in assembleTargets.
-func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span) []edit {
+func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) []edit {
 	if rr.File == nil || s == nil {
 		return nil
 	}
@@ -422,7 +486,7 @@ func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span) []edit {
 			return nil
 		}
 		// For cross-package moves, qualify the receiver type.
-		absEdits = detachDeclEditsTarget(ix, rr, fd)
+		absEdits = detachDeclEditsTarget(ix, rr, fd, resolved)
 	} else if rr.Relo.MethodOf != "" {
 		fd := findFuncDecl(rr.File.Syntax, rr.DefIdent.Ident)
 		if fd == nil {
@@ -444,8 +508,10 @@ func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span) []edit {
 }
 
 // detachDeclEditsTarget is like detachDeclEdits but qualifies the receiver
-// type for cross-package moves.
-func detachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit {
+// type for cross-package moves. When the receiver type is itself being
+// renamed or moved in the same run, the post-rename name and post-move
+// package qualifier are used.
+func detachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) []edit {
 	fset := ix.Fset
 	src := fileContent(rr.File)
 	var edits []edit
@@ -459,26 +525,33 @@ func detachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) [
 	}
 	edits = append(edits, edit{Start: recvOpen, End: recvEnd, New: ""})
 
-	// Rename ident if needed.
+	// Rename func ident if needed.
 	if rr.TargetName != rr.Group.Name {
 		nameStart := fset.Position(fd.Name.Pos()).Offset
 		nameEnd := nameStart + len(fd.Name.Name)
 		edits = append(edits, edit{Start: nameStart, End: nameEnd, New: rr.TargetName})
 	}
 
-	// Determine package qualifier for the receiver type.
-	var pkgQualifier string
-	srcDir := filepath.Dir(rr.File.Path)
+	// Determine the receiver type's final name and package qualifier,
+	// taking into account any concurrent rename/move of that type.
 	tgtDir := filepath.Dir(rr.TargetFile)
-	if srcDir != tgtDir {
-		srcImportPath := guessImportPath(srcDir)
-		if srcImportPath != "" {
-			pkgQualifier = guessImportLocalName(srcImportPath)
+	recvNewName := ""
+	var recvDir string
+	if name, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {
+		recvNewName = name
+		recvDir = filepath.Dir(recvTargetFile)
+	} else {
+		recvDir = filepath.Dir(rr.File.Path)
+	}
+	var pkgQualifier string
+	if recvDir != tgtDir {
+		if recvImportPath := guessImportPath(recvDir); recvImportPath != "" {
+			pkgQualifier = guessImportLocalName(recvImportPath)
 		}
 	}
 
-	// Insert receiver as first parameter (possibly qualified).
-	recvParam := formatRecvAsParam(fd.Recv, fset, pkgQualifier)
+	// Insert receiver as first parameter (possibly qualified and renamed).
+	recvParam := formatRecvAsParam(fd.Recv, fset, pkgQualifier, recvNewName)
 	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
 	hasParams := fd.Type.Params != nil && len(fd.Type.Params.List) > 0
 	insertText := recvParam
@@ -558,13 +631,22 @@ func enclosingCallOnly(file *ast.File, ident *ast.Ident) *ast.CallExpr {
 }
 
 // formatRecvAsParam formats a receiver field list as a parameter string.
-// If pkgQualifier is non-empty, the receiver type is qualified (e.g., "s *pkg.Server").
-func formatRecvAsParam(recv *ast.FieldList, fset *token.FileSet, pkgQualifier string) string {
+// If pkgQualifier is non-empty, the receiver type is qualified (e.g.,
+// "s *pkg.Server"). If typeNewName is non-empty, the receiver type's
+// base name is replaced (used when the type is being renamed in the
+// same run). Pointer indirection and generic type arguments are
+// preserved.
+func formatRecvAsParam(recv *ast.FieldList, fset *token.FileSet, pkgQualifier, typeNewName string) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
 	}
 	field := recv.List[0]
-	typeStr := nodeString(field.Type, fset)
+	var typeStr string
+	if typeNewName != "" {
+		typeStr = formatTypeWithRenamedIdent(field.Type, fset, typeNewName)
+	} else {
+		typeStr = nodeString(field.Type, fset)
+	}
 	if pkgQualifier != "" {
 		typeStr = qualifyTypeStr(typeStr, pkgQualifier)
 	}
@@ -572,6 +654,27 @@ func formatRecvAsParam(recv *ast.FieldList, fset *token.FileSet, pkgQualifier st
 		return field.Names[0].Name + " " + typeStr
 	}
 	return typeStr
+}
+
+// formatTypeWithRenamedIdent serializes a receiver type expression,
+// replacing the innermost type-name Ident with newName. Pointer wraps
+// and generic type-argument lists are preserved as-is.
+func formatTypeWithRenamedIdent(expr ast.Expr, fset *token.FileSet, newName string) string {
+	switch e := expr.(type) {
+	case *ast.StarExpr:
+		return "*" + formatTypeWithRenamedIdent(e.X, fset, newName)
+	case *ast.Ident:
+		return newName
+	case *ast.IndexExpr:
+		return newName + "[" + nodeString(e.Index, fset) + "]"
+	case *ast.IndexListExpr:
+		parts := make([]string, 0, len(e.Indices))
+		for _, idx := range e.Indices {
+			parts = append(parts, nodeString(idx, fset))
+		}
+		return newName + "[" + strings.Join(parts, ", ") + "]"
+	}
+	return nodeString(expr, fset)
 }
 
 // qualifyTypeStr prepends a package qualifier to a type string,
