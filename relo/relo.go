@@ -83,7 +83,7 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 
 	// Phase 4-5: check build constraints and detect conflicts.
 	checkConstraints(resolved, plan)
-	if err := detectConflicts(ix, resolved, spans, plan); err != nil {
+	if err := detectConflicts(ix, resolved, spans, opts, plan); err != nil {
 		return nil, err
 	}
 

@@ -1,8 +1,11 @@
-# Move to a package that already imports source — circular import warning.
+# Move to a package that already imports source, where a sibling in
+# source still references the moved decl after the move. The rewrite
+# forces src→dst, and dst→src already exists — a real cycle warning.
 
 Helper -> dst/helper.go
 
 @warn may create a circular import
+@vet import cycle not allowed
 
 -- input/go.mod --
 module example.com/circular
@@ -15,26 +18,32 @@ package src
 func Helper() string {
 	return "help"
 }
+-- input/src/consumer.go --
+package src
 
-// Other stays behind.
-func Other() string {
-	return "other"
+// StillUsesHelper keeps referencing Helper after the move.
+func StillUsesHelper() string {
+	return Helper()
 }
 -- input/dst/b.go --
 package dst
 
 import "example.com/circular/src"
 
-// UsesOther calls src.Other.
-func UsesOther() string {
-	return src.Other()
+// UsesStill keeps src importing dst indirectly through the consumer.
+func UsesStill() string {
+	return src.StillUsesHelper()
 }
--- golden/src/a.go --
+-- golden/src/consumer.go --
 package src
 
-// Other stays behind.
-func Other() string {
-	return "other"
+import (
+	"example.com/circular/dst"
+)
+
+// StillUsesHelper keeps referencing Helper after the move.
+func StillUsesHelper() string {
+	return dst.Helper()
 }
 -- golden/dst/helper.go --
 package dst
@@ -48,7 +57,7 @@ package dst
 
 import "example.com/circular/src"
 
-// UsesOther calls src.Other.
-func UsesOther() string {
-	return src.Other()
+// UsesStill keeps src importing dst indirectly through the consumer.
+func UsesStill() string {
+	return src.StillUsesHelper()
 }

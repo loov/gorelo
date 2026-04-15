@@ -3,9 +3,6 @@
 
 Greet MaxSize -> dst/moved.go
 
-@warn may create a circular import
-@warn may create a circular import
-
 -- input/go.mod --
 module example.com/test
 

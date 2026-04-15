@@ -36,7 +36,7 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 }
 
 // detectConflicts checks for naming and movement conflicts (phase 5).
-func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) error {
+func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, opts *Options, plan *Plan) error {
 	// Check movement conflicts: same group moved to two different targets.
 	// Use a composite key of (group, source file path) so that declarations
 	// from non-overlapping build constraints can target different files.
@@ -168,6 +168,10 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 	}
 
 	// Warn about potential circular imports for cross-package moves.
+	// A cycle only forms when (a) the target package already imports the
+	// source package AND (b) the move forces a new source→target import,
+	// which happens only when a sibling file in the source package still
+	// references the moved declaration.
 	for _, rr := range resolved {
 		if rr.File == nil {
 			continue
@@ -177,41 +181,22 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 		if targetDir == srcDir {
 			continue
 		}
-		// Check if the target package imports the source package.
 		srcImportPath := guessImportPath(srcDir)
 		if srcImportPath == "" {
 			continue
 		}
-		targetFile := ix.FilesByPath[rr.TargetFile]
-		if targetFile == nil {
-			// Target file doesn't exist yet; find the package by
-			// matching the target directory against known packages.
-			targetPkg := findPkgForDir(ix, targetDir)
-			if targetPkg == nil {
-				continue
-			}
-			for _, f := range targetPkg.Files {
-				for _, imp := range f.Syntax.Imports {
-					impPath := importPath(imp)
-					if impPath == srcImportPath {
-						plan.Warnings.AddAtf(rr, ix,
-							"moving %s to %s may create a circular import: target already imports source package %s",
-							rr.Group.Name, rr.TargetFile, srcImportPath)
-						break
-					}
-				}
-			}
+		// With stubs enabled the source file keeps a forwarding alias
+		// that references the target package, forcing a new import.
+		stubForces := opts.stubsEnabled() && rr.Group.Kind.HasStub()
+		if !stubForces && !sourceNeedsTargetImport(rr, resolved) {
 			continue
 		}
-		for _, imp := range targetFile.Syntax.Imports {
-			impPath := importPath(imp)
-			if impPath == srcImportPath {
-				plan.Warnings.AddAtf(rr, ix,
-					"moving %s to %s may create a circular import: target already imports source package %s",
-					rr.Group.Name, rr.TargetFile, srcImportPath)
-				break
-			}
+		if !targetImportsSource(ix, rr.TargetFile, targetDir, srcImportPath) {
+			continue
 		}
+		plan.Warnings.AddAtf(rr, ix,
+			"moving %s to %s may create a circular import: target already imports source package %s",
+			rr.Group.Name, rr.TargetFile, srcImportPath)
 	}
 
 	// Warn about go:embed / go:generate directives.
@@ -558,6 +543,70 @@ func hasDirective(decl ast.Decl, file *ast.File, fset *token.FileSet, directive 
 						return true
 					}
 				}
+			}
+		}
+	}
+	return false
+}
+
+// sourceNeedsTargetImport reports whether moving rr will force its source
+// package to import the target package. This happens when a file in the
+// source package references the moved group but the file itself is not
+// moving to the same target directory.
+func sourceNeedsTargetImport(rr *resolvedRelo, resolved []*resolvedRelo) bool {
+	if rr.File == nil {
+		return false
+	}
+	srcPkg := rr.File.Pkg
+	targetDir := filepath.Dir(rr.TargetFile)
+
+	// Build a set of source files that travel to the same target
+	// directory; their references don't induce a new import.
+	movingInSrcPkg := make(map[string]bool)
+	for _, other := range resolved {
+		if other.File == nil || other.File.Pkg != srcPkg {
+			continue
+		}
+		if filepath.Dir(other.TargetFile) == targetDir {
+			movingInSrcPkg[other.File.Path] = true
+		}
+	}
+
+	for _, id := range rr.Group.Idents {
+		if id.Kind != mast.Use || id.File == nil {
+			continue
+		}
+		if id.File.Pkg != srcPkg {
+			continue
+		}
+		if movingInSrcPkg[id.File.Path] {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// targetImportsSource reports whether any file in the package at targetDir
+// imports srcImportPath. It handles both existing target files and packages
+// rooted at a target directory that doesn't yet contain the target file.
+func targetImportsSource(ix *mast.Index, targetFilePath, targetDir, srcImportPath string) bool {
+	if f := ix.FilesByPath[targetFilePath]; f != nil {
+		for _, imp := range f.Syntax.Imports {
+			if importPath(imp) == srcImportPath {
+				return true
+			}
+		}
+		return false
+	}
+	targetPkg := findPkgForDir(ix, targetDir)
+	if targetPkg == nil {
+		return false
+	}
+	for _, f := range targetPkg.Files {
+		for _, imp := range f.Syntax.Imports {
+			if importPath(imp) == srcImportPath {
+				return true
 			}
 		}
 	}
