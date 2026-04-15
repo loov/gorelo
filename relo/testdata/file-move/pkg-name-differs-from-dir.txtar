@@ -1,0 +1,40 @@
+# Move a file into a directory whose package name differs from the
+# directory basename. The destination's package clause must use the
+# existing package name, not the directory name.
+
+src/greet.go -> lib/greet.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+// Greet says hi.
+func Greet() string { return "hello" }
+-- input/lib/existing.go --
+package mylib
+
+func Existing() string { return "exists" }
+-- input/src/use.go --
+package src
+
+func Use() string { return Greet() }
+-- golden/src/use.go --
+package src
+
+import (
+	mylib "example.com/test/lib"
+)
+
+func Use() string { return mylib.Greet() }
+-- golden/lib/existing.go --
+package mylib
+
+func Existing() string { return "exists" }
+-- golden/lib/greet.go --
+package mylib
+
+// Greet says hi.
+func Greet() string { return "hello" }

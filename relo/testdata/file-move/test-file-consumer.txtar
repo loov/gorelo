@@ -1,0 +1,61 @@
+# Cross-package file move where a test file in a different package is a
+# consumer. The test file's imports get updated alongside production code.
+
+src/greet.go -> dst/greet.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+// Greet says hi.
+func Greet() string { return "hello" }
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Use() string { return src.Greet() }
+-- input/consumer/consumer_test.go --
+package consumer
+
+import (
+	"testing"
+
+	"example.com/test/src"
+)
+
+func TestGreet(t *testing.T) {
+	if src.Greet() == "" {
+		t.Fatal()
+	}
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string { return dst.Greet() }
+-- golden/consumer/consumer_test.go --
+package consumer
+
+import (
+	"testing"
+
+	"example.com/test/dst"
+)
+
+func TestGreet(t *testing.T) {
+	if dst.Greet() == "" {
+		t.Fatal()
+	}
+}
+-- golden/dst/greet.go --
+package dst
+
+// Greet says hi.
+func Greet() string { return "hello" }

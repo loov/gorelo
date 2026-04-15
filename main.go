@@ -64,6 +64,9 @@ Rule syntax:
       Server
       Client
 
+  old.go -> new.go                     # move a whole file (preserves order)
+  src/greet.go -> dst/greet.go         # file move across packages
+
   OldName=NewName -> target.go         # move and rename
   Type#Field=NewField                  # rename a struct field
   Type#Outer.Inner=NewInner            # rename nested anonymous struct field
@@ -207,13 +210,13 @@ func runRelo(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules
 	if err != nil {
 		return fmt.Errorf("resolving working directory: %w", err)
 	}
-	relos, err := relo.FromRules(ix, merged.Rules, absDir)
+	relos, fileMoves, err := relo.FromRules(ix, merged.Rules, absDir)
 	if err != nil {
 		return err
 	}
 
 	// Compile plan.
-	plan, err := relo.Compile(ix, relos, opts)
+	plan, err := relo.Compile(ix, relos, fileMoves, opts)
 	if err != nil {
 		return fmt.Errorf("compiling plan: %w", err)
 	}

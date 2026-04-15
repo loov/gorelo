@@ -1,0 +1,32 @@
+# Moving the only file out of a package leaves the source directory
+# empty. No source-package files remain; the destination file contains
+# the moved declarations verbatim.
+
+src/only.go -> dst/only.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/only.go --
+package src
+
+// Greet says hi.
+func Greet() string {
+	return "hello"
+}
+-- input/other/unrelated.go --
+package other
+
+func Unrelated() string { return "u" }
+-- golden/other/unrelated.go --
+package other
+
+func Unrelated() string { return "u" }
+-- golden/dst/only.go --
+package dst
+
+// Greet says hi.
+func Greet() string {
+	return "hello"
+}

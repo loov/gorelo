@@ -15,17 +15,23 @@ import (
 
 // assembler holds state shared across the target, source, and rename phases.
 type assembler struct {
-	ix       *mast.Index
-	resolved []*resolvedRelo
-	spans    map[*resolvedRelo]*span
-	renames  *renameSet
-	imports  *importSet
-	opts     *Options
-	plan     *Plan
-	es       *editSet
+	ix        *mast.Index
+	resolved  []*resolvedRelo
+	spans     map[*resolvedRelo]*span
+	renames   *renameSet
+	imports   *importSet
+	fileMoves []*fileMoveInfo
+	opts      *Options
+	plan      *Plan
+	es        *editSet
 
 	byTarget map[string][]*resolvedRelo
 	bySource map[string][]*resolvedRelo
+
+	// fileMovePaths names every source and target path already written by
+	// the whole-file-move pass; the per-decl target/source phases skip
+	// these to avoid clobbering the wholesale content.
+	fileMovePaths map[string]bool
 
 	// targetNewDecls tracks declarations appended during the target phase.
 	// When a file is both source and target, the source phase re-appends
@@ -34,13 +40,14 @@ type assembler struct {
 }
 
 // assemble builds the final FileEdit list (phase 8).
-func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, opts *Options, plan *Plan) {
+func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, fileMoves []*fileMoveInfo, opts *Options, plan *Plan) {
 	a := &assembler{
 		ix:             ix,
 		resolved:       resolved,
 		spans:          spans,
 		renames:        renames,
 		imports:        imports,
+		fileMoves:      fileMoves,
 		opts:           opts,
 		plan:           plan,
 		es:             newEditSet(),
@@ -49,6 +56,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		targetNewDecls: make(map[string]string),
 	}
 
+	a.fileMovePaths = a.assembleFileMoves(fileMoves)
 	a.assembleTargets()
 	a.assembleSources()
 	a.assembleRenames()
@@ -67,6 +75,19 @@ func (a *assembler) assembleTargets() {
 	sortedTargets := sortedKeys(a.byTarget)
 	for _, targetPath := range sortedTargets {
 		rrs := a.byTarget[targetPath]
+		// Drop relos already emitted wholesale by the file-move pass;
+		// only leftover relos (e.g., methods synthesised from sibling
+		// files that follow a type defined in the moved file) remain.
+		if a.fileMovePaths[targetPath] {
+			filtered := rrs[:0:0]
+			for _, rr := range rrs {
+				if rr.FromFileMove != nil {
+					continue
+				}
+				filtered = append(filtered, rr)
+			}
+			rrs = filtered
+		}
 		if len(rrs) == 0 {
 			continue
 		}
@@ -256,8 +277,15 @@ func (a *assembler) assembleTargets() {
 		}
 		newDecls := declsBuf.String()
 
-		// Check if target file already exists.
-		existing, err := os.ReadFile(targetPath)
+		// Check if target file already exists, either in the edit set
+		// (e.g., emitted by the file-move pass) or on disk.
+		var existing []byte
+		var err error
+		if content, ok := a.es.Get(targetPath); ok {
+			existing = []byte(content)
+		} else {
+			existing, err = os.ReadFile(targetPath)
+		}
 		if err == nil && len(existing) > 0 {
 			// Append to existing file.
 			content := string(existing)
@@ -328,6 +356,9 @@ func (a *assembler) assembleTargets() {
 func (a *assembler) assembleSources() {
 	sortedSources := sortedKeys(a.bySource)
 	for _, sourcePath := range sortedSources {
+		if a.fileMovePaths[sourcePath] {
+			continue
+		}
 		rrs := a.bySource[sourcePath]
 		if len(rrs) == 0 {
 			continue
@@ -519,6 +550,9 @@ func (a *assembler) assembleRenames() {
 	for _, filePath := range sortedRenameFiles {
 		edits := a.renames.byFile[filePath]
 		if _, isSource := a.bySource[filePath]; isSource {
+			continue
+		}
+		if a.fileMovePaths[filePath] {
 			continue
 		}
 		if len(edits) == 0 {

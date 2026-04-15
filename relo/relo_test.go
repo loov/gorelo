@@ -102,7 +102,7 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 	}
 
 	// Parse rules and relo instructions from the txtar comment.
-	f, relos, resolveErr := parseRules(t, string(ar.Comment), ix, pkgDir)
+	f, relos, fileMoves, resolveErr := parseRules(t, string(ar.Comment), ix, pkgDir)
 
 	// Build compile options from directives.
 	var opts relo.Options
@@ -124,7 +124,7 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 		combinedErr := resolveErr
 		var compileErr error
 		if combinedErr == nil {
-			_, compileErr = relo.Compile(ix, relos, &opts)
+			_, compileErr = relo.Compile(ix, relos, fileMoves, &opts)
 			combinedErr = compileErr
 		}
 		if combinedErr == nil {
@@ -140,7 +140,7 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 	}
 
 	// Compile.
-	plan, err := relo.Compile(ix, relos, &opts)
+	plan, err := relo.Compile(ix, relos, fileMoves, &opts)
 	if err != nil {
 		t.Fatal("compile:", err)
 	}
@@ -340,8 +340,8 @@ func showCR(s string) string {
 
 // parseRules parses the txtar comment section using rules.Parse and
 // resolves items to relo.Relo via relo.FromRules. Returns the parsed
-// file (for directive access) and the resolved relos.
-func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rules.File, []relo.Relo, error) {
+// file (for directive access), the resolved relos, and any file moves.
+func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rules.File, []relo.Relo, []relo.FileMove, error) {
 	t.Helper()
 
 	f, err := rules.Parse("test", []byte(text))
@@ -349,9 +349,9 @@ func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rule
 		t.Fatal("parsing rules:", err)
 	}
 
-	relos, err := relo.FromRules(ix, f.Rules, pkgDir)
+	relos, fileMoves, err := relo.FromRules(ix, f.Rules, pkgDir)
 	if err != nil {
-		return f, nil, err
+		return f, nil, nil, err
 	}
-	return f, relos, nil
+	return f, relos, fileMoves, nil
 }

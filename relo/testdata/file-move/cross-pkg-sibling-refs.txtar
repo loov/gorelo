@@ -1,0 +1,42 @@
+# Move a file whose declarations reference a sibling in the source package.
+# The moved file must qualify those references through the source import
+# path.
+
+src/greet.go -> dst/greet.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+// Greet greets using the sibling Suffix.
+func Greet(name string) string {
+	return "hello, " + name + Suffix()
+}
+-- input/src/sibling.go --
+package src
+
+// Suffix is exported so cross-package references work after the move.
+func Suffix() string {
+	return "!"
+}
+-- golden/src/sibling.go --
+package src
+
+// Suffix is exported so cross-package references work after the move.
+func Suffix() string {
+	return "!"
+}
+-- golden/dst/greet.go --
+package dst
+
+import (
+	"example.com/test/src"
+)
+
+// Greet greets using the sibling Suffix.
+func Greet(name string) string {
+	return "hello, " + name + src.Suffix()
+}

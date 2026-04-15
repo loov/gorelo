@@ -1044,6 +1044,69 @@ func TestParseBangOnRenameRejected(t *testing.T) {
 	}
 }
 
+func TestParseFileMoveForward(t *testing.T) {
+	t.Parallel()
+
+	file, err := Parse("test", []byte("old.go -> new.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest:  "new.go",
+		Items: []Item{{Source: "old.go", IsFileMove: true}},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseFileMoveReverse(t *testing.T) {
+	t.Parallel()
+
+	file, err := Parse("test", []byte("new.go <- old.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest:  "new.go",
+		Items: []Item{{Source: "old.go", IsFileMove: true}},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseFileMovePaths(t *testing.T) {
+	t.Parallel()
+
+	file, err := Parse("test", []byte("pkg/old.go -> other/new.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Rules: []Rule{{
+		Dest:  "other/new.go",
+		Items: []Item{{Source: "pkg/old.go", IsFileMove: true}},
+	}}}
+	if !reflect.DeepEqual(file, want) {
+		t.Errorf("got %+v, want %+v", file, want)
+	}
+}
+
+func TestParseFileMoveErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{
+		"old.go Other -> new.go", // file-move alongside a decl
+		"old.go -> Dest",         // non-.go destination
+		"new.go <-\n\told.go",    // file-move on indented continuation
+	}
+	for _, input := range cases {
+		if _, err := Parse("test", []byte(input)); err == nil {
+			t.Errorf("expected error for %q", input)
+		}
+	}
+}
+
 func FuzzParse(f *testing.F) {
 	seeds := []string{
 		"",
@@ -1089,6 +1152,15 @@ func FuzzParse(f *testing.F) {
 		// Validate invariants on successfully parsed output.
 		for ri, r := range file.Rules {
 			for ii, item := range r.Items {
+				if item.IsFileMove {
+					if item.Source == "" {
+						t.Fatalf("rule %d item %d: file-move with empty source", ri, ii)
+					}
+					if item.Name != "" {
+						t.Fatalf("rule %d item %d: file-move should not populate Name", ri, ii)
+					}
+					continue
+				}
 				if item.Name == "" {
 					t.Fatalf("rule %d item %d: empty name", ri, ii)
 				}

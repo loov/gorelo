@@ -1,0 +1,29 @@
+# Move a file containing a self-recursive function. The recursive call
+# resolves to the same (moved) declaration, so no qualification is added.
+
+src/fact.go -> dst/fact.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/fact.go --
+package src
+
+// Fact is recursive.
+func Fact(n int) int {
+	if n <= 1 {
+		return 1
+	}
+	return n * Fact(n-1)
+}
+-- golden/dst/fact.go --
+package dst
+
+// Fact is recursive.
+func Fact(n int) int {
+	if n <= 1 {
+		return 1
+	}
+	return n * Fact(n-1)
+}

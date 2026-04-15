@@ -1,0 +1,63 @@
+# Move a file that defines a type with methods in the same file. All of
+# the methods travel with the type because they live in the moved file.
+
+src/server.go -> dst/server.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+// Server handles requests.
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+
+// Addr returns the server address.
+func (s *Server) Address() string {
+	return s.Addr
+}
+-- input/src/use.go --
+package src
+
+func Use() string {
+	s := &Server{Addr: "localhost"}
+	_ = s.Start()
+	return s.Address()
+}
+-- golden/src/use.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string {
+	s := &dst.Server{Addr: "localhost"}
+	_ = s.Start()
+	return s.Address()
+}
+-- golden/dst/server.go --
+package dst
+
+// Server handles requests.
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+
+// Addr returns the server address.
+func (s *Server) Address() string {
+	return s.Addr
+}

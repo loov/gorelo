@@ -1,0 +1,63 @@
+# Move an entire file to a different package. Consumers in sibling
+# files get their references qualified and imports added.
+
+src/greet.go -> dst/greet.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+// Package src is a test package.
+package src
+
+import "strings"
+
+// Greet says hi.
+func Greet(name string) string {
+	return strings.ToUpper("hello, " + name)
+}
+
+// Farewell says bye.
+func Farewell(name string) string {
+	return strings.ToUpper("bye, " + name)
+}
+-- input/src/caller.go --
+package src
+
+func callGreet() string {
+	return Greet("world")
+}
+-- input/dst/keep.go --
+package dst
+
+func Keep() string { return "keep" }
+-- golden/src/caller.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func callGreet() string {
+	return dst.Greet("world")
+}
+-- golden/dst/greet.go --
+// Package src is a test package.
+package dst
+
+import "strings"
+
+// Greet says hi.
+func Greet(name string) string {
+	return strings.ToUpper("hello, " + name)
+}
+
+// Farewell says bye.
+func Farewell(name string) string {
+	return strings.ToUpper("bye, " + name)
+}
+-- golden/dst/keep.go --
+package dst
+
+func Keep() string { return "keep" }

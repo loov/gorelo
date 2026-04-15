@@ -1,0 +1,40 @@
+# File move combined with attaching a function as a method on a type
+# that lives in the destination package. The function name already
+# matches the intended method name so attach does not need to rename.
+
+src/helpers.go -> dst/helpers.go
+src/helpers.go:Start=Server#Start
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/helpers.go --
+package src
+
+import "example.com/test/dst"
+
+// Start starts the server.
+func Start(s *dst.Server) error {
+	_ = s
+	return nil
+}
+-- input/dst/types.go --
+package dst
+
+// Server lives in dst.
+type Server struct{}
+-- golden/dst/types.go --
+package dst
+
+// Server lives in dst.
+type Server struct{}
+-- golden/dst/helpers.go --
+package dst
+
+
+// Start starts the server.
+func (s *Server) Start() error {
+	_ = s
+	return nil
+}

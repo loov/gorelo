@@ -1,0 +1,32 @@
+# File move combined with a rename of a declaration inside the moved
+# file. The rename applies at the destination.
+
+src/greet.go -> dst/greet.go
+Greet=Hello
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+// Greet says hi.
+func Greet() string { return "hello" }
+-- input/src/use.go --
+package src
+
+func Use() string { return Greet() }
+-- golden/src/use.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string { return dst.Hello() }
+-- golden/dst/greet.go --
+package dst
+
+// Greet says hi.
+func Hello() string { return "hello" }

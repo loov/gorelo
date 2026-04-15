@@ -1,0 +1,50 @@
+# A file move lands its source contents at dst/merged.go. A separate
+# per-declaration rule appends another declaration from a sibling file
+# to that same destination. The per-decl decl ends up appended to the
+# file-move output.
+
+src/a.go -> dst/merged.go
+Extra -> dst/merged.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/a.go --
+package src
+
+// A is the first.
+func A() string { return "a" }
+-- input/src/b.go --
+package src
+
+// Extra is added alongside A via a per-decl rule.
+func Extra() string { return "extra" }
+
+// Stay remains in src.
+func Stay() string { return "stay" }
+-- input/src/caller.go --
+package src
+
+func Use() string { return A() + Extra() + Stay() }
+-- golden/src/b.go --
+package src
+
+// Stay remains in src.
+func Stay() string { return "stay" }
+-- golden/src/caller.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string { return dst.A() + dst.Extra() + Stay() }
+-- golden/dst/merged.go --
+package dst
+
+// A is the first.
+func A() string { return "a" }
+
+// Extra is added alongside A via a per-decl rule.
+func Extra() string { return "extra" }

@@ -113,6 +113,22 @@ Server#Start=!startServer         # detach and rename to startServer
 Server#Start=! -> util.go         # detach and move
 ```
 
+### Moving whole files
+
+Point the arrow from a `.go` source path to a `.go` destination path to
+move an entire file. The source file's content is transferred verbatim —
+declaration order, doc comments, and file-level layout are preserved:
+
+```
+old.go -> new.go                       # file rename within the same package
+src/greet.go -> dst/greet.go           # move into a different package
+```
+
+The destination file must not already exist; per-declaration rules are the
+way to merge into an existing file. Cross-package moves reject unexported
+declarations with external references — add an explicit rename rule on
+another line to export them first.
+
 ### Source specifiers
 
 Disambiguate by source file:

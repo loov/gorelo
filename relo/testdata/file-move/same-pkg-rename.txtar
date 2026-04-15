@@ -1,0 +1,47 @@
+# Rename a file within the same package: content is preserved verbatim,
+# the source file is deleted.
+
+src/old.go -> src/new.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/old.go --
+// Package src is a test package.
+package src
+
+// Greet says hi.
+func Greet(name string) string {
+	return "hello, " + name
+}
+
+// Farewell says bye.
+func Farewell(name string) string {
+	return "bye, " + name
+}
+-- input/src/helper.go --
+package src
+
+func callGreet() string {
+	return Greet("world")
+}
+-- golden/src/new.go --
+// Package src is a test package.
+package src
+
+// Greet says hi.
+func Greet(name string) string {
+	return "hello, " + name
+}
+
+// Farewell says bye.
+func Farewell(name string) string {
+	return "bye, " + name
+}
+-- golden/src/helper.go --
+package src
+
+func callGreet() string {
+	return Greet("world")
+}

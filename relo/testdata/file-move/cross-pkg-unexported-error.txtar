@@ -1,0 +1,19 @@
+# Cross-package file moves error out when the file defines an unexported
+# identifier that is referenced from outside the source file.
+
+@error cannot be moved cross-package
+
+src/util.go -> dst/util.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/util.go --
+package src
+
+func helper() string { return "h" }
+-- input/src/caller.go --
+package src
+
+func Call() string { return helper() }

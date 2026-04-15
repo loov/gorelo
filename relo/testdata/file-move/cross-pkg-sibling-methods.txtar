@@ -1,0 +1,78 @@
+# Move a file that defines a type; its methods live in a sibling file.
+# Existing method-follow synthesis picks up the sibling methods and moves
+# them to the destination as a fresh file.
+
+src/types.go -> dst/types.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/types.go --
+package src
+
+// Server handles requests.
+type Server struct {
+	Addr string
+}
+-- input/src/methods.go --
+package src
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+
+// Address returns the listen address.
+func (s *Server) Address() string {
+	return s.Addr
+}
+
+// Other stays in src because it is not a method of a moved type.
+func Other() string {
+	return "other"
+}
+-- input/src/use.go --
+package src
+
+func Use() string {
+	s := &Server{Addr: "localhost"}
+	_ = s.Start()
+	return s.Address()
+}
+-- golden/src/methods.go --
+package src
+
+// Other stays in src because it is not a method of a moved type.
+func Other() string {
+	return "other"
+}
+-- golden/src/use.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string {
+	s := &dst.Server{Addr: "localhost"}
+	_ = s.Start()
+	return s.Address()
+}
+-- golden/dst/types.go --
+package dst
+
+// Server handles requests.
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+
+// Address returns the listen address.
+func (s *Server) Address() string {
+	return s.Addr
+}

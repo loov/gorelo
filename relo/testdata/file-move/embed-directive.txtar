@@ -1,0 +1,33 @@
+# Moving a file with a //go:embed directive preserves the directive and
+# the blank embed import. The per-decl pipeline still emits its existing
+# warnings (the embed resolves relative to the destination package dir,
+# which the user is responsible for verifying).
+
+src/assets.go -> dst/assets.go
+
+@warn has blank import "embed" for side effects
+@warn has a //go:embed directive
+@vet pattern data.txt
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/assets.go --
+package src
+
+import _ "embed"
+
+//go:embed data.txt
+var Content string
+-- input/src/data.txt --
+hello
+-- golden/src/data.txt --
+hello
+-- golden/dst/assets.go --
+package dst
+
+import _ "embed"
+
+//go:embed data.txt
+var Content string

@@ -1,0 +1,58 @@
+# A file move plus an unrelated decl move in the same rules set. Both
+# operations apply independently.
+
+src/greet.go -> dst/greet.go
+Sidecar -> dst/sidecar.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+// Greet says hi.
+func Greet() string {
+	return "hello"
+}
+-- input/src/other.go --
+package src
+
+// Sidecar moves via a per-decl rule.
+func Sidecar() string {
+	return "side"
+}
+
+// Stay remains here.
+func Stay() string { return "stay" }
+-- input/src/consumer.go --
+package src
+
+func All() string { return Greet() + Sidecar() + Stay() }
+-- golden/src/other.go --
+package src
+
+// Stay remains here.
+func Stay() string { return "stay" }
+-- golden/src/consumer.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func All() string { return dst.Greet() + dst.Sidecar() + Stay() }
+-- golden/dst/greet.go --
+package dst
+
+// Greet says hi.
+func Greet() string {
+	return "hello"
+}
+-- golden/dst/sidecar.go --
+package dst
+
+// Sidecar moves via a per-decl rule.
+func Sidecar() string {
+	return "side"
+}

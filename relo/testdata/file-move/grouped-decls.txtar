@@ -1,0 +1,109 @@
+# File moves preserve grouped const/var/type blocks verbatim; the source
+# bytes are copied, so layout and associated comments are kept.
+
+src/defs.go -> dst/defs.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/defs.go --
+package src
+
+// Status enumerates request states.
+type Status int
+
+const (
+	// StatusOK means the request succeeded.
+	StatusOK Status = iota
+	// StatusFail means the request failed.
+	StatusFail
+	// StatusRetry asks the caller to retry.
+	StatusRetry
+)
+
+var (
+	// Default is the zero status.
+	Default = StatusOK
+
+	// Labels maps each status to its name.
+	Labels = map[Status]string{
+		StatusOK:    "ok",
+		StatusFail:  "fail",
+		StatusRetry: "retry",
+	}
+)
+
+type (
+	// Request is a request envelope.
+	Request struct {
+		Status Status
+	}
+	// Response is the reply.
+	Response struct {
+		Status Status
+	}
+)
+-- input/src/caller.go --
+package src
+
+func Caller() Status {
+	r := Request{Status: StatusOK}
+	_ = Response{Status: StatusFail}
+	_ = Labels
+	_ = Default
+	_ = StatusRetry
+	return r.Status
+}
+-- golden/src/caller.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Caller() dst.Status {
+	r := dst.Request{Status: dst.StatusOK}
+	_ = dst.Response{Status: dst.StatusFail}
+	_ = dst.Labels
+	_ = dst.Default
+	_ = dst.StatusRetry
+	return r.Status
+}
+-- golden/dst/defs.go --
+package dst
+
+// Status enumerates request states.
+type Status int
+
+const (
+	// StatusOK means the request succeeded.
+	StatusOK Status = iota
+	// StatusFail means the request failed.
+	StatusFail
+	// StatusRetry asks the caller to retry.
+	StatusRetry
+)
+
+var (
+	// Default is the zero status.
+	Default = StatusOK
+
+	// Labels maps each status to its name.
+	Labels = map[Status]string{
+		StatusOK:    "ok",
+		StatusFail:  "fail",
+		StatusRetry: "retry",
+	}
+)
+
+type (
+	// Request is a request envelope.
+	Request struct {
+		Status Status
+	}
+	// Response is the reply.
+	Response struct {
+		Status Status
+	}
+)

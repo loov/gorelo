@@ -1,0 +1,49 @@
+# A file move that would create a circular import. The moved file
+# references a source-package sibling that itself depends on code
+# moving to (or living in) the destination package. go vet catches
+# the cycle on the resulting output.
+
+src/greet.go -> dst/greet.go
+
+@vet import cycle not allowed
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+// Greet uses a sibling that calls back into dst.
+func Greet() string { return "hello" + Suffix() }
+-- input/src/sibling.go --
+package src
+
+import "example.com/test/dst"
+
+// Suffix calls back into dst, creating a cycle after Greet moves.
+func Suffix() string { return dst.Shout("!") }
+-- input/dst/dst.go --
+package dst
+
+func Shout(s string) string { return s }
+-- golden/src/sibling.go --
+package src
+
+import "example.com/test/dst"
+
+// Suffix calls back into dst, creating a cycle after Greet moves.
+func Suffix() string { return dst.Shout("!") }
+-- golden/dst/dst.go --
+package dst
+
+func Shout(s string) string { return s }
+-- golden/dst/greet.go --
+package dst
+
+import (
+	"example.com/test/src"
+)
+
+// Greet uses a sibling that calls back into dst.
+func Greet() string { return "hello" + src.Suffix() }

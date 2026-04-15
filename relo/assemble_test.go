@@ -521,7 +521,7 @@ func TestAssemble_SourceTargetOverlap(t *testing.T) {
 	plan, err := Compile(ix, []Relo{
 		{Ident: identX, MoveTo: bPath},
 		{Ident: identY, MoveTo: cPath},
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +584,7 @@ func TestAssemble_SamePackageMoveRemovesFromSource(t *testing.T) {
 
 	plan, err := Compile(ix, []Relo{
 		{Ident: identX, MoveTo: targetPath},
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

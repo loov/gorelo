@@ -1,0 +1,20 @@
+# Two file moves targeting the same destination must error out rather
+# than silently clobbering each other.
+
+@error duplicate destination
+
+src/a.go -> dst/merged.go
+src/b.go -> dst/merged.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/a.go --
+package src
+
+func A() {}
+-- input/src/b.go --
+package src
+
+func B() {}

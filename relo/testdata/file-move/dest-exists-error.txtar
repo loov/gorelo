@@ -1,0 +1,19 @@
+# File-move refuses when the destination already exists; the user must
+# use per-declaration rules to merge into an existing file.
+
+@error already exists
+
+src/a.go -> src/b.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/a.go --
+package src
+
+func A() {}
+-- input/src/b.go --
+package src
+
+func B() {}

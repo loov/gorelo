@@ -52,12 +52,20 @@ func Parse(filename string, data []byte) (*File, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s:%d: %w", filename, lineno, err)
 			}
+			for _, it := range items {
+				if it.IsFileMove {
+					return nil, fmt.Errorf("%s:%d: file-move items cannot appear in multiline blocks", filename, lineno)
+				}
+			}
 			current.Items = append(current.Items, items...)
 			continue
 		}
 
 		dest, items, err := parseLine(trimmed)
 		if err != nil {
+			return nil, fmt.Errorf("%s:%d: %w", filename, lineno, err)
+		}
+		if err := validateFileMove(items, dest); err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", filename, lineno, err)
 		}
 		file.Rules = append(file.Rules, Rule{Dest: dest, Items: items})
@@ -141,6 +149,7 @@ func parseItems(s string) ([]Item, error) {
 //
 // Grammar:
 //
+//	path/to/file.go                      whole-file move (valid only with a .go dest)
 //	[source:]name                        bare reference
 //	[source:]name=new                    rename
 //	[source:]name=Type#Method            attach function as method
@@ -151,6 +160,12 @@ func parseItems(s string) ([]Item, error) {
 //	package.name[...]                    package-qualified form of any above
 func parseItem(tok string) (Item, error) {
 	var item Item
+
+	// Whole-file move: a token that looks like a .go file path with no
+	// qualifier, rename, or field syntax. Must be paired with a .go dest.
+	if strings.HasSuffix(tok, ".go") && !strings.ContainsAny(tok, ":=#") {
+		return Item{Source: tok, IsFileMove: true}, nil
+	}
 
 	rest := tok
 	// Extract source prefix.
@@ -256,6 +271,28 @@ func parseItem(tok string) (Item, error) {
 	}
 
 	return item, nil
+}
+
+// validateFileMove enforces that file-move items appear alone and with a
+// .go destination.
+func validateFileMove(items []Item, dest string) error {
+	hasFileMove := false
+	for _, it := range items {
+		if it.IsFileMove {
+			hasFileMove = true
+			break
+		}
+	}
+	if !hasFileMove {
+		return nil
+	}
+	if len(items) != 1 {
+		return fmt.Errorf("file-move rule must have exactly one source file")
+	}
+	if !strings.HasSuffix(dest, ".go") {
+		return fmt.Errorf("file-move destination %q must be a .go path", dest)
+	}
+	return nil
 }
 
 // parseDirective checks whether line is a "@key value" or "@key=value" directive.

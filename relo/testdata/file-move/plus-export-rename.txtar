@@ -1,0 +1,31 @@
+# Cross-package file move with an exporting rename on an unexported
+# declaration in the moved file. The rename satisfies the cross-package
+# export check that would otherwise reject the move.
+
+src/util.go -> dst/util.go
+helper=Helper
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/util.go --
+package src
+
+func helper() string { return "h" }
+-- input/src/caller.go --
+package src
+
+func Call() string { return helper() }
+-- golden/src/caller.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Call() string { return dst.Helper() }
+-- golden/dst/util.go --
+package dst
+
+func Helper() string { return "h" }

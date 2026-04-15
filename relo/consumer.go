@@ -22,9 +22,16 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 
 	// Groups with detach/attach handle their own cross-package qualification.
 	detachGroups := make(map[*mast.Group]bool)
+	// Groups originating from a whole-file move cannot rely on stub
+	// aliases because the source file is deleted — consumers must always
+	// be rewritten even when @stubs is enabled.
+	fileMoveGroups := make(map[*mast.Group]bool)
 	for _, rr := range resolved {
 		if rr.Relo.Detach || rr.Relo.MethodOf != "" {
 			detachGroups[rr.Group] = true
+		}
+		if rr.FromFileMove != nil {
+			fileMoveGroups[rr.Group] = true
 		}
 	}
 
@@ -156,11 +163,14 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			// moving to a different package, so we need to add a
 			// package qualifier (e.g., Validate -> dst.Validate).
 			// When stubs are enabled, the aliases handle backward
-			// compatibility, so qualification is not needed.
+			// compatibility, so qualification is not needed — unless
+			// the group comes from a whole-file move, which leaves no
+			// source file to hold the stubs.
 			//
 			// Methods and fields travel with their parent type and are
 			// accessed through instances, not as bare identifiers.
-			if id.Qualifier == nil && !(opts.stubsEnabled()) && !grp.Kind.TravelsWithType() {
+			stubsApply := opts.stubsEnabled() && !fileMoveGroups[grp]
+			if id.Qualifier == nil && !stubsApply && !grp.Kind.TravelsWithType() {
 				identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 				identEnd := identOff + len(id.Ident.Name)
 
@@ -182,7 +192,9 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			// Qualified cross-package consumer reference (pkg.Name).
 			// When stubs are enabled, consumers keep using the source
 			// package's names — the stubs redirect to the target.
-			if id.Qualifier == nil || (opts.stubsEnabled()) {
+			// File-move groups still need rewriting because the source
+			// file (and any stubs that would have lived in it) is gone.
+			if id.Qualifier == nil || (opts.stubsEnabled() && !fileMoveGroups[grp]) {
 				continue
 			}
 

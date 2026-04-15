@@ -363,7 +363,7 @@ func Hello() {
 	plan, err := Compile(ix, []Relo{{
 		Ident:  helloIdent,
 		MoveTo: filepath.Join(pkgDir, "target.go"),
-	}}, nil)
+	}}, nil, nil)
 	if err != nil {
 		t.Fatal("compile:", err)
 	}

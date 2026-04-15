@@ -1,0 +1,30 @@
+# Moving a file whose declarations use a dot import cross-package emits
+# the same warning as a per-decl move. The dot import survives at the
+# destination since source bytes are copied verbatim.
+
+src/util.go -> dst/util.go
+
+@warn uses dot import
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/util.go --
+package src
+
+import . "strings"
+
+// Shout upper-cases s.
+func Shout(s string) string {
+	return ToUpper(TrimSpace(s))
+}
+-- golden/dst/util.go --
+package dst
+
+import . "strings"
+
+// Shout upper-cases s.
+func Shout(s string) string {
+	return ToUpper(TrimSpace(s))
+}

@@ -1,0 +1,59 @@
+# Move an entire _test.go file within the same package. Tests continue
+# to see the helper declarations and their dependencies.
+
+src/helpers_test.go -> src/testutil_test.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/source.go --
+package src
+
+func Public() string {
+	return "ok"
+}
+-- input/src/helpers_test.go --
+package src
+
+func testHelper() string {
+	return "help"
+}
+-- input/src/source_test.go --
+package src
+
+import "testing"
+
+func TestPublic(t *testing.T) {
+	if testHelper() != "help" {
+		t.Fatal()
+	}
+	if Public() != "ok" {
+		t.Fatal()
+	}
+}
+-- golden/src/source.go --
+package src
+
+func Public() string {
+	return "ok"
+}
+-- golden/src/source_test.go --
+package src
+
+import "testing"
+
+func TestPublic(t *testing.T) {
+	if testHelper() != "help" {
+		t.Fatal()
+	}
+	if Public() != "ok" {
+		t.Fatal()
+	}
+}
+-- golden/src/testutil_test.go --
+package src
+
+func testHelper() string {
+	return "help"
+}

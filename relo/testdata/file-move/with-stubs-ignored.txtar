@@ -1,0 +1,34 @@
+# With @stubs=true, a cross-package file move cannot leave backward-
+# compat stubs behind because the source file is deleted. The stub
+# directive is ignored for file moves; the source file is still removed.
+
+@stubs=true
+
+src/greet.go -> dst/greet.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/greet.go --
+package src
+
+// Greet says hi.
+func Greet() string { return "hello" }
+-- input/src/caller.go --
+package src
+
+func Use() string { return Greet() }
+-- golden/src/caller.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() string { return dst.Greet() }
+-- golden/dst/greet.go --
+package dst
+
+// Greet says hi.
+func Greet() string { return "hello" }

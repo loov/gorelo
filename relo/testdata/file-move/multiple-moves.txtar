@@ -1,0 +1,41 @@
+# Two file moves in the same rules set, landing in different destinations.
+
+src/a.go -> dst/a.go
+src/b.go -> dst/b.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/a.go --
+package src
+
+// A does A things.
+func A() string { return "a" }
+-- input/src/b.go --
+package src
+
+// B does B things.
+func B() string { return "b" }
+-- input/src/c.go --
+package src
+
+func C() string { return A() + B() }
+-- golden/src/c.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func C() string { return dst.A() + dst.B() }
+-- golden/dst/a.go --
+package dst
+
+// A does A things.
+func A() string { return "a" }
+-- golden/dst/b.go --
+package dst
+
+// B does B things.
+func B() string { return "b" }

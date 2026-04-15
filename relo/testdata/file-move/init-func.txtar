@@ -1,0 +1,26 @@
+# Move a file containing init() cross-package. init keeps its
+# auto-execution semantics in the destination package since the
+# declaration is copied verbatim.
+
+src/setup.go -> dst/setup.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/setup.go --
+package src
+
+var Ready bool
+
+func init() {
+	Ready = true
+}
+-- golden/dst/setup.go --
+package dst
+
+var Ready bool
+
+func init() {
+	Ready = true
+}

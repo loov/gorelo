@@ -1,0 +1,35 @@
+# Move a build-constrained file cross-package. The //go:build header is
+# preserved verbatim (the whole source is copied).
+
+src/platform_linux.go -> dst/platform_linux.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/platform_linux.go --
+//go:build linux
+
+package src
+
+// LinuxOnly is linux-specific.
+func LinuxOnly() string {
+	return "linux"
+}
+-- input/src/other.go --
+package src
+
+func Other() string { return "other" }
+-- golden/src/other.go --
+package src
+
+func Other() string { return "other" }
+-- golden/dst/platform_linux.go --
+//go:build linux
+
+package dst
+
+// LinuxOnly is linux-specific.
+func LinuxOnly() string {
+	return "linux"
+}

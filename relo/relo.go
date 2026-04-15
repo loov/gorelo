@@ -15,6 +15,15 @@ type Relo struct {
 	MethodOf string     // convert function to method on this type
 }
 
+// FileMove describes a whole-file relocation. Every top-level declaration in
+// From is transferred to To, preserving source ordering and file-level
+// comments. Cross-package moves additionally rewrite references in consumer
+// files via the standard relo machinery.
+type FileMove struct {
+	From string // source file path (as known to the mast.Index)
+	To   string // destination file path
+}
+
 // Plan is the result of Compile: a set of file edits that implement the relos.
 type Plan struct {
 	Edits    []FileEdit
@@ -36,18 +45,32 @@ type Options struct {
 
 func (o *Options) stubsEnabled() bool { return o != nil && o.Stubs }
 
-// Compile builds a Plan from a set of Relo instructions against a mast.Index.
-func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
+// Compile builds a Plan from a set of Relo and FileMove instructions against
+// a mast.Index.
+func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) (*Plan, error) {
 	if opts == nil {
 		opts = &Options{}
 	}
 	plan := &Plan{}
+
+	// Expand file moves into per-decl relos and collect the moves for the
+	// whole-file assembly pass. userRelos gets mutated so that explicit
+	// renames or attaches targeting idents inside a moved file inherit the
+	// file-move destination.
+	userRelos := make([]Relo, len(relos))
+	copy(userRelos, relos)
+	expanded, fmInfos, err := expandFileMoves(ix, fileMoves, userRelos)
+	if err != nil {
+		return nil, err
+	}
+	relos = append(userRelos, expanded...)
 
 	// Phase 0-1: validate, deduplicate, synthesize.
 	resolved, err := resolve(ix, relos, plan)
 	if err != nil {
 		return nil, err
 	}
+	tagFileMoves(resolved, fmInfos)
 	if len(resolved) == 0 {
 		return plan, nil
 	}
@@ -77,7 +100,7 @@ func Compile(ix *mast.Index, relos []Relo, opts *Options) (*Plan, error) {
 	computeConsumerEdits(ix, resolved, spans, renameEdits, importChanges, opts, plan)
 
 	// Phase 8: assemble file edits.
-	assemble(ix, resolved, spans, renameEdits, importChanges, opts, plan)
+	assemble(ix, resolved, spans, renameEdits, importChanges, fmInfos, opts, plan)
 
 	return plan, nil
 }

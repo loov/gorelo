@@ -12,13 +12,14 @@ import (
 
 // resolvedRelo is a validated and enriched relo.
 type resolvedRelo struct {
-	Relo        Relo
-	Group       *mast.Group
-	DefIdent    *mast.Ident
-	File        *mast.File
-	TargetFile  string
-	TargetName  string
-	Synthesized bool
+	Relo         Relo
+	Group        *mast.Group
+	DefIdent     *mast.Ident
+	File         *mast.File
+	TargetFile   string
+	TargetName   string
+	Synthesized  bool
+	FromFileMove *fileMoveInfo // non-nil when this relo was synthesised from a whole-file move
 }
 
 // isCrossFileMove reports whether this relo moves a declaration to a different file.
