@@ -1,0 +1,24 @@
+# An unexported declaration whose only uses live inside the moved file
+# should move cross-package without needing an exporting rename: the
+# uses move together with the definition.
+
+src/util.go -> dst/util.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/util.go --
+package src
+
+func helper() string { return "h" }
+
+// Use is exported and only called internally here.
+func Use() string { return helper() }
+-- golden/dst/util.go --
+package dst
+
+func helper() string { return "h" }
+
+// Use is exported and only called internally here.
+func Use() string { return helper() }

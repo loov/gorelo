@@ -1,0 +1,30 @@
+# Two file moves landing in the same destination package. One file
+# defines an unexported helper used only by a caller in the other moved
+# file. Both files move together so the helper's uses travel with it —
+# no exporting rename is required.
+
+src/helper.go -> dst/helper.go
+src/caller.go -> dst/caller.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/helper.go --
+package src
+
+func helper() string { return "h" }
+-- input/src/caller.go --
+package src
+
+// Call is exported but only uses the unexported helper.
+func Call() string { return helper() }
+-- golden/dst/helper.go --
+package dst
+
+func helper() string { return "h" }
+-- golden/dst/caller.go --
+package dst
+
+// Call is exported but only uses the unexported helper.
+func Call() string { return helper() }

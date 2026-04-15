@@ -66,7 +66,7 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	relos = append(userRelos, expanded...)
 
 	// Phase 0-1: validate, deduplicate, synthesize.
-	resolved, err := resolve(ix, relos, plan)
+	resolved, err := resolve(ix, relos, fmInfos, plan)
 	if err != nil {
 		return nil, err
 	}

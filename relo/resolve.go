@@ -28,10 +28,18 @@ func (rr *resolvedRelo) isCrossFileMove() bool {
 }
 
 // resolve validates, deduplicates, and synthesizes relos (phases 0-1).
-func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) {
+func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) ([]*resolvedRelo, error) {
 	// Phase 0: validate each relo.
 	seen := make(map[seenKey]*resolvedRelo)
 	var resolved []*resolvedRelo
+
+	// fileMoveTargetDir maps each file being moved wholesale to its
+	// destination directory so the unexported-cross-package check can
+	// exempt uses that travel along with the def.
+	fileMoveTargetDir := make(map[string]string, len(fmInfos))
+	for _, info := range fmInfos {
+		fileMoveTargetDir[info.move.From] = filepath.Dir(info.move.To)
+	}
 
 	for _, r := range relos {
 		if r.Ident == nil {
@@ -118,7 +126,10 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 
 		// Unexported cross-package check: reject only if the name has
 		// references that would break. An unreferenced unexported name
-		// can be safely moved to another package.
+		// can be safely moved to another package. A file-move also
+		// carries every use inside the moved file(s) along, so uses
+		// within files being moved to the same target directory are
+		// exempt.
 		if r.MoveTo != "" && defIdent.File != nil {
 			srcPkg := defIdent.File.Pkg
 			if srcPkg != nil && !isSamePackageDir(srcPkg, r.MoveTo) {
@@ -126,7 +137,7 @@ func resolve(ix *mast.Index, relos []Relo, plan *Plan) ([]*resolvedRelo, error) 
 				if name == "" {
 					name = grp.Name
 				}
-				if !token.IsExported(name) && grp.HasUses() {
+				if !token.IsExported(name) && hasExternalUses(grp, filepath.Dir(r.MoveTo), fileMoveTargetDir) {
 					return nil, fmt.Errorf("unexported name %q cannot be moved cross-package without a rename to an exported name", grp.Name)
 				}
 			}
@@ -421,6 +432,22 @@ func groupBySource(resolved []*resolvedRelo) map[string][]*resolvedRelo {
 		}
 	}
 	return m
+}
+
+// hasExternalUses reports whether grp has a Use ident outside the set of
+// files being file-moved to targetDir. Uses in files that accompany the def
+// to the same destination directory do not count as external.
+func hasExternalUses(grp *mast.Group, targetDir string, fileMoveTargetDir map[string]string) bool {
+	for _, id := range grp.Idents {
+		if id.Kind != mast.Use || id.File == nil {
+			continue
+		}
+		if dir, ok := fileMoveTargetDir[id.File.Path]; ok && dir == targetDir {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // isSamePackageDir checks if targetFile is in the same directory as pkg.

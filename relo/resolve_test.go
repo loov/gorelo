@@ -149,7 +149,7 @@ func TestResolve_RejectsUntrackedIdent(t *testing.T) {
 	// Create a fake ident not in the index.
 	fakeIdent := &ast.Ident{Name: "NotInIndex"}
 	plan := &Plan{}
-	_, err := resolve(ix, []Relo{{Ident: fakeIdent}}, plan)
+	_, err := resolve(ix, []Relo{{Ident: fakeIdent}}, nil, plan)
 	if !errContains(err, "not tracked") {
 		t.Fatalf("expected 'not tracked' error, got: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestResolve_RejectsFieldMove(t *testing.T) {
 	}
 
 	plan := &Plan{}
-	_, err := resolve(ix, []Relo{{Ident: fieldIdent, MoveTo: "/tmp/target.go"}}, plan)
+	_, err := resolve(ix, []Relo{{Ident: fieldIdent, MoveTo: "/tmp/target.go"}}, nil, plan)
 	if !errContains(err, "cannot be moved") {
 		t.Fatalf("expected 'cannot be moved' error, got: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestResolve_FieldRenameAllowed(t *testing.T) {
 	}
 
 	plan := &Plan{}
-	resolved, err := resolve(ix, []Relo{{Ident: fieldIdent, Rename: "G"}}, plan)
+	resolved, err := resolve(ix, []Relo{{Ident: fieldIdent, Rename: "G"}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestResolve_DeduplicateByGroup(t *testing.T) {
 		{Ident: varIdent, MoveTo: "/tmp/target.go"},
 		{Ident: varIdent, MoveTo: "/tmp/target.go"},
 	}
-	resolved, err := resolve(ix, relos, plan)
+	resolved, err := resolve(ix, relos, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestResolve_ConstructorWarning(t *testing.T) {
 	_, err := resolve(ix, []Relo{{
 		Ident:  typeIdent,
 		MoveTo: filepath.Join(pkgDir, "target.go"),
-	}}, plan)
+	}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestResolve_MethodAutoSynthesis(t *testing.T) {
 	resolved, err := resolve(ix, []Relo{{
 		Ident:  typeIdent,
 		MoveTo: filepath.Join(pkgDir, "target.go"),
-	}}, plan)
+	}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestResolve_ConflictingExplicitRelos(t *testing.T) {
 		{Ident: varIdent, MoveTo: "/tmp/a.go"},
 		{Ident: varIdent, MoveTo: "/tmp/b.go"},
 	}
-	_, err := resolve(ix, relos, plan)
+	_, err := resolve(ix, relos, nil, plan)
 	if !errContains(err, "conflicting relos") {
 		t.Fatalf("expected 'conflicting relos' error, got: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestResolve_InvalidRenameTarget(t *testing.T) {
 			t.Parallel()
 
 			plan := &Plan{}
-			_, err := resolve(ix, []Relo{{Ident: varIdent, Rename: tt.rename}}, plan)
+			_, err := resolve(ix, []Relo{{Ident: varIdent, Rename: tt.rename}}, nil, plan)
 			if tt.wantErr && !errContains(err, "not a valid Go identifier") {
 				t.Errorf("expected 'not a valid Go identifier' error, got: %v", err)
 			}
@@ -381,7 +381,7 @@ func TestResolve_NilIdent(t *testing.T) {
 	})
 
 	plan := &Plan{}
-	_, err := resolve(ix, []Relo{{Ident: nil}}, plan)
+	_, err := resolve(ix, []Relo{{Ident: nil}}, nil, plan)
 	if !errContains(err, "nil Ident") {
 		t.Fatalf("expected 'nil Ident' error, got: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestResolve_RenameInitWarning(t *testing.T) {
 	}
 
 	plan := &Plan{}
-	_, err := resolve(ix, []Relo{{Ident: initIdent, Rename: "Setup"}}, plan)
+	_, err := resolve(ix, []Relo{{Ident: initIdent, Rename: "Setup"}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestResolve_RenameToInitWarning(t *testing.T) {
 	}
 
 	plan := &Plan{}
-	_, err := resolve(ix, []Relo{{Ident: ident, Rename: "init"}}, plan)
+	_, err := resolve(ix, []Relo{{Ident: ident, Rename: "init"}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +450,7 @@ func TestResolve_RenameMainWarning(t *testing.T) {
 	}
 
 	plan := &Plan{}
-	_, err := resolve(ix, []Relo{{Ident: mainIdent, Rename: "Run"}}, plan)
+	_, err := resolve(ix, []Relo{{Ident: mainIdent, Rename: "Run"}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestResolve_RenameToMainWarning(t *testing.T) {
 	}
 
 	plan := &Plan{}
-	_, err := resolve(ix, []Relo{{Ident: ident, Rename: "main"}}, plan)
+	_, err := resolve(ix, []Relo{{Ident: ident, Rename: "main"}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +504,7 @@ func TestResolve_SynthesizedUnexportedMethodCrossPackage(t *testing.T) {
 	resolved, err := resolve(ix, []Relo{{
 		Ident:  typeIdent,
 		MoveTo: "/tmp/otherpkg/target.go",
-	}}, plan)
+	}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +543,7 @@ func TestResolve_SynthesizedUnexportedMethodNoExternalUse(t *testing.T) {
 	resolved, err := resolve(ix, []Relo{{
 		Ident:  typeIdent,
 		MoveTo: "/tmp/otherpkg/target.go",
-	}}, plan)
+	}}, nil, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,7 +582,7 @@ func TestResolve_UnexportedSamePackageMove(t *testing.T) {
 	target := filepath.Join(pkgDir, "target.go")
 
 	plan := &Plan{}
-	resolved, err := resolve(ix, []Relo{{Ident: varIdent, MoveTo: target}}, plan)
+	resolved, err := resolve(ix, []Relo{{Ident: varIdent, MoveTo: target}}, nil, plan)
 	if err != nil {
 		t.Fatalf("unexported same-package move should succeed, got: %v", err)
 	}
