@@ -3,6 +3,7 @@ package relo
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/loov/gorelo/mast"
 	"github.com/loov/gorelo/rules"
@@ -30,12 +31,14 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 				continue
 			}
 
+			source := resolveSource(ix, item.Source, dir)
+
 			var r Relo
 
 			switch {
 			case item.Detach:
 				// @detach: Server#Start — find method Start on type Server.
-				id := ix.FindFieldDef(item.Name, item.Field, item.Source)
+				id := ix.FindFieldDef(item.Name, item.Field, source)
 				if id == nil {
 					return nil, nil, fmt.Errorf("could not find method %q on type %q", item.Field, item.Name)
 				}
@@ -45,7 +48,7 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 
 			case item.MethodOf != "":
 				// @attach Server: Start — find function Start.
-				id := ix.FindDef(item.Name, item.Source)
+				id := ix.FindDef(item.Name, source)
 				if id == nil {
 					src := ""
 					if item.Source != "" {
@@ -58,7 +61,7 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 				r.MethodOf = item.MethodOf
 
 			case item.Field != "":
-				id := ix.FindFieldDef(item.Name, item.Field, item.Source)
+				id := ix.FindFieldDef(item.Name, item.Field, source)
 				if id == nil {
 					return nil, nil, fmt.Errorf("could not find field %q in struct %q", item.Field, item.Name)
 				}
@@ -66,7 +69,7 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 				r.Rename = item.FieldRename
 
 			default:
-				id := ix.FindDef(item.Name, item.Source)
+				id := ix.FindDef(item.Name, source)
 				if id == nil {
 					src := ""
 					if item.Source != "" {
@@ -92,4 +95,42 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 		}
 	}
 	return relos, fileMoves, nil
+}
+
+// resolveSource rewrites a user-supplied source qualifier into a form the
+// mast.Index lookups accept. A source like "./pkg" or an absolute directory
+// is translated to the matching package's import path; a file-like source
+// (ending in .go) or an import-path-like source passes through unchanged.
+func resolveSource(ix *mast.Index, source, dir string) string {
+	if source == "" {
+		return ""
+	}
+	if strings.HasSuffix(source, ".go") {
+		return source
+	}
+	// Leave an exact import-path match alone.
+	for _, pkg := range ix.Pkgs {
+		if pkg.Path == source {
+			return source
+		}
+	}
+	// Directory-like source: resolve against dir and compare with the
+	// directory of each package's first file.
+	if !strings.Contains(source, "/") && !strings.HasPrefix(source, ".") {
+		return source
+	}
+	abs := source
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(dir, abs)
+	}
+	abs = filepath.Clean(abs)
+	for _, pkg := range ix.Pkgs {
+		if len(pkg.Files) == 0 {
+			continue
+		}
+		if filepath.Dir(pkg.Files[0].Path) == abs {
+			return pkg.Path
+		}
+	}
+	return source
 }

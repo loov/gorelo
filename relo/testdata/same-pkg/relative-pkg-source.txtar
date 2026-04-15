@@ -1,0 +1,31 @@
+# A relative package qualifier in the source position resolves to the
+# matching package's import path so FindDef can match it.
+
+./sub.Foo -> sub/foo.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/sub/a.go --
+package sub
+
+// Foo is the moved decl.
+func Foo() string {
+	return "foo"
+}
+
+// Other stays here.
+func Other() string { return "other" }
+-- golden/sub/a.go --
+package sub
+
+// Other stays here.
+func Other() string { return "other" }
+-- golden/sub/foo.go --
+package sub
+
+// Foo is the moved decl.
+func Foo() string {
+	return "foo"
+}
