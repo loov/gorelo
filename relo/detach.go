@@ -309,7 +309,7 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 	if rr.isCrossFileMove() {
 		recvImportPath := detachedReceiverImportPath(ix, rr, fd, resolved)
 		if recvImportPath != "" {
-			addImportToFile(imports, ix, rr.TargetFile, recvImportPath)
+			addImportEntry(imports, ix, rr.TargetFile, importEntry{Path: recvImportPath})
 		}
 	}
 
@@ -498,7 +498,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 			if tgtImportPath := guessImportPath(detachTgtDir); tgtImportPath != "" {
 				qualName = guessImportLocalName(tgtImportPath) + "." + newName
 				// Add import to the caller's FINAL file.
-				addImportToFile(imports, ix, callerFinalFile, tgtImportPath)
+				addImportEntry(imports, ix, callerFinalFile, importEntry{Path: tgtImportPath})
 			}
 		}
 
@@ -715,27 +715,6 @@ func attachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, edits *
 			edits.Delete(ed.Span{Path: filePath, Start: lparen + 1, End: rparen}, "attach-callsite-empty-args")
 		}
 	}
-}
-
-// addImportToFile adds an import for impPath to the given file in the import set,
-// checking if it's already present.
-func addImportToFile(imports *importSet, ix *mast.Index, filePath, impPath string) {
-	ic := imports.ensureFile(filePath)
-	// Check if already being added.
-	for _, entry := range ic.Add {
-		if entry.Path == impPath {
-			return
-		}
-	}
-	// Check if already imported.
-	if f := ix.FilesByPath[filePath]; f != nil {
-		for _, imp := range f.Syntax.Imports {
-			if importPath(imp) == impPath {
-				return
-			}
-		}
-	}
-	ic.Add = append(ic.Add, importEntry{Path: impPath})
 }
 
 // findFuncDecl returns the FuncDecl whose Name matches ident.

@@ -335,7 +335,7 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 		if impPath == targetImportPath {
 			continue
 		}
-		addImportEntry(a.imports, info.move.To, importEntry{
+		addImportEntry(a.imports, a.ix, info.move.To, importEntry{
 			Path: impPath, Alias: addImports[impPath],
 		})
 	}

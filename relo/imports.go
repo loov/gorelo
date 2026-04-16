@@ -14,9 +14,17 @@ import (
 )
 
 // importChange describes import modifications needed for a file.
+//
+// Existing is loaded lazily from the file's parsed AST on the first call
+// to addImportEntry; Add accumulates new imports; Aliases records any
+// alias assignments the collision-resolution path made for added entries
+// (used by computeImportAliasEdits to rewrite source-side identifier
+// qualifiers in extracted spans).
 type importChange struct {
-	Add     []importEntry     // imports to add
-	Aliases map[string]string // importPath -> alias (from collision resolution)
+	Existing       []importEntry
+	existingLoaded bool
+	Add            []importEntry
+	Aliases        map[string]string
 }
 
 // importEntry is a single import to add.
@@ -145,17 +153,87 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	return is
 }
 
-// addImportEntry registers entry as an import to add to filePath, deduping
-// by Path. Used by emission sites that previously called ensureImport
-// inline; applyImportsPass picks the entries up after assembly.
-func addImportEntry(is *importSet, filePath string, entry importEntry) {
+// addImportEntry registers entry as an import to add to filePath. On the
+// first call for a file, the file's pre-existing imports are loaded
+// from the index into ic.Existing. The entry is deduplicated against
+// both Existing and Add by import path; if its desired local name
+// (entry.Alias or guessed from path) collides with a different
+// already-known import, a parent-prefixed alias is assigned and
+// recorded in ic.Aliases. applyImportsPass picks the entries up after
+// assembly.
+func addImportEntry(is *importSet, ix *mast.Index, filePath string, entry importEntry) {
 	ic := is.ensureFile(filePath)
-	for _, existing := range ic.Add {
-		if existing.Path == entry.Path {
-			return
+	loadExistingImports(ic, ix, filePath)
+
+	used := make(map[string]string, len(ic.Existing)+len(ic.Add))
+	addToUsed := func(e importEntry) {
+		used[importEntryLocalName(e)] = e.Path
+	}
+	for _, e := range ic.Existing {
+		addToUsed(e)
+	}
+	for _, e := range ic.Add {
+		addToUsed(e)
+	}
+
+	desired := importEntryLocalName(entry)
+	if owner, exists := used[desired]; exists {
+		if owner == entry.Path {
+			return // already imported (existing or queued)
 		}
+		alias := parentPrefixedName(entry.Path)
+		if alias == "" || alias == desired {
+			alias = desired
+		}
+		if _, taken := used[alias]; taken {
+			base := alias
+			for i := 2; ; i++ {
+				alias = base + strconv.Itoa(i)
+				if _, taken := used[alias]; !taken {
+					break
+				}
+			}
+		}
+		entry.Alias = alias
+		if ic.Aliases == nil {
+			ic.Aliases = make(map[string]string)
+		}
+		ic.Aliases[entry.Path] = alias
 	}
 	ic.Add = append(ic.Add, entry)
+}
+
+// loadExistingImports populates ic.Existing from the file's parsed
+// imports (once per file).
+func loadExistingImports(ic *importChange, ix *mast.Index, filePath string) {
+	if ic.existingLoaded {
+		return
+	}
+	ic.existingLoaded = true
+	if ix == nil {
+		return
+	}
+	file := ix.FilesByPath[filePath]
+	if file == nil {
+		return
+	}
+	for _, imp := range file.Syntax.Imports {
+		impPath := importPath(imp)
+		ie := importEntry{Path: impPath}
+		if imp.Name != nil {
+			ie.Alias = imp.Name.Name
+		}
+		ic.Existing = append(ic.Existing, ie)
+	}
+}
+
+// importEntryLocalName returns the local name an import entry will be
+// known by in the file (its alias if non-empty, else the guessed name).
+func importEntryLocalName(e importEntry) string {
+	if e.Alias != "" {
+		return e.Alias
+	}
+	return guessImportLocalName(e.Path)
 }
 
 func (is *importSet) ensureFile(path string) *importChange {

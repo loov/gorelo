@@ -77,9 +77,9 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 // post-Apply content. It runs after the main assembly so it operates
 // on the final layout produced by plan.Apply (and the legacy applier
 // paths that remain), and before removeUnusedImportsText so any
-// imports it adds that are actually unused get pruned in the same
-// run. Each entry goes through ensureImport, which checks for an
-// existing import of the same path (no-op or alias mismatch warning).
+// imports it adds that turn out to be unused get pruned in the same
+// run. Entries are pre-deduped and alias-resolved at addition time
+// (see addImportEntry); ensureImport handles the actual insertion.
 func (a *assembler) applyImportsPass() {
 	for _, filePath := range sortedKeys(a.imports.byFile) {
 		ic := a.imports.byFile[filePath]
@@ -439,7 +439,7 @@ func (a *assembler) assembleSources() {
 						if ar.ImportAlias != "" {
 							entry.Alias = ar.ImportAlias
 						}
-						addImportEntry(a.imports, sourcePath, entry)
+						addImportEntry(a.imports, a.ix, sourcePath, entry)
 					}
 				}
 			}
