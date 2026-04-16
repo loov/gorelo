@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
 
@@ -222,9 +223,12 @@ func lookupFile(ix *mast.Index, path string) *mast.File {
 	return nil
 }
 
-// assembleFileMoves emits FileEdits for every file move: the destination file
-// receives the source bytes with the package clause rewritten and the import
-// block rebuilt; the source path is scheduled for deletion.
+// assembleFileMoves emits FileEdits for every file move: the destination
+// receives the source bytes with the package clause rewritten and per-decl
+// qualification edits applied; the source path is scheduled for deletion.
+// Per-decl Moves into the same destination (synthesized by
+// emitCrossFileExtraction or method-follow expansion) append after this
+// pre-rendered content via singlePassApply.
 func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
 	handled := make(map[string]bool)
 	if len(infos) == 0 {
@@ -237,8 +241,6 @@ func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
 			continue
 		}
 
-		// Target package name: match existing files in the target dir, or
-		// fall back to the directory name.
 		targetDir := filepath.Dir(info.move.To)
 		targetPkgName := a.packageNameForDir(targetDir, src)
 		crossPackage := targetPkgName != src.Syntax.Name.Name
@@ -254,24 +256,23 @@ func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
 	return handled
 }
 
-// renderMovedFile produces the destination content for a file move.
+// renderMovedFile produces the destination content for a file move by
+// running a sub-Plan over the source bytes. The sub-Plan carries every
+// per-decl extraction edit (qualification, self-import unqualification,
+// alias fixups), every in-span detach/attach decl rewrite already in the
+// shared a.edits Plan, and a package-clause Replace when the destination
+// lives in a different package. Cross-target imports referenced by the
+// moved decls are registered on the shared importSet so applyImportsPass
+// installs them in the destination.
 func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, crossPackage bool) string {
 	src := info.srcFile
-	content := string(src.Src)
+	srcPath := src.Path
+	dstPath := info.move.To
+	targetDir := filepath.Dir(dstPath)
+	targetImportPath := guessImportPath(targetDir)
+	ic := a.imports.byFile[dstPath]
 
-	// Apply per-decl extracted edits (cross-target qualification, rename
-	// edits inside spans, import-alias fixups, self-import unqualification)
-	// at absolute source offsets via applyEditsViaPlan, which sorts and
-	// drops contained overlaps before running plan.Apply.
-	var absEdits []edit
-	ic := a.imports.byFile[info.move.To]
-	targetImportPath := guessImportPath(filepath.Dir(info.move.To))
-
-	// Collect new imports referenced by the moved decls that must be
-	// added to the destination file (e.g., source-package imports for
-	// references that now cross a package boundary).
-	addImports := make(map[string]string) // importPath -> alias
-
+	sub := &ed.Plan{}
 	for _, rr := range info.relos {
 		s := a.spans[rr]
 		if s == nil {
@@ -279,71 +280,100 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 		}
 		er := computeExtractedEdits(a.ix, rr, s, a.resolved)
 		for _, e := range er.edits {
-			absEdits = append(absEdits, edit{
-				Start: s.Start + e.Start,
-				End:   s.Start + e.End,
-				New:   e.New,
-			})
-		}
-		// Detach/attach decl edits live in renames.byFile and are picked
-		// up by the in-span filter below.
-		for impPath := range er.imports {
-			if _, ok := addImports[impPath]; !ok {
-				addImports[impPath] = er.aliases[impPath]
-			}
+			emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove-qualify")
 		}
 		if targetImportPath != "" {
 			for _, e := range collectSelfImportEdits(a.ix, rr, s, targetImportPath, a.resolved) {
-				absEdits = append(absEdits, edit{
-					Start: s.Start + e.Start,
-					End:   s.Start + e.End,
-					New:   e.New,
-				})
+				emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove-self-import")
 			}
 		}
 		for _, e := range computeImportAliasEdits(a.ix, rr, s, ic) {
-			absEdits = append(absEdits, edit{
-				Start: s.Start + e.Start,
-				End:   s.Start + e.End,
-				New:   e.New,
-			})
+			emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove-alias")
 		}
-		// Pull in any in-span Plan edits for this source path (detach
-		// decl rewrites, consumer rename edits inside the moved span)
-		// in absolute coordinates so they apply alongside the
-		// absEdits already collected.
-		for _, e := range planEditsForFile(a.edits, src.Path) {
-			if e.Start >= s.Start && e.End <= s.End {
-				absEdits = append(absEdits, e)
+		for _, impPath := range sortedKeys(er.imports) {
+			if impPath == targetImportPath {
+				continue
 			}
+			entry := importEntry{Path: impPath}
+			if alias, ok := er.aliases[impPath]; ok {
+				entry.Alias = alias
+			}
+			addImportEntry(a.imports, a.ix, dstPath, entry)
 		}
 	}
-	content = applyEditsViaPlan(a.plan, src.Path, []byte(content), absEdits)
 
-	// Rewrite the package clause if the destination lives in a different
-	// package. The assembled span above did not touch the package decl,
-	// so this is a straightforward find-and-replace on the first "package"
-	// line.
+	// In-span primitives already on the shared Plan (detach/attach
+	// decl rewrites, consumer renames inside a moved span) — replay
+	// them onto the sub-Plan in absolute source coordinates.
+	carryPlanInSpans(sub, a.edits, srcPath, info.relos, a.spans)
+
 	if crossPackage {
-		content = rewritePackageClause(content, targetPkgName)
+		pkgName := src.Syntax.Name
+		pkgOff := a.ix.Fset.Position(pkgName.Pos()).Offset
+		pkgEnd := pkgOff + len(pkgName.Name)
+		sub.Replace(ed.Span{Path: srcPath, Start: pkgOff, End: pkgEnd}, targetPkgName, "filemove-pkg")
 	}
 
-	// Cross-target imports collected from computeExtractedEdits
-	// (e.g., a reference to a sibling decl that stayed behind in the
-	// source package) are registered for applyImportsPass.
-	for _, impPath := range sortedKeys(addImports) {
-		if impPath == targetImportPath {
-			continue
-		}
-		addImportEntry(a.imports, a.ix, info.move.To, importEntry{
-			Path: impPath, Alias: addImports[impPath],
-		})
+	dup := make([]byte, len(src.Src))
+	copy(dup, src.Src)
+	outputs, err := sub.Apply(map[string][]byte{srcPath: dup})
+	if err != nil {
+		a.plan.Warnings.Addf("filemove sub-plan failed for %s: %v", srcPath, err)
+		return string(src.Src)
 	}
-
+	content := string(outputs[srcPath])
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
 	return content
+}
+
+// carryPlanInSpans copies primitives from src that target srcPath and
+// fall inside any rr's span into dst. Move primitives are skipped (they
+// belong to cross-file extraction, not whole-file rendering).
+func carryPlanInSpans(dst, src *ed.Plan, srcPath string, relos []*resolvedRelo, spans map[*resolvedRelo]*span) {
+	if len(relos) == 0 {
+		return
+	}
+	for _, prim := range src.Primitives() {
+		var pStart, pEnd int
+		var path string
+		switch x := prim.(type) {
+		case ed.Insert:
+			path, pStart, pEnd = x.Anchor.Path, x.Anchor.Offset, x.Anchor.Offset
+		case ed.Delete:
+			path, pStart, pEnd = x.Span.Path, x.Span.Start, x.Span.End
+		case ed.Replace:
+			path, pStart, pEnd = x.Span.Path, x.Span.Start, x.Span.End
+		default:
+			continue
+		}
+		if path != srcPath {
+			continue
+		}
+		var inSpan bool
+		for _, rr := range relos {
+			s := spans[rr]
+			if s == nil {
+				continue
+			}
+			if pStart >= s.Start && pEnd <= s.End {
+				inSpan = true
+				break
+			}
+		}
+		if !inSpan {
+			continue
+		}
+		switch x := prim.(type) {
+		case ed.Insert:
+			dst.Insert(x.Anchor, x.Text, x.Side, "filemove-carry")
+		case ed.Delete:
+			dst.Delete(x.Span, "filemove-carry")
+		case ed.Replace:
+			dst.Replace(x.Span, x.Text, "filemove-carry")
+		}
+	}
 }
 
 // packageNameForDir finds the best package name to use for a target directory.
@@ -367,26 +397,4 @@ func (a *assembler) packageNameForDir(targetDir string, srcFile *mast.File) stri
 		}
 	}
 	return guessPackageName(targetDir)
-}
-
-// rewritePackageClause replaces the first "package <name>" line with the
-// given package name. It keeps any build-constraint header untouched.
-func rewritePackageClause(src, newName string) string {
-	lines := strings.Split(src, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "package ") {
-			continue
-		}
-		// Preserve trailing comments (e.g., "package foo // docs").
-		rest := strings.TrimPrefix(trimmed, "package ")
-		parts := strings.SplitN(rest, " ", 2)
-		if len(parts) == 2 {
-			lines[i] = "package " + newName + " " + parts[1]
-		} else {
-			lines[i] = "package " + newName
-		}
-		return strings.Join(lines, "\n")
-	}
-	return src
 }
