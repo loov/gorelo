@@ -68,7 +68,7 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 // the receiver type. Returns "" when no import is needed (receiver
 // type resolves to the same package as the detach target).
 func detachedReceiverImportPath(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) string {
-	tgtDir := filepath.Dir(rr.TargetFile)
+	tgtDir := finalDir(rr)
 	var recvDir string
 	if _, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {
 		recvDir = filepath.Dir(recvTargetFile)
@@ -170,11 +170,11 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit 
 // moved to the same target package as the detached function, no
 // qualifier is needed.
 func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
-	newName := rr.TargetName
+	newName := finalName(rr)
 
 	var detachTgtDir string
 	if rr.TargetFile != "" {
-		detachTgtDir = filepath.Dir(rr.TargetFile)
+		detachTgtDir = finalDir(rr)
 	}
 
 	for _, id := range rr.Group.Idents {
@@ -349,8 +349,7 @@ func attachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) [
 
 	// When moving to a different package, check if the receiver type's
 	// package qualifier should be removed (self-import).
-	tgtDir := filepath.Dir(rr.TargetFile)
-	tgtImportPath := guessImportPath(tgtDir)
+	tgtImportPath := finalImportPath(rr)
 	if tgtImportPath != "" {
 		// Check if the first parameter's type references the target package.
 		// Unqualify the type when moving into the receiver's package.
@@ -550,7 +549,7 @@ func detachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, r
 
 	// Determine the receiver type's final name and package qualifier,
 	// taking into account any concurrent rename/move of that type.
-	tgtDir := filepath.Dir(rr.TargetFile)
+	tgtDir := finalDir(rr)
 	recvNewName := ""
 	var recvDir string
 	if name, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {

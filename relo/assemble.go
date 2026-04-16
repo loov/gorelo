@@ -499,7 +499,7 @@ func (a *assembler) assembleSources() {
 				if rr.Relo.Detach || rr.Relo.MethodOf != "" {
 					continue
 				}
-				targetDir := filepath.Dir(rr.TargetFile)
+				targetDir := finalDir(rr)
 				srcDir := filepath.Dir(rr.File.Path)
 				if targetDir != srcDir {
 					crossByDir[targetDir] = append(crossByDir[targetDir], rr)
