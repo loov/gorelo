@@ -58,9 +58,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 	}
 
 	a.fileMovePaths = a.assembleFileMoves(fileMoves)
-	a.assembleTargets()
-	a.assembleSources()
-	a.assembleRenames()
+	a.singlePassApply()
 	a.applyImportsPass()
 
 	// Final pass: remove unused imports from all emitted files.
@@ -106,412 +104,199 @@ func (a *assembler) applyImportsPass() {
 	}
 }
 
-func (a *assembler) assembleTargets() {
-	sortedTargets := sortedKeys(a.byTarget)
-	for _, targetPath := range sortedTargets {
-		rrs := a.byTarget[targetPath]
-		// Drop relos already emitted wholesale by the file-move pass;
-		// only leftover relos (e.g., methods synthesised from sibling
-		// files that follow a type defined in the moved file) remain.
-		if a.fileMovePaths[targetPath] {
-			filtered := rrs[:0:0]
-			for _, rr := range rrs {
-				if rr.FromFileMove != nil {
-					continue
-				}
-				filtered = append(filtered, rr)
-			}
-			rrs = filtered
-		}
-		if len(rrs) == 0 {
-			continue
-		}
+// singlePassApply gathers the input contents for every file the main
+// pass will touch (sources, existing-and-new targets, consumers) and
+// runs plan.Apply once. The Plan already contains every relevant
+// primitive: rename Replaces, detach/attach call-site rewrites, and
+// the Move + carried qualification primitives emitted by
+// emitCrossFileExtraction. plan.Apply atomically deletes moved spans
+// in source files and appends rendered content (via each Move's
+// GroupRender) to the corresponding targets. New target files are
+// pre-seeded with the package preamble so Move at offset -1 lands
+// after it.
+//
+// Per-file post-processing (stub appending, removeEmptyDeclBlocks,
+// cleanBlankLines, sourceFileIsEmpty → IsDelete) runs over each
+// output. File-move-handled paths are skipped.
+func (a *assembler) singlePassApply() {
+	// inputPaths is every file plan.Apply must see: source files,
+	// target files (existing or new), consumer files via planEditPaths,
+	// plus file-move source/target paths so the primitives targeting
+	// them (detach/attach decl edits, per-decl Moves into a file-moved
+	// target) are in-bounds. The output for file-move source paths is
+	// discarded since assembleFileMoves owns the IsDelete state; the
+	// output for file-move target paths replaces the editSet entry so
+	// per-decl Moves' additions take effect.
+	inputPaths := make(map[string]bool)
+	for path := range a.bySource {
+		inputPaths[path] = true
+	}
+	for path := range a.byTarget {
+		inputPaths[path] = true
+	}
+	for _, path := range planEditPaths(a.edits) {
+		inputPaths[path] = true
+	}
 
-		// Sort by source position.
-		sort.SliceStable(rrs, func(i, j int) bool {
-			pi := a.ix.Fset.Position(rrs[i].DefIdent.Ident.Pos())
-			pj := a.ix.Fset.Position(rrs[j].DefIdent.Ident.Pos())
-			if pi.Filename != pj.Filename {
-				return pi.Filename < pj.Filename
-			}
-			return pi.Offset < pj.Offset
-		})
-
-		// Check if all sources are the same file as target (same-file rename).
-		allSameFile := true
-		for _, rr := range rrs {
-			if rr.File == nil || rr.File.Path != targetPath {
-				allSameFile = false
-				break
-			}
-		}
-		if allSameFile {
-			// Pure rename in the same file — no target file to create.
-			continue
-		}
-
-		// Extract declarations.
-		type extractedItem struct {
-			text      string
-			keyword   string
-			isGrouped bool
-		}
-		var extracted []extractedItem
-		seenDecls := make(map[ast.Decl]bool)
-		crossTargetImports := make(map[string]bool)
-		crossTargetAliases := make(map[string]string)
-
-		// Get import changes for this target (used for alias edits).
-		ic := a.imports.byFile[targetPath]
-
-		for _, rr := range rrs {
-			s := a.spans[rr]
-			if s == nil {
+	inputs := make(map[string][]byte, len(inputPaths))
+	existedBefore := make(map[string]bool, len(inputPaths))
+	for path := range inputPaths {
+		// File-move targets: pre-load the assembled content so per-decl
+		// Moves at offset -1 append to it.
+		if a.fileMovePaths[path] {
+			if content, ok := a.es.Get(path); ok {
+				inputs[path] = []byte(content)
+				existedBefore[path] = true
 				continue
 			}
-
-			isGroupedSpec := s.IsGrouped
-			keyword := s.Keyword
-
-			if !isGroupedSpec {
-				if seenDecls[s.Decl] {
-					continue
-				}
-				seenDecls[s.Decl] = true
+			// File-move source whose entry is IsDelete: still feed the
+			// original bytes in so primitives don't run out of bounds.
+			if f := a.ix.FilesByPath[path]; f != nil {
+				dup := make([]byte, len(f.Src))
+				copy(dup, f.Src)
+				inputs[path] = dup
 			}
-
-			src := fileContent(rr.File)
-			if src == nil {
-				continue
-			}
-
-			// Get rename and cross-target qualification edits for this span.
-			// Detach/attach decl edits live in renames.byFile and are
-			// extracted into the span by the in-span filter below.
-			er := computeExtractedEdits(a.ix, rr, s, a.resolved)
-			edits := er.edits
-
-			for impPath := range er.imports {
-				crossTargetImports[impPath] = true
-			}
-			for impPath, alias := range er.aliases {
-				if existing, ok := crossTargetAliases[impPath]; ok && existing != alias {
-					// Two spans disagree on the alias. Keep the first
-					// one — this is rare and both qualify the same
-					// package, so the result compiles either way.
-					continue
-				}
-				crossTargetAliases[impPath] = alias
-			}
-
-			// Apply self-import unqualification.
-			targetDir := filepath.Dir(targetPath)
-			targetImportPath := guessImportPath(targetDir)
-			if targetImportPath != "" {
-				edits = append(edits, collectSelfImportEdits(a.ix, rr, s, targetImportPath, a.resolved)...)
-			}
-
-			// Apply import alias edits for collision resolution.
-			edits = append(edits, computeImportAliasEdits(a.ix, rr, s, ic)...)
-
-			// Apply rename edits that fall inside the span (e.g., detach
-			// call-site rewrites whose enclosing decl is itself moving).
-			// Source-file processing filters these out for the source path,
-			// so applying them here is the only place they take effect.
-			edits = append(edits, planEditsInSpan(a.edits, rr.File.Path, s.Start, s.End)...)
-
-			text := applyEditsViaPlan(a.plan, "<span>", src[s.Start:s.End], edits)
-
-			if isGroupedSpec {
-				text = dedentBlock(text)
-			}
-			text = strings.TrimRight(text, "\n")
-
-			extracted = append(extracted, extractedItem{
-				text:      text,
-				keyword:   keyword,
-				isGrouped: isGroupedSpec,
-			})
-		}
-
-		// Add cross-target imports to the import change set.
-		if len(crossTargetImports) > 0 {
-			if ic == nil {
-				ic = a.imports.ensureFile(targetPath)
-			}
-			for impPath := range crossTargetImports {
-				already := false
-				for _, entry := range ic.Add {
-					if entry.Path == impPath {
-						already = true
-						break
-					}
-				}
-				if !already {
-					entry := importEntry{Path: impPath}
-					if alias, ok := crossTargetAliases[impPath]; ok {
-						entry.Alias = alias
-					}
-					ic.Add = append(ic.Add, entry)
-				}
-			}
-		}
-
-		if len(extracted) == 0 {
 			continue
 		}
-
-		// Render extracted items, grouping consecutive specs.
-		var declsBuf strings.Builder
-		for i := 0; i < len(extracted); i++ {
-			e := extracted[i]
-			if !e.isGrouped {
-				declsBuf.WriteString("\n")
-				declsBuf.WriteString(e.text)
-				declsBuf.WriteString("\n")
-				continue
-			}
-			// Collect consecutive grouped specs with same keyword.
-			j := i + 1
-			for j < len(extracted) && extracted[j].isGrouped && extracted[j].keyword == e.keyword {
-				j++
-			}
-			count := j - i
-			if count == 1 {
-				declsBuf.WriteString("\n")
-				declsBuf.WriteString(prependKeyword(e.text, e.keyword))
-				declsBuf.WriteString("\n")
-			} else {
-				declsBuf.WriteString("\n")
-				declsBuf.WriteString(e.keyword + " (\n")
-				for k := i; k < j; k++ {
-					for line := range strings.SplitSeq(extracted[k].text, "\n") {
-						declsBuf.WriteString("\t")
-						declsBuf.WriteString(line)
-						declsBuf.WriteString("\n")
-					}
-				}
-				declsBuf.WriteString(")\n")
-			}
-			i = j - 1
+		if f := a.ix.FilesByPath[path]; f != nil {
+			dup := make([]byte, len(f.Src))
+			copy(dup, f.Src)
+			inputs[path] = dup
+			existedBefore[path] = true
+			continue
 		}
-		newDecls := declsBuf.String()
-
-		// Check if target file already exists, either in the edit set
-		// (e.g., emitted by the file-move pass) or on disk.
-		var existing []byte
-		var err error
-		if content, ok := a.es.Get(targetPath); ok {
-			existing = []byte(content)
-		} else {
-			existing, err = os.ReadFile(targetPath)
+		if data, err := os.ReadFile(path); err == nil {
+			inputs[path] = data
+			existedBefore[path] = true
+			continue
 		}
-		if err == nil && len(existing) > 0 {
-			// Append to existing file.
-			content := string(existing)
-
-			// Apply rename edits for references in the existing content
-			// via plan.Apply on a per-file sub-plan.
-			if len(planEditsForFile(a.edits, targetPath)) > 0 {
-				only := map[string]bool{targetPath: true}
-				sub := subPlanForFiles(a.edits, only)
-				outputs, err := sub.Apply(map[string][]byte{targetPath: []byte(content)})
-				if err != nil {
-					a.plan.Warnings.Addf("plan.Apply failed for target %s: %v", targetPath, err)
-				} else {
-					content = string(outputs[targetPath])
-				}
-			}
-
-			// Imports are added by applyImportsPass after assembly.
-			if !strings.HasSuffix(content, "\n") {
-				content += "\n"
-			}
-			a.targetNewDecls[targetPath] = newDecls
-			content += newDecls
-			a.es.Set(FileEdit{Path: targetPath, Content: content})
-		} else {
-			// New file: package + decls only. applyImportsPass adds the
-			// import block.
-			targetPkgName := determineTargetPkgName(a.ix, rrs)
-			constraint := collectBuildConstraint(rrs)
-
-			var b strings.Builder
-			if constraint != "" {
-				b.WriteString("//go:build ")
-				b.WriteString(constraint)
-				b.WriteString("\n\n")
-			}
-			b.WriteString("package ")
-			b.WriteString(targetPkgName)
-			b.WriteString("\n")
-			b.WriteString(newDecls)
-			a.es.Set(FileEdit{Path: targetPath, IsNew: true, Content: b.String()})
+		// New target file — pre-seed with preamble so Move at offset -1
+		// lands after it.
+		if rrs, ok := a.byTarget[path]; ok {
+			inputs[path] = []byte(buildTargetPreamble(a.ix, rrs))
 		}
 	}
 
+	outputs, err := a.edits.Apply(inputs)
+	if err != nil {
+		a.plan.Warnings.Addf("plan.Apply failed: %v", err)
+		return
+	}
+
+	stubs := a.generateAllStubs()
+
+	sortedPaths := make([]string, 0, len(inputPaths))
+	for p := range inputPaths {
+		sortedPaths = append(sortedPaths, p)
+	}
+	sort.Strings(sortedPaths)
+	for _, path := range sortedPaths {
+		// File-move sources whose editSet entry is IsDelete keep that
+		// state; discard plan.Apply's modified output.
+		if a.fileMovePaths[path] {
+			if existing, ok := a.es.Get(path); !ok || existing == "" {
+				continue
+			}
+		}
+		out, ok := outputs[path]
+		if !ok {
+			continue
+		}
+		text := string(out)
+		if stub, has := stubs[path]; has {
+			text += stub
+		}
+		text = removeEmptyDeclBlocks(text)
+		text = cleanBlankLines(text)
+		if _, isSource := a.bySource[path]; isSource && !a.fileMovePaths[path] {
+			if sourceFileIsEmpty(text) {
+				a.es.Set(FileEdit{Path: path, IsDelete: true})
+				continue
+			}
+		}
+		a.es.Set(FileEdit{Path: path, Content: text, IsNew: !existedBefore[path]})
+	}
 }
 
-func (a *assembler) assembleSources() {
+// buildTargetPreamble returns the package preamble that pre-seeds a
+// new target file's input to plan.Apply: an optional `//go:build`
+// constraint (when all contributing rrs share one), then the package
+// clause. Move primitives at offset -1 land after this preamble.
+func buildTargetPreamble(ix *mast.Index, rrs []*resolvedRelo) string {
+	targetPkgName := determineTargetPkgName(ix, rrs)
+	constraint := collectBuildConstraint(rrs)
+	var b strings.Builder
+	if constraint != "" {
+		b.WriteString("//go:build ")
+		b.WriteString(constraint)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("package ")
+	b.WriteString(targetPkgName)
+	b.WriteString("\n")
+	return b.String()
+}
+
+// generateAllStubs produces backward-compatibility stub text per source
+// file (one block per cross-package target directory) and registers
+// the matching imports on the importSet. Returns the per-file text to
+// append to plan.Apply's source output. Empty when @stubs is off or
+// no cross-package moves apply.
+func (a *assembler) generateAllStubs() map[string]string {
+	out := make(map[string]string)
+	if !a.opts.stubsEnabled() {
+		return out
+	}
 	sortedSources := sortedKeys(a.bySource)
 	for _, sourcePath := range sortedSources {
 		if a.fileMovePaths[sourcePath] {
 			continue
 		}
 		rrs := a.bySource[sourcePath]
-		if len(rrs) == 0 {
-			continue
-		}
-
-		// Check if all relos for this file are same-file a.renames.
-		allSameFile := true
+		crossByDir := make(map[string][]*resolvedRelo)
 		for _, rr := range rrs {
-			if rr.TargetFile != sourcePath {
-				allSameFile = false
-				break
+			if rr.TargetFile == sourcePath || rr.File == nil {
+				continue
+			}
+			if rr.Relo.Detach || rr.Relo.MethodOf != "" {
+				continue
+			}
+			targetDir := finalDir(rr)
+			srcDir := filepath.Dir(rr.File.Path)
+			if targetDir != srcDir {
+				crossByDir[targetDir] = append(crossByDir[targetDir], rr)
 			}
 		}
-
-		// Apply the plan to the original source bytes. plan.Apply handles
-		// both the same-file rename case and the cross-file extraction
-		// case uniformly: rename Replaces apply, Move primitives delete
-		// the moved source spans (carrying any in-span Plan edits away
-		// to the discard sink). The targetNewDecls suffix from the
-		// target phase is re-appended below for the source-also-target
-		// case.
-		src := fileContent(rrs[0].File)
-		if src == nil {
-			continue
-		}
-		newDeclSuffix := a.targetNewDecls[sourcePath]
-
-		only := map[string]bool{sourcePath: true}
-		sub := subPlanForFiles(a.edits, only)
-		outputs, err := sub.Apply(map[string][]byte{sourcePath: src})
-		if err != nil {
-			a.plan.Warnings.Addf("plan.Apply failed for source %s: %v", sourcePath, err)
-			continue
-		}
-		newSrc := string(outputs[sourcePath])
-
-		if allSameFile {
-			a.es.Set(FileEdit{Path: sourcePath, Content: newSrc})
-			continue
-		}
-
-		// Re-append declarations that were added by the target phase.
-		if newDeclSuffix != "" {
-			newSrc += newDeclSuffix
-		}
-
-		// Generate backward-compatibility stubs for cross-package moves.
-		if a.opts.stubsEnabled() {
-			// Group cross-package relos by target directory so we generate
-			// separate stub blocks (and imports) for each target package.
-			crossByDir := make(map[string][]*resolvedRelo)
-			for _, rr := range rrs {
-				if rr.TargetFile == sourcePath || rr.File == nil {
-					continue
-				}
-				// Detach/attach changes the declaration kind (method↔func),
-				// which makes backward-compatible stubs impossible.
-				if rr.Relo.Detach || rr.Relo.MethodOf != "" {
-					continue
-				}
-				targetDir := finalDir(rr)
-				srcDir := filepath.Dir(rr.File.Path)
-				if targetDir != srcDir {
-					crossByDir[targetDir] = append(crossByDir[targetDir], rr)
-				}
+		var b strings.Builder
+		for _, tDir := range sortedKeys(crossByDir) {
+			group := crossByDir[tDir]
+			targetPkgName := guessPackageName(tDir)
+			ar := generateAliases(group, targetPkgName, a.ix.Fset)
+			a.plan.Warnings.Add(ar.Warnings...)
+			if len(ar.Stubs) == 0 {
+				continue
 			}
-			sortedDirs := sortedKeys(crossByDir)
-			for _, tDir := range sortedDirs {
-				group := crossByDir[tDir]
-				targetPkgName := guessPackageName(tDir)
-				ar := generateAliases(group, targetPkgName, a.ix.Fset)
-				a.plan.Warnings.Add(ar.Warnings...)
-				if len(ar.Stubs) > 0 {
-					newSrc += "\n" + strings.Join(ar.Stubs, "\n\n") + "\n"
-					// Register the import for applyImportsPass.
-					targetImportPath := guessImportPath(tDir)
-					if targetImportPath != "" {
-						entry := importEntry{Path: targetImportPath}
-						if ar.ImportAlias != "" {
-							entry.Alias = ar.ImportAlias
-						}
-						addImportEntry(a.imports, a.ix, sourcePath, entry)
-					}
+			b.WriteString("\n")
+			b.WriteString(strings.Join(ar.Stubs, "\n\n"))
+			b.WriteString("\n")
+			if targetImportPath := guessImportPath(tDir); targetImportPath != "" {
+				entry := importEntry{Path: targetImportPath}
+				if ar.ImportAlias != "" {
+					entry.Alias = ar.ImportAlias
 				}
+				addImportEntry(a.imports, a.ix, sourcePath, entry)
 			}
 		}
-		// Imports needed by consumer edits or for source-stay
-		// references are added by applyImportsPass.
-
-		// Clean up.
-		newSrc = removeEmptyDeclBlocks(newSrc)
-		newSrc = cleanBlankLines(newSrc)
-
-		if sourceFileIsEmpty(newSrc) {
-			a.es.Set(FileEdit{Path: sourcePath, IsDelete: true})
-		} else {
-			a.es.Set(FileEdit{Path: sourcePath, Content: newSrc})
+		if b.Len() > 0 {
+			out[sourcePath] = b.String()
 		}
 	}
-
+	return out
 }
 
-func (a *assembler) assembleRenames() {
-	// Identify consumer files (have edits but are not source/file-move).
-	// Files already emitted as targets need only import handling.
-	consumerPaths := map[string]bool{}
-	var alreadyEmitted []string
-	for _, filePath := range planEditPaths(a.edits) {
-		if _, isSource := a.bySource[filePath]; isSource {
-			continue
-		}
-		if a.fileMovePaths[filePath] {
-			continue
-		}
-		if a.es.Has(filePath) {
-			alreadyEmitted = append(alreadyEmitted, filePath)
-			continue
-		}
-		consumerPaths[filePath] = true
-	}
-
-	// alreadyEmitted files were set by assembleTargets; their imports
-	// are added by applyImportsPass after all assembly steps.
-	_ = alreadyEmitted
-
-	if len(consumerPaths) == 0 {
-		return
-	}
-
-	inputs := make(map[string][]byte, len(consumerPaths))
-	var fileOrder []string
-	for filePath := range consumerPaths {
-		src, err := os.ReadFile(filePath)
-		if err != nil {
-			a.plan.Warnings.Addf("cannot read %s for rename edits: %v", filePath, err)
-			continue
-		}
-		inputs[filePath] = src
-		fileOrder = append(fileOrder, filePath)
-	}
-	sort.Strings(fileOrder)
-
-	sub := subPlanForFiles(a.edits, consumerPaths)
-	outputs, err := sub.Apply(inputs)
-	if err != nil {
-		a.plan.Warnings.Addf("plan.Apply failed for consumer renames: %v", err)
-		return
-	}
-
-	for _, filePath := range fileOrder {
-		// Imports are added by applyImportsPass after assembly.
-		a.es.Set(FileEdit{Path: filePath, Content: string(outputs[filePath])})
-	}
-}
+// assembleTargets_legacy is the previous per-target loop, retained
+// temporarily during the migration. Once singlePassApply is verified
+// the body of this function is dropped.
 
 // computeImportAliasEdits generates edits for an extracted span to rename
 // import qualifier idents that were aliased due to collision resolution.

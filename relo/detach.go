@@ -47,87 +47,6 @@ func planEditsForFile(p *ed.Plan, path string) []edit {
 	return primitivesToEditsOn(p.Primitives(), path)
 }
 
-// planEditsInSpan returns []edit for the subset of p's primitives that
-// target path and lie strictly within [start, end). Offsets are shifted
-// to span-relative.
-func planEditsInSpan(p *ed.Plan, path string, start, end int) []edit {
-	var out []edit
-	for _, prim := range p.Primitives() {
-		switch x := prim.(type) {
-		case ed.Insert:
-			if x.Anchor.Path != path {
-				continue
-			}
-			if x.Anchor.Offset < start || x.Anchor.Offset > end {
-				continue
-			}
-			out = append(out, edit{
-				Start: x.Anchor.Offset - start,
-				End:   x.Anchor.Offset - start,
-				New:   x.Text,
-			})
-		case ed.Delete:
-			if x.Span.Path != path {
-				continue
-			}
-			if x.Span.Start < start || x.Span.End > end {
-				continue
-			}
-			out = append(out, edit{
-				Start: x.Span.Start - start,
-				End:   x.Span.End - start,
-				New:   "",
-			})
-		case ed.Replace:
-			if x.Span.Path != path {
-				continue
-			}
-			if x.Span.Start < start || x.Span.End > end {
-				continue
-			}
-			out = append(out, edit{
-				Start: x.Span.Start - start,
-				End:   x.Span.End - start,
-				New:   x.Text,
-			})
-		}
-	}
-	return out
-}
-
-// subPlanForFiles returns a new Plan containing only primitives whose
-// source-side file path is in keep. Move primitives are kept when
-// their source span belongs to keep; the destination may live outside
-// keep (e.g., the discard sink used for source-only application).
-func subPlanForFiles(p *ed.Plan, keep map[string]bool) *ed.Plan {
-	sub := &ed.Plan{}
-	for _, prim := range p.Primitives() {
-		switch x := prim.(type) {
-		case ed.Insert:
-			if !keep[x.Anchor.Path] {
-				continue
-			}
-			sub.Insert(x.Anchor, x.Text, x.Side, x.Origin())
-		case ed.Delete:
-			if !keep[x.Span.Path] {
-				continue
-			}
-			sub.Delete(x.Span, x.Origin())
-		case ed.Replace:
-			if !keep[x.Span.Path] {
-				continue
-			}
-			sub.Replace(x.Span, x.Text, x.Origin())
-		case ed.Move:
-			if !keep[x.Span.Path] {
-				continue
-			}
-			sub.Move(x.Span, x.Dest, x.Options, x.Origin())
-		}
-	}
-	return sub
-}
-
 // applyEditsViaPlan converts a slice of legacy edits into a per-file
 // sub-plan and runs plan.Apply to produce the result. Overlapping
 // edits are pre-processed to match legacy applyEdits semantics (the
@@ -217,6 +136,12 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 		if rr.File == nil {
 			continue
 		}
+		// File-move-synthesized rrs are handled by assembleFileMoves,
+		// not by the main plan.Apply pass; their source file isn't in
+		// inputs so emitting a Move here would be out-of-bounds.
+		if rr.FromFileMove != nil {
+			continue
+		}
 		s := spans[rr]
 		if s == nil {
 			continue
@@ -302,16 +227,16 @@ func emitSpanRelativeAtAbs(edits *ed.Plan, srcPath string, spanStart int, e edit
 
 // goBlockRenderer returns an edit.GroupRenderer that wraps a same-keyword
 // run of items in Go's `keyword (\n\t…\n)\n` block form, or in the
-// inline `keyword X` form when there's a single item. Each item is
-// expected to be the spec text without surrounding whitespace; the
-// renderer prepends a leading newline so consecutive groups at the
-// same destination are visually separated.
+// inline `keyword X` form when there's a single item. The single-item
+// form inserts the keyword before the first non-comment line so that
+// any leading doc comment stays above the keyword. The renderer
+// prepends a leading newline so consecutive groups at one destination
+// are visually separated.
 func goBlockRenderer(kw string) ed.GroupRenderer {
 	return func(items [][]byte) []byte {
 		if len(items) == 1 {
 			body := bytes.TrimRight(items[0], "\n")
-			body = bytes.TrimLeft(body, " \t")
-			return []byte("\n" + kw + " " + string(body) + "\n")
+			return []byte("\n" + prependKeyword(string(body), kw) + "\n")
 		}
 		var b bytes.Buffer
 		b.WriteString("\n" + kw + " (\n")
