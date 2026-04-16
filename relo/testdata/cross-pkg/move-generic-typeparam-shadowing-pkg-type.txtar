@@ -1,0 +1,37 @@
+# Moving a generic function whose type parameter shadows a package-level
+# type name must NOT emit a spurious cross-package reference warning.
+# Before the TypeName scope fix in objectKeyFor, the type parameter `t`
+# and the package-level `type t int` merged into one group, and
+# checkCrossPkgRefs classified the group as package-scope and warned
+# about a "reference to unexported t" inside the moved decl.
+
+F -> dst/f.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/src.go --
+package src
+
+type t int
+
+// F uses `t` as a type parameter, which shadows the package-level `t`
+// inside its own scope. It does NOT reference the package-level type.
+func F[t any](v t) t { return v }
+
+// Keep the package-level type alive.
+func Size() int { return int(t(0)) }
+-- golden/src/src.go --
+package src
+
+type t int
+
+// Keep the package-level type alive.
+func Size() int { return int(t(0)) }
+-- golden/dst/f.go --
+package dst
+
+// F uses `t` as a type parameter, which shadows the package-level `t`
+// inside its own scope. It does NOT reference the package-level type.
+func F[t any](v t) t { return v }
