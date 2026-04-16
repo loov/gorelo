@@ -397,6 +397,73 @@ func TestApply_MoveAppendNewlineOption(t *testing.T) {
 	assertFile(t, out, "b.go", "abc\n")
 }
 
+func TestApply_StressMoveRenameDetach(t *testing.T) {
+	// Simultaneous composition of four operations on the same method:
+	//   1. Move the type decl to a new file
+	//   2. Rename the type (Server → Host) inside the moved type decl
+	//   3. Rename the method (Handle → Serve)
+	//   4. Detach the method (receiver → first parameter, qualified as *Host)
+	//   5. Move the method to the same new file
+	//
+	// Offsets are computed explicitly; comments show the span each primitive
+	// targets in the input.
+	input := "package src\n" + // [0, 12)
+		"type Server struct{ x int }\n" + // [12, 40)
+		"func (s *Server) Handle(n int) error { return nil }\n" // [40, 92)
+
+	files := map[string][]byte{
+		"a.go": []byte(input),
+		"b.go": []byte(""),
+	}
+
+	const (
+		typeDeclStart = 12
+		typeDeclEnd   = 40
+		typeNameStart = 17 // "Server" inside the type decl
+		typeNameEnd   = 23
+
+		funcDeclStart = 40
+		funcDeclEnd   = 92
+		recvStart     = 45 // "(s *Server) " — paren through trailing space
+		recvEnd       = 57
+		methodStart   = 57 // "Handle"
+		methodEnd     = 63
+		paramInsertAt = 64 // position of 'n' in "(n int)"
+	)
+
+	var p Plan
+
+	// Outer Move #1: type decl → b.go:0
+	p.Move(Span{Path: "a.go", Start: typeDeclStart, End: typeDeclEnd},
+		Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "move-type")
+	// Carried: Server → Host inside the type decl.
+	p.Replace(Span{Path: "a.go", Start: typeNameStart, End: typeNameEnd},
+		"Host", "rename-type")
+
+	// Outer Move #2: func decl → b.go:0 (merges with Move #1 at same anchor
+	// with matching empty GroupKeyword; realized bytes concatenate in plan
+	// order).
+	p.Move(Span{Path: "a.go", Start: funcDeclStart, End: funcDeclEnd},
+		Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "move-func")
+	// Carried: delete "(s *Server) " — the whole receiver + paren + trailing space.
+	p.Delete(Span{Path: "a.go", Start: recvStart, End: recvEnd}, "detach-strip-recv")
+	// Carried: rename Handle → Serve.
+	p.Replace(Span{Path: "a.go", Start: methodStart, End: methodEnd},
+		"Serve", "rename-method")
+	// Carried: insert the renamed receiver as first parameter.
+	p.Insert(Anchor{Path: "a.go", Offset: paramInsertAt},
+		"s *Host, ", Before, "detach-add-recv-param")
+
+	out := mustApply(t, &p, files)
+
+	wantA := "package src\n"
+	wantB := "type Host struct{ x int }\n" +
+		"func Serve(s *Host, n int) error { return nil }\n"
+
+	assertFile(t, out, "a.go", wantA)
+	assertFile(t, out, "b.go", wantB)
+}
+
 func TestApply_DetachMethodExample(t *testing.T) {
 	// The user's driving example:
 	//   func (server *Server) ServeHTTP(w int) {}
