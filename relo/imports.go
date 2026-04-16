@@ -18,8 +18,8 @@ import (
 // Existing is loaded lazily from the file's parsed AST on the first call
 // to addImportEntry; Add accumulates new imports; Aliases records any
 // alias assignments the collision-resolution path made for added entries
-// (used by computeImportAliasEdits to rewrite source-side identifier
-// qualifiers in extracted spans).
+// (used by rewriteSpanQualifiers to look up the destination's local name
+// for an import path when emitting qualifier-rewrite edits).
 type importChange struct {
 	Existing       []importEntry
 	existingLoaded bool

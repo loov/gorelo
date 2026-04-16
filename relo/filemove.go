@@ -267,10 +267,6 @@ func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
 func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, crossPackage bool) string {
 	src := info.srcFile
 	srcPath := src.Path
-	dstPath := info.move.To
-	targetDir := filepath.Dir(dstPath)
-	targetImportPath := guessImportPath(targetDir)
-	ic := a.imports.byFile[dstPath]
 
 	sub := &ed.Plan{}
 	for _, rr := range info.relos {
@@ -278,27 +274,8 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 		if s == nil {
 			continue
 		}
-		er := computeExtractedEdits(a.ix, rr, s, a.resolved)
-		for _, e := range er.edits {
-			emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove-qualify")
-		}
-		if targetImportPath != "" {
-			for _, e := range collectSelfImportEdits(a.ix, rr, s, targetImportPath, a.resolved) {
-				emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove-self-import")
-			}
-		}
-		for _, e := range computeImportAliasEdits(a.ix, rr, s, ic) {
-			emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove-alias")
-		}
-		for _, impPath := range sortedKeys(er.imports) {
-			if impPath == targetImportPath {
-				continue
-			}
-			entry := importEntry{Path: impPath}
-			if alias, ok := er.aliases[impPath]; ok {
-				entry.Alias = alias
-			}
-			addImportEntry(a.imports, a.ix, dstPath, entry)
+		for _, e := range rewriteSpanQualifiers(a.ix, rr, s, a.resolved, a.imports) {
+			emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove")
 		}
 	}
 

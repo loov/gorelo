@@ -3,10 +3,8 @@ package relo
 import (
 	"go/ast"
 	"go/token"
-	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 
 	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
@@ -135,193 +133,230 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	}
 }
 
-// extractedEditsResult holds the output of computeExtractedEdits.
-type extractedEditsResult struct {
-	edits   []edit
-	imports map[string]bool
-	// aliases maps import path to alias when collision resolution
-	// required a non-default local name.
-	aliases map[string]string
-}
-
-// computeExtractedEdits builds edits for an extracted span's text in a single
-// AST walk. It handles renames (same-target groups), cross-target
-// qualification (groups moving to a different target package), and
-// source-stay qualification (groups staying in the source package that
-// need a package prefix when the extracted code moves elsewhere).
-// Edits are relative to the span's start offset.
-func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) extractedEditsResult {
+// rewriteSpanQualifiers walks the moved span in rr's source file once
+// and emits span-relative edits that transform every package qualifier
+// and every moved-group ident reference to its destination
+// representation. As a side effect it registers the destination imports
+// the rewrites need on the importSet — addImportEntry resolves
+// collisions against the destination's existing+queued imports, so the
+// alias used in the emitted edits matches what applyImportsPass will
+// actually install.
+//
+// Subsumes the trio computeExtractedEdits + collectSelfImportEdits +
+// computeImportAliasEdits with one ast.Inspect.
+func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, imports *importSet) []edit {
 	if rr.File == nil || s == nil {
-		return extractedEditsResult{}
+		return nil
 	}
 
-	targetDir := filepath.Dir(rr.TargetFile)
+	targetPath := rr.TargetFile
+	targetDir := filepath.Dir(targetPath)
+	targetImportPath := guessImportPath(targetDir)
 	srcDir := filepath.Dir(rr.File.Path)
 	isCrossPkg := srcDir != targetDir
 
-	// Classify each resolved relo's group as either a same-target rename or
-	// a cross-target reference that needs package qualification.
+	// Per-group action lookup.
 	type groupAction struct {
-		newText string // replacement text for idents of this group
-		impPath string // non-empty for cross-target (needs import)
+		// For same-target / TravelsWithType groups: plain rename to
+		// targetName. For cross-target groups: qualified
+		// `<destLocal>.<targetName>` where the qualifier is resolved
+		// from imports lazily so any addImportEntry collision alias
+		// is reflected.
+		targetName  string
+		impPath     string // non-empty → cross-target
+		crossTarget bool
 	}
 	actions := make(map[*mast.Group]*groupAction)
-
-	// Track which groups are in the resolved set so we can detect
-	// references to non-moving source-package symbols.
 	resolvedGroups := make(map[*mast.Group]bool)
-
-	// Collect all cross-target import paths so we can resolve name
-	// collisions before generating qualifier text.
-	type crossTargetInfo struct {
-		impPath   string
-		localName string
-	}
-	crossTargetByGroup := make(map[*mast.Group]*crossTargetInfo)
 
 	for _, r := range resolved {
 		resolvedGroups[r.Group] = true
-
-		// Detach/attach relos have their declaration rewritten by
-		// detachDeclEdits/attachDeclEdits and their call sites rewritten
-		// by detachCallSites/attachCallSites. Emitting a rename action
-		// here would collide with the decl edit at the name's offset
-		// and drop the receiver.
 		if r.Relo.Detach || r.Relo.MethodOf != "" {
 			continue
 		}
-
-		// Fields and methods travel with their parent type — treat
-		// them as same-target renames so they produce plain rename
-		// edits, not cross-target package-qualified references.
 		rDir := filepath.Dir(r.TargetFile)
 		if rDir == targetDir || r.Group.Kind.TravelsWithType() {
-			// Same target — record the target name so that qualified
-			// references (e.g., pkg.Name from an external test file)
-			// get their qualifier stripped during extraction.
-			actions[r.Group] = &groupAction{newText: r.TargetName}
+			actions[r.Group] = &groupAction{targetName: r.TargetName}
 			continue
 		}
-		// Different target — needs package-qualified reference.
-		if r.File == nil {
+		rImpPath := guessImportPath(rDir)
+		if rImpPath == "" {
 			continue
 		}
-		tgtPkgPath := guessImportPath(rDir)
-		if tgtPkgPath == "" {
-			continue
-		}
-		tgtLocalName := packageLocalName(ix, rDir)
-		crossTargetByGroup[r.Group] = &crossTargetInfo{
-			impPath:   tgtPkgPath,
-			localName: tgtLocalName,
+		actions[r.Group] = &groupAction{
+			targetName:  r.TargetName,
+			impPath:     rImpPath,
+			crossTarget: true,
 		}
 	}
 
-	// For cross-package moves, compute the source package import path.
-	var srcPkgPath, srcLocalName string
-	if isCrossPkg {
-		srcPkgPath = guessImportPath(srcDir)
-		if srcPkgPath != "" {
-			srcLocalName = packageLocalName(ix, srcDir)
-		}
-	}
-
-	// Resolve import local name collisions. Collect all import paths
-	// that will be used (cross-target + source-stay) and detect
-	// collisions among their local names.
-	importAliases := make(map[string]string) // impPath -> resolved local name
-	{
-		usedNames := make(map[string]string) // localName -> first impPath using it
-		type pending struct {
-			impPath   string
-			localName string
-		}
-		var allImports []pending
-
-		// Source-stay import (if any) gets priority.
-		if srcPkgPath != "" && srcLocalName != "" {
-			allImports = append(allImports, pending{srcPkgPath, srcLocalName})
-		}
-		// Cross-target imports, sorted for deterministic alias assignment.
-		seen := make(map[string]bool)
-		for _, info := range crossTargetByGroup {
-			if seen[info.impPath] {
-				continue
-			}
-			seen[info.impPath] = true
-			allImports = append(allImports, pending{info.impPath, info.localName})
-		}
-		sort.Slice(allImports, func(i, j int) bool {
-			return allImports[i].impPath < allImports[j].impPath
-		})
-
-		for _, imp := range allImports {
-			name := imp.localName
-			if existing, ok := usedNames[name]; ok && existing != imp.impPath {
-				// Collision — try parent-prefixed name, then numeric suffix.
-				parent := path.Base(path.Dir(imp.impPath))
-				candidate := parent + name
-				if _, taken := usedNames[candidate]; taken || candidate == name {
-					for i := 2; ; i++ {
-						candidate = name + strconv.Itoa(i)
-						if _, taken := usedNames[candidate]; !taken {
-							break
-						}
-					}
-				}
-				name = candidate
-			}
-			usedNames[name] = imp.impPath
-			importAliases[imp.impPath] = name
-		}
-
-		// Update srcLocalName if it was aliased.
-		if srcPkgPath != "" {
-			if alias, ok := importAliases[srcPkgPath]; ok {
-				srcLocalName = alias
-			}
-		}
-	}
-
-	// Build cross-target actions using resolved local names.
-	for grp, info := range crossTargetByGroup {
-		localName := info.localName
-		if alias, ok := importAliases[info.impPath]; ok {
-			localName = alias
-		}
-		r := resolvedForGroup(resolved, grp)
-		if r == nil {
-			continue
-		}
-		actions[grp] = &groupAction{
-			newText: localName + "." + r.TargetName,
-			impPath: info.impPath,
-		}
-	}
-
-	// Propagate renames to embedded field groups so that composite
-	// literal keys (e.g., notesView{notesPage: page}) are also updated
-	// when the embedded type is renamed.
+	// Propagate type renames to embedded field groups so composite
+	// literal keys (notesView{notesPage: page}) get rewritten.
 	for _, r := range resolved {
 		if r.Group.Kind != mast.TypeName || r.TargetName == r.Group.Name {
 			continue
 		}
-		// Composite literal field keys are always unqualified, even
-		// when the embedded type is in a different package.
 		for _, fgrp := range ix.EmbeddedFieldGroups(r.Group.Name, r.Group.Pkg) {
 			if _, ok := actions[fgrp]; ok {
 				continue
 			}
-			actions[fgrp] = &groupAction{newText: r.TargetName}
+			actions[fgrp] = &groupAction{targetName: r.TargetName}
 		}
 	}
 
-	var edits []edit
-	neededImports := make(map[string]bool)
+	var srcImportPath string
+	if isCrossPkg {
+		srcImportPath = guessImportPath(srcDir)
+	}
 
+	// registerImport ensures impPath is queued in destination's
+	// importChange with the right alias (real package name when it
+	// differs from the path basename, e.g. `package main` at
+	// example.com/test/cmd). addImportEntry resolves any collision
+	// against existing+queued imports.
+	registered := make(map[string]bool)
+	registerImport := func(impPath string) {
+		if impPath == "" || registered[impPath] {
+			return
+		}
+		registered[impPath] = true
+		entry := importEntry{Path: impPath}
+		for _, pkg := range ix.Pkgs {
+			if pkg.Path == impPath && pkg.Name != guessImportLocalName(impPath) {
+				entry.Alias = pkg.Name
+				break
+			}
+		}
+		addImportEntry(imports, ix, targetPath, entry)
+	}
+
+	// Pre-register cross-target imports in path-sorted order so
+	// addImportEntry's collision resolution yields deterministic
+	// alias assignments independent of walk order. srcImportPath is
+	// lazily registered only when an actual cross-pkg-stay edit needs
+	// it (otherwise we'd add a spurious source-package import that
+	// reformats the destination's import block).
+	{
+		seen := make(map[string]bool)
+		var sortedImpPaths []string
+		for _, act := range actions {
+			if act.crossTarget && !seen[act.impPath] {
+				seen[act.impPath] = true
+				sortedImpPaths = append(sortedImpPaths, act.impPath)
+			}
+		}
+		sort.Strings(sortedImpPaths)
+		for _, impPath := range sortedImpPaths {
+			registerImport(impPath)
+		}
+	}
+
+	// destLocal returns the local name destination uses for impPath,
+	// honoring any alias addImportEntry assigned. Falls back to the
+	// package's real name from ix when impPath isn't (yet) recorded.
+	destLocal := func(impPath string) string {
+		if ic := imports.byFile[targetPath]; ic != nil {
+			for _, e := range ic.Add {
+				if e.Path == impPath && e.Alias != "" {
+					return e.Alias
+				}
+			}
+			for _, e := range ic.Existing {
+				if e.Path == impPath && e.Alias != "" {
+					return e.Alias
+				}
+			}
+		}
+		for _, pkg := range ix.Pkgs {
+			if pkg.Path == impPath {
+				return pkg.Name
+			}
+		}
+		return guessImportLocalName(impPath)
+	}
+
+	// Source-file imports keyed by their local name as referenced in
+	// source code.
+	importByLocal := make(map[string]string)
+	for _, imp := range rr.File.Syntax.Imports {
+		impPath := importPath(imp)
+		importByLocal[importLocalName(imp, impPath)] = impPath
+	}
+
+	// Pre-pass: for every SelectorExpr X.Sel where Sel is in a moved
+	// group, mark X so the SelectorExpr qualifier-rewrite handler
+	// skips it (the Ident handler for Sel will extend left to swallow
+	// X. itself).
+	handledQualifier := make(map[*ast.Ident]bool)
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		qid, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		grp := ix.Group(sel.Sel)
+		if grp == nil || actions[grp] == nil {
+			return true
+		}
+		handledQualifier[qid] = true
+		return true
+	})
+
+	inSpan := func(start, end int) bool {
+		return start >= s.Start && end <= s.End
+	}
+
+	var edits []edit
+	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
+		// SelectorExpr handler: rewrite import-qualifier idents that
+		// resolve to destination's package (strip) or to a destination
+		// import with a different local name (rewrite).
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			qid, ok := sel.X.(*ast.Ident)
+			if !ok || handledQualifier[qid] {
+				return true
+			}
+			qOff := ix.Fset.Position(qid.Pos()).Offset
+			sOff := ix.Fset.Position(sel.Sel.Pos()).Offset
+			if !inSpan(qOff, sOff) {
+				return true
+			}
+			impPath, isImport := importByLocal[qid.Name]
+			if !isImport {
+				return true
+			}
+			if targetImportPath != "" && impPath == targetImportPath {
+				edits = append(edits, edit{
+					Start: qOff - s.Start,
+					End:   sOff - s.Start,
+					New:   "",
+				})
+				return true
+			}
+			destName := destLocal(impPath)
+			if destName == qid.Name {
+				return true
+			}
+			edits = append(edits, edit{
+				Start: qOff - s.Start,
+				End:   qOff - s.Start + len(qid.Name),
+				New:   destName,
+			})
+			return true
+		}
+
+		// Ident handler: moved-group rewrites + cross-pkg-stay
+		// qualification of references to non-moved source-pkg symbols.
 		ident, ok := n.(*ast.Ident)
 		if !ok {
+			return true
+		}
+		off := ix.Fset.Position(ident.Pos()).Offset
+		endOff := off + len(ident.Name)
+		if !inSpan(off, endOff) {
 			return true
 		}
 		grp := ix.Group(ident)
@@ -329,224 +364,66 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			return true
 		}
 
-		off := ix.Fset.Position(ident.Pos()).Offset
-		endOff := off + len(ident.Name)
-		if off < s.Start || endOff > s.End {
-			return true
-		}
-
 		if act, ok := actions[grp]; ok {
+			newText := act.targetName
+			if act.crossTarget {
+				newText = destLocal(act.impPath) + "." + act.targetName
+			}
 			editStart := off
-			// If this ident has a package qualifier (e.g., pkg.Name),
-			// extend the edit to cover the qualifier so the entire
-			// qualified expression is replaced. This handles both
-			// cross-target moves (pkg.X → newpkg.Y) and same-target
-			// moves where the qualifier becomes unnecessary (pkg.X → Y).
 			for _, gid := range grp.Idents {
 				if gid.Ident == ident && gid.Qualifier != nil {
-					qualOff := ix.Fset.Position(gid.Qualifier.Pos()).Offset
-					// Only extend if the qualifier is inside the span.
-					// A qualifier straddling the span boundary can't be
-					// safely rewritten.
-					if qualOff >= s.Start {
-						editStart = qualOff
+					qOff := ix.Fset.Position(gid.Qualifier.Pos()).Offset
+					if qOff >= s.Start {
+						editStart = qOff
 					}
 					break
 				}
 			}
-			// Skip true no-op edits: same name, no qualifier to strip.
-			// Emitting them would collide with structural edits that
-			// rewrite the same ident range (e.g. detach/attach).
-			if editStart == off && act.newText == ident.Name {
+			if editStart == off && newText == ident.Name {
 				return true
 			}
 			edits = append(edits, edit{
 				Start: editStart - s.Start,
 				End:   endOff - s.Start,
-				New:   act.newText,
+				New:   newText,
 			})
-			if act.impPath != "" {
-				neededImports[act.impPath] = true
-			}
 			return true
 		}
 
-		// Reference to a symbol not in the move set. If this is a
-		// cross-package extraction and the symbol belongs to the source
-		// package, qualify it with the source package name.
-		if isCrossPkg && srcPkgPath != "" && !resolvedGroups[grp] &&
-			!grp.Kind.TravelsWithType() && grp.IsPackageScope() {
-			// Skip symbols whose definition is inside the extracted
-			// span (e.g. type parameters, local declarations inside
-			// a moved function) — they travel with the code.
-			definedInSpan := false
-			inSourcePkg := false
-			for _, gid := range grp.Idents {
-				if gid.Kind == mast.Def && gid.File != nil {
-					defOff := ix.Fset.Position(gid.Ident.Pos()).Offset
-					defEnd := defOff + len(gid.Ident.Name)
-					if gid.File.Path == rr.File.Path && defOff >= s.Start && defEnd <= s.End {
-						definedInSpan = true
-						break
-					}
-					if gid.File.Pkg == rr.File.Pkg {
-						inSourcePkg = true
-					}
-				}
+		// Cross-pkg extraction: bare reference to a non-moved
+		// package-scope source-pkg symbol must be qualified.
+		if !isCrossPkg || srcImportPath == "" || resolvedGroups[grp] ||
+			grp.Kind.TravelsWithType() || !grp.IsPackageScope() {
+			return true
+		}
+		definedInSpan := false
+		inSourcePkg := false
+		for _, gid := range grp.Idents {
+			if gid.Kind != mast.Def || gid.File == nil {
+				continue
 			}
-			if definedInSpan {
-				// Defined within extracted code — no qualification needed.
-			} else if inSourcePkg {
-				if token.IsExported(grp.Name) {
-					edits = append(edits, edit{
-						Start: off - s.Start,
-						End:   endOff - s.Start,
-						New:   srcLocalName + "." + grp.Name,
-					})
-					neededImports[srcPkgPath] = true
-				}
+			defOff := ix.Fset.Position(gid.Ident.Pos()).Offset
+			defEnd := defOff + len(gid.Ident.Name)
+			if gid.File.Path == rr.File.Path && defOff >= s.Start && defEnd <= s.End {
+				definedInSpan = true
+				break
+			}
+			if gid.File.Pkg == rr.File.Pkg {
+				inSourcePkg = true
 			}
 		}
-
+		if definedInSpan || !inSourcePkg || !token.IsExported(grp.Name) {
+			return true
+		}
+		registerImport(srcImportPath)
+		edits = append(edits, edit{
+			Start: off - s.Start,
+			End:   endOff - s.Start,
+			New:   destLocal(srcImportPath) + "." + grp.Name,
+		})
 		return true
 	})
 
-	// Build aliases map: only include entries where the resolved name
-	// differs from the default guessImportLocalName.
-	var resultAliases map[string]string
-	for impPath, alias := range importAliases {
-		if alias != guessImportLocalName(impPath) {
-			if resultAliases == nil {
-				resultAliases = make(map[string]string)
-			}
-			resultAliases[impPath] = alias
-		}
-	}
-
-	return extractedEditsResult{
-		edits:   edits,
-		imports: neededImports,
-		aliases: resultAliases,
-	}
-}
-
-// computeImportAliasEdits generates edits for an extracted span to rename
-// import qualifier idents that were aliased due to collision resolution.
-// For each import in rr's source file that received an alias in the target,
-// it maps the old local name to the new alias and rewrites SelectorExpr
-// qualifiers within the span.
-func computeImportAliasEdits(ix *mast.Index, rr *resolvedRelo, s *span, ic *importChange) []edit {
-	if rr.File == nil || ic == nil || len(ic.Aliases) == 0 {
-		return nil
-	}
-
-	// Build a map of oldLocalName -> newAlias for imports used by this rr's source file.
-	localToAlias := make(map[string]string)
-	for _, imp := range rr.File.Syntax.Imports {
-		impPath := importPath(imp)
-		alias, ok := ic.Aliases[impPath]
-		if !ok {
-			continue
-		}
-		oldLocal := importLocalName(imp, impPath)
-		if oldLocal != alias {
-			localToAlias[oldLocal] = alias
-		}
-	}
-	if len(localToAlias) == 0 {
-		return nil
-	}
-
-	var edits []edit
-	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		newAlias, ok := localToAlias[ident.Name]
-		if !ok {
-			return true
-		}
-		off := ix.Fset.Position(ident.Pos()).Offset
-		endOff := off + len(ident.Name)
-		if off >= s.Start && endOff <= s.End {
-			edits = append(edits, edit{
-				Start: off - s.Start,
-				End:   endOff - s.Start,
-				New:   newAlias,
-			})
-		}
-		return true
-	})
-	return edits
-}
-
-// collectSelfImportEdits finds selector expressions like pkg.Foo where pkg
-// is the target package (self-import) and unqualifies them. Selectors
-// whose ident is in a moved group are skipped: computeExtractedEdits
-// already emits a Replace covering qualifier+ident for those, and
-// emitting a separate self-import Delete would overlap that Replace.
-func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImportPath string, resolved []*resolvedRelo) []edit {
-	if rr.File == nil {
-		return nil
-	}
-
-	selfLocalNames := make(map[string]bool)
-	for _, imp := range rr.File.Syntax.Imports {
-		impPath := importPath(imp)
-		if impPath == selfImportPath {
-			if imp.Name != nil {
-				selfLocalNames[imp.Name.Name] = true
-			} else {
-				selfLocalNames[guessImportLocalName(impPath)] = true
-			}
-		}
-	}
-	if len(selfLocalNames) == 0 {
-		return nil
-	}
-
-	movedGroups := make(map[*mast.Group]bool)
-	for _, r := range resolved {
-		if r.Group != nil {
-			movedGroups[r.Group] = true
-		}
-	}
-
-	var edits []edit
-	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		if !selfLocalNames[ident.Name] {
-			return true
-		}
-		// Skip if the selected ident is in a moved group;
-		// computeExtractedEdits handles its qualifier rewrite.
-		if grp := ix.Group(sel.Sel); grp != nil && movedGroups[grp] {
-			return true
-		}
-
-		startOff := ix.Fset.Position(ident.Pos()).Offset
-		selOff := ix.Fset.Position(sel.Sel.Pos()).Offset
-		if startOff >= s.Start && selOff <= s.End {
-			edits = append(edits, edit{
-				Start: startOff - s.Start,
-				End:   selOff - s.Start,
-				New:   "",
-			})
-		}
-		return true
-	})
 	return edits
 }
 

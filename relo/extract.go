@@ -2,7 +2,6 @@ package relo
 
 import (
 	"bytes"
-	"path/filepath"
 	"sort"
 
 	ed "github.com/loov/gorelo/edit"
@@ -48,38 +47,12 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 		srcPath := rr.File.Path
 		targetPath := rr.TargetFile
 
-		// Emit qualification edits (computeExtractedEdits returns
-		// span-relative; convert to absolute coords on the source file
-		// so the edits land inside the Move's span and get carried to
-		// the destination automatically).
-		er := computeExtractedEdits(ix, rr, s, resolved)
-		for _, e := range er.edits {
-			emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract-qualify")
-		}
-
-		// Self-import unqualification inside the span.
-		targetDir := filepath.Dir(targetPath)
-		if targetImportPath := guessImportPath(targetDir); targetImportPath != "" {
-			for _, e := range collectSelfImportEdits(ix, rr, s, targetImportPath, resolved) {
-				emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract-self-import")
-			}
-		}
-
-		// Import-alias rewrites inside the span (alias collisions
-		// resolved in computeImports / addImportEntry).
-		if ic := imports.byFile[targetPath]; ic != nil {
-			for _, e := range computeImportAliasEdits(ix, rr, s, ic) {
-				emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract-alias")
-			}
-		}
-
-		// Register cross-target imports for applyImportsPass.
-		for impPath := range er.imports {
-			entry := importEntry{Path: impPath}
-			if alias, ok := er.aliases[impPath]; ok {
-				entry.Alias = alias
-			}
-			addImportEntry(imports, ix, targetPath, entry)
+		// Unified per-ident walk that emits all qualifier-related
+		// edits (moved-group renames + cross-target qualifies +
+		// self-import unqualifies + alias rewrites + cross-pkg-stay
+		// qualifies) and registers destination imports inline.
+		for _, e := range rewriteSpanQualifiers(ix, rr, s, resolved, imports) {
+			emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract")
 		}
 
 		// Emit the Move once per unique source span (multi-name decls
@@ -108,8 +81,7 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 
 // emitSpanRelativeAtAbs emits a single span-relative edit as the
 // equivalent absolute-coord Plan primitive on srcPath. Used to lower
-// the span-relative outputs of computeExtractedEdits /
-// collectSelfImportEdits / computeImportAliasEdits into primitives
+// the span-relative output of rewriteSpanQualifiers into primitives
 // that ride along with the enclosing Move (or a sub-Plan for
 // whole-file moves).
 func emitSpanRelativeAtAbs(edits *ed.Plan, srcPath string, spanStart int, e edit, origin string) {
