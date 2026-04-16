@@ -281,9 +281,17 @@ func (a *assembler) assembleTargets() {
 			// Append to existing file.
 			content := string(existing)
 
-			// Apply rename edits for references in the existing content.
-			if targetRenames := planEditsForFile(a.edits, targetPath); len(targetRenames) > 0 {
-				content = applyEditsToString(content, targetRenames)
+			// Apply rename edits for references in the existing content
+			// via plan.Apply on a per-file sub-plan.
+			if len(planEditsForFile(a.edits, targetPath)) > 0 {
+				only := map[string]bool{targetPath: true}
+				sub := subPlanForFiles(a.edits, only)
+				outputs, err := sub.Apply(map[string][]byte{targetPath: []byte(content)})
+				if err != nil {
+					a.plan.Warnings.Addf("plan.Apply failed for target %s: %v", targetPath, err)
+				} else {
+					content = string(outputs[targetPath])
+				}
 			}
 
 			if ic != nil {

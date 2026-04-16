@@ -317,6 +317,11 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 			}
 		}
 	}
+	// Filemove still uses legacy applyEdits because absEdits has known
+	// overlapping cases (rename + self-import unqualification at the
+	// same qualifier offset) that plan.Apply would flag as conflicts.
+	// Resolving those would require coupling collectSelfImportEdits to
+	// the moved-groups action set; deferred to the next pass.
 	content = applyEditsToString(content, absEdits)
 
 	// Rewrite the package clause if the destination lives in a different
