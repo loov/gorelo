@@ -8,7 +8,9 @@
 // order in which they are emitted.
 package edit
 
-import "fmt"
+import (
+	"runtime"
+)
 
 // Anchor points at a byte offset in a named file.
 //
@@ -64,6 +66,11 @@ type Primitive interface {
 	// supplied when adding the primitive to a Plan.
 	Origin() string
 
+	// Frames returns the call frames captured when the primitive was
+	// added to a debug Plan, outermost call first.
+	// Returns nil for primitives added to a non-debug Plan.
+	Frames() []runtime.Frame
+
 	primitive()
 }
 
@@ -74,21 +81,25 @@ type Insert struct {
 	Text   string
 	Side   Side
 
-	origin string
+	origin  string
+	callers callers
 }
 
-func (i Insert) Origin() string { return i.origin }
-func (Insert) primitive()       {}
+func (i Insert) Origin() string          { return i.origin }
+func (i Insert) Frames() []runtime.Frame { return i.callers.resolve() }
+func (Insert) primitive()                {}
 
 // Delete removes the bytes covered by Span.
 type Delete struct {
 	Span Span
 
-	origin string
+	origin  string
+	callers callers
 }
 
-func (d Delete) Origin() string { return d.origin }
-func (Delete) primitive()       {}
+func (d Delete) Origin() string          { return d.origin }
+func (d Delete) Frames() []runtime.Frame { return d.callers.resolve() }
+func (Delete) primitive()                {}
 
 // Replace substitutes Text for the bytes covered by Span. It is an atomic
 // primitive (rather than a Delete + Insert pair) so that rename-like
@@ -97,11 +108,13 @@ type Replace struct {
 	Span Span
 	Text string
 
-	origin string
+	origin  string
+	callers callers
 }
 
-func (r Replace) Origin() string { return r.origin }
-func (Replace) primitive()       {}
+func (r Replace) Origin() string          { return r.origin }
+func (r Replace) Frames() []runtime.Frame { return r.callers.resolve() }
+func (Replace) primitive()                {}
 
 // Move relocates the bytes covered by Span to Dest. Any Insert, Delete,
 // or Replace whose coordinates fall inside Span is automatically carried
@@ -111,54 +124,10 @@ type Move struct {
 	Dest    Anchor
 	Options MoveOptions
 
-	origin string
+	origin  string
+	callers callers
 }
 
-func (m Move) Origin() string { return m.origin }
-func (Move) primitive()       {}
-
-// Plan is an append-only collection of primitives. The zero value is an
-// empty Plan ready for use.
-type Plan struct {
-	prims []Primitive
-}
-
-// Insert appends an Insert primitive to the plan.
-func (p *Plan) Insert(anchor Anchor, text string, side Side, origin string) {
-	p.prims = append(p.prims, Insert{Anchor: anchor, Text: text, Side: side, origin: origin})
-}
-
-// Delete appends a Delete primitive to the plan.
-func (p *Plan) Delete(span Span, origin string) {
-	p.prims = append(p.prims, Delete{Span: span, origin: origin})
-}
-
-// Replace appends a Replace primitive to the plan.
-func (p *Plan) Replace(span Span, text string, origin string) {
-	p.prims = append(p.prims, Replace{Span: span, Text: text, origin: origin})
-}
-
-// Move appends a Move primitive to the plan.
-func (p *Plan) Move(span Span, dest Anchor, opts MoveOptions, origin string) {
-	p.prims = append(p.prims, Move{Span: span, Dest: dest, Options: opts, origin: origin})
-}
-
-// Primitives returns a copy of the primitives accumulated in the plan,
-// in insertion order.
-func (p *Plan) Primitives() []Primitive {
-	out := make([]Primitive, len(p.prims))
-	copy(out, p.prims)
-	return out
-}
-
-// ConflictError is returned by Plan.Apply when two primitives overlap in
-// a way that is not resolved by the carrying or endpoint-ordering rules.
-type ConflictError struct {
-	A, B   Primitive
-	Reason string
-}
-
-func (e *ConflictError) Error() string {
-	return fmt.Sprintf("edit conflict between %q and %q: %s",
-		e.A.Origin(), e.B.Origin(), e.Reason)
-}
+func (m Move) Origin() string          { return m.origin }
+func (m Move) Frames() []runtime.Frame { return m.callers.resolve() }
+func (Move) primitive()                {}

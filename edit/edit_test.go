@@ -1,6 +1,9 @@
 package edit
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPlan_CollectsPrimitives(t *testing.T) {
 	var p Plan
@@ -69,7 +72,7 @@ func TestPlan_PrimitivesIsCopy(t *testing.T) {
 	}
 }
 
-func TestConflictError_Message(t *testing.T) {
+func TestConflictError_MessageWithoutFrames(t *testing.T) {
 	err := &ConflictError{
 		A:      Insert{origin: "rename"},
 		B:      Delete{origin: "self-import"},
@@ -78,5 +81,53 @@ func TestConflictError_Message(t *testing.T) {
 	want := `edit conflict between "rename" and "self-import": overlap at boundary`
 	if got := err.Error(); got != want {
 		t.Errorf("Error():\n  got  %q\n  want %q", got, want)
+	}
+}
+
+func TestPlan_NonDebugOmitsFrames(t *testing.T) {
+	var p Plan
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", Before, "o")
+	if fr := p.Primitives()[0].Frames(); fr != nil {
+		t.Errorf("non-debug plan recorded frames: %v", fr)
+	}
+}
+
+func TestPlan_DebugRecordsFrames(t *testing.T) {
+	p := Plan{Debug: true}
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", Before, "o")
+	p.Delete(Span{Path: "a.go", Start: 0, End: 1}, "o")
+	p.Replace(Span{Path: "a.go", Start: 0, End: 1}, "y", "o")
+	p.Move(Span{Path: "a.go", Start: 0, End: 1}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "o")
+
+	for i, prim := range p.Primitives() {
+		frames := prim.Frames()
+		if len(frames) == 0 {
+			t.Errorf("primitive %d (%T): no frames captured", i, prim)
+			continue
+		}
+		top := frames[0]
+		if !strings.HasSuffix(top.File, "/edit/edit_test.go") {
+			t.Errorf("primitive %d (%T): top frame %s not in this test file", i, prim, top.File)
+		}
+		if !strings.Contains(top.Function, "TestPlan_DebugRecordsFrames") {
+			t.Errorf("primitive %d (%T): top frame function %q not the test", i, prim, top.Function)
+		}
+	}
+}
+
+func TestConflictError_MessageIncludesFrames(t *testing.T) {
+	p := Plan{Debug: true}
+	p.Replace(Span{Path: "a.go", Start: 0, End: 3}, "XX", "one")
+	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "YY", "two")
+	_, err := p.Apply(map[string][]byte{"a.go": []byte("abcdef")})
+	if err == nil {
+		t.Fatal("want conflict")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "A added at") || !strings.Contains(msg, "B added at") {
+		t.Errorf("error message missing frame references:\n%s", msg)
+	}
+	if !strings.Contains(msg, "edit_test.go") {
+		t.Errorf("error message missing test file reference:\n%s", msg)
 	}
 }

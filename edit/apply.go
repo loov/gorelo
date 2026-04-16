@@ -6,6 +6,40 @@ import (
 	"strings"
 )
 
+// ConflictError is returned by Plan.Apply when two primitives overlap in
+// a way that is not resolved by the carrying or endpoint-ordering rules.
+//
+// When a debug Plan is used, the conflicting primitives' Frames() method
+// returns the call stacks recorded at the point they were added, which
+// is the typical way to locate the emission sites responsible for a
+// conflict.
+type ConflictError struct {
+	A, B   Primitive
+	Reason string
+}
+
+func (e *ConflictError) Error() string {
+	msg := fmt.Sprintf("edit conflict between %q and %q: %s", e.A.Origin(), e.B.Origin(), e.Reason)
+	if loc := topFrame(e.A); loc != "" {
+		msg += fmt.Sprintf("\n  A added at %s", loc)
+	}
+	if loc := topFrame(e.B); loc != "" {
+		msg += fmt.Sprintf("\n  B added at %s", loc)
+	}
+	return msg
+}
+
+// topFrame returns a compact "file:line function" string for the outermost
+// recorded frame of prim, or "" when no frames were captured.
+func topFrame(prim Primitive) string {
+	frames := prim.Frames()
+	if len(frames) == 0 {
+		return ""
+	}
+	f := frames[0]
+	return fmt.Sprintf("%s:%d %s", f.File, f.Line, f.Function)
+}
+
 // Apply applies the plan to files and returns the resulting contents.
 //
 // files is a map from file path to original byte contents. Paths not
