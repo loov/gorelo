@@ -13,7 +13,7 @@ import (
 // expressions and imports. Edits are emitted onto the shared edits Plan;
 // import additions go into the importSet so that the assembly phase
 // applies them uniformly.
-func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, movedSpans movedSpanIndex, edits *ed.Plan, imports *importSet, opts *Options, plan *Plan) {
+func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, movedSpans movedSpanIndex, detachGroups map[*mast.Group]bool, edits *ed.Plan, imports *importSet, opts *Options, plan *Plan) {
 	type moveInfo struct {
 		srcPkgPath string // source package import path
 		tgtPkgPath string // target package import path
@@ -21,16 +21,11 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		tgtName    string // name at the target (may differ if renamed)
 	}
 
-	// Groups with detach/attach handle their own cross-package qualification.
-	detachGroups := make(map[*mast.Group]bool)
 	// Groups originating from a whole-file move cannot rely on stub
 	// aliases because the source file is deleted — consumers must always
 	// be rewritten even when @stubs is enabled.
 	fileMoveGroups := make(map[*mast.Group]bool)
 	for _, rr := range resolved {
-		if rr.Relo.Detach || rr.Relo.MethodOf != "" {
-			detachGroups[rr.Group] = true
-		}
 		if rr.FromFileMove != nil {
 			fileMoveGroups[rr.Group] = true
 		}

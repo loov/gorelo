@@ -96,7 +96,8 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	// Phase 6: compute rename edits into the shared edit.Plan.
 	edits := &ed.Plan{}
 	movedSpans := buildMovedSpanIndex(resolved, spans)
-	computeRenames(ix, resolved, spans, movedSpans, opts, plan, edits)
+	detachGroups := buildDetachGroups(resolved)
+	computeRenames(ix, resolved, spans, movedSpans, detachGroups, opts, plan, edits)
 
 	// Phase 7: import changes accumulate into importChanges.
 	// rewriteSpanQualifiers (called from emitCrossFileExtraction and
@@ -110,7 +111,7 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	computeDetachEdits(ix, resolved, spans, edits, importChanges, plan)
 
 	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).
-	computeConsumerEdits(ix, resolved, spans, movedSpans, edits, importChanges, opts, plan)
+	computeConsumerEdits(ix, resolved, spans, movedSpans, detachGroups, edits, importChanges, opts, plan)
 
 	// Phase 7c: emit cross-file extraction (Move primitives + carried
 	// qualification edits) so plan.Apply produces both source-side

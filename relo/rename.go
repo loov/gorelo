@@ -13,18 +13,9 @@ import (
 
 // computeRenames uses mast groups to find all occurrences needing rename
 // (phase 6) and emits the corresponding Replace primitives onto edits.
-func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, movedSpans movedSpanIndex, opts *Options, plan *Plan, edits *ed.Plan) {
+func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, movedSpans movedSpanIndex, detachGroups map[*mast.Group]bool, opts *Options, plan *Plan, edits *ed.Plan) {
 	// Build the set of groups being renamed and their new names.
 	renamedGroups := make(map[*mast.Group]string)
-
-	// Groups with detach/attach are handled by the detach phase,
-	// which integrates the rename into its structural edits.
-	detachGroups := make(map[*mast.Group]bool)
-	for _, rr := range resolved {
-		if rr.Relo.Detach || rr.Relo.MethodOf != "" {
-			detachGroups[rr.Group] = true
-		}
-	}
 
 	// When stubs are enabled, track groups with cross-package moves.
 	// The stubs provide backward-compatible aliases using the old name,
