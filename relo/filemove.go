@@ -292,7 +292,7 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 			}
 		}
 		if targetImportPath != "" {
-			for _, e := range collectSelfImportEdits(a.ix, rr, s, targetImportPath) {
+			for _, e := range collectSelfImportEdits(a.ix, rr, s, targetImportPath, a.resolved) {
 				absEdits = append(absEdits, edit{
 					Start: s.Start + e.Start,
 					End:   s.Start + e.End,
@@ -317,11 +317,6 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 			}
 		}
 	}
-	// Filemove still uses legacy applyEdits because absEdits has known
-	// overlapping cases (rename + self-import unqualification at the
-	// same qualifier offset) that plan.Apply would flag as conflicts.
-	// Resolving those would require coupling collectSelfImportEdits to
-	// the moved-groups action set; deferred to the next pass.
 	content = applyEditsToString(content, absEdits)
 
 	// Rewrite the package clause if the destination lives in a different

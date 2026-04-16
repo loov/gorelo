@@ -174,7 +174,7 @@ func (a *assembler) assembleTargets() {
 			targetDir := filepath.Dir(targetPath)
 			targetImportPath := guessImportPath(targetDir)
 			if targetImportPath != "" {
-				edits = append(edits, collectSelfImportEdits(a.ix, rr, s, targetImportPath)...)
+				edits = append(edits, collectSelfImportEdits(a.ix, rr, s, targetImportPath, a.resolved)...)
 			}
 
 			// Apply import alias edits for collision resolution.
@@ -579,9 +579,12 @@ func computeImportAliasEdits(ix *mast.Index, rr *resolvedRelo, s *span, ic *impo
 	return edits
 }
 
-// collectSelfImportEdits finds selector expressions like pkg.Foo where pkg is
-// the target package (self-import) and unqualifies them.
-func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImportPath string) []edit {
+// collectSelfImportEdits finds selector expressions like pkg.Foo where pkg
+// is the target package (self-import) and unqualifies them. Selectors
+// whose ident is in a moved group are skipped: computeExtractedEdits
+// already emits a Replace covering qualifier+ident for those, and
+// emitting a separate self-import Delete would overlap that Replace.
+func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImportPath string, resolved []*resolvedRelo) []edit {
 	if rr.File == nil {
 		return nil
 	}
@@ -601,6 +604,13 @@ func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImpor
 		return nil
 	}
 
+	movedGroups := make(map[*mast.Group]bool)
+	for _, r := range resolved {
+		if r.Group != nil {
+			movedGroups[r.Group] = true
+		}
+	}
+
 	var edits []edit
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
@@ -612,6 +622,11 @@ func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImpor
 			return true
 		}
 		if !selfLocalNames[ident.Name] {
+			return true
+		}
+		// Skip if the selected ident is in a moved group;
+		// computeExtractedEdits handles its qualifier rewrite.
+		if grp := ix.Group(sel.Sel); grp != nil && movedGroups[grp] {
 			return true
 		}
 
