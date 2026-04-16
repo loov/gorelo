@@ -209,25 +209,16 @@ func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		srcImportPath = guessImportPath(srcDir)
 	}
 
-	// registerImport ensures impPath is queued in destination's
-	// importChange with the right alias (real package name when it
-	// differs from the path basename, e.g. `package main` at
-	// example.com/test/cmd). addImportEntry resolves any collision
-	// against existing+queued imports.
+	// registerImport queues impPath in destination's importChange.
+	// addImportEntry handles real-pkg-name aliasing and collision
+	// resolution against the destination's existing+queued imports.
 	registered := make(map[string]bool)
 	registerImport := func(impPath string) {
 		if impPath == "" || registered[impPath] {
 			return
 		}
 		registered[impPath] = true
-		entry := importEntry{Path: impPath}
-		for _, pkg := range ix.Pkgs {
-			if pkg.Path == impPath && pkg.Name != guessImportLocalName(impPath) {
-				entry.Alias = pkg.Name
-				break
-			}
-		}
-		addImportEntry(imports, ix, targetPath, entry)
+		addImportEntry(imports, ix, targetPath, importEntry{Path: impPath})
 	}
 
 	// Pre-register cross-target imports in path-sorted order so

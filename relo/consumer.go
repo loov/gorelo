@@ -266,37 +266,12 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			emitConsumerEdit(edits, filePath, e, "consumer-name")
 		}
 
-		// Add target imports in sorted order for deterministic output.
-		sortedImports := sortedKeys(fe.addImports)
-		for _, tgtPath := range sortedImports {
-			ic := imports.ensureFile(filePath)
-
-			// Check if the target import already exists in the file.
-			f := ix.FilesByPath[filePath]
-			if f != nil {
-				alreadyImported := false
-				for _, imp := range f.Syntax.Imports {
-					impPath := importPath(imp)
-					if impPath == tgtPath {
-						alreadyImported = true
-						break
-					}
-				}
-				if alreadyImported {
-					continue
-				}
-			}
-
-			entry := importEntry{Path: tgtPath}
-			// If the actual package name differs from the import path's
-			// base name, add an explicit alias so the import matches the
-			// qualifier used in the rewritten code.
-			tgtDir := fe.addImports[tgtPath]
-			pkgName := packageLocalName(ix, tgtDir)
-			if pkgName != guessImportLocalName(tgtPath) {
-				entry.Alias = pkgName
-			}
-			ic.Add = append(ic.Add, entry)
+		// Register target imports in sorted order. addImportEntry
+		// dedups against the destination's existing+queued imports
+		// and auto-sets aliases when the real pkg name differs from
+		// the path basename.
+		for _, tgtPath := range sortedKeys(fe.addImports) {
+			addImportEntry(imports, ix, filePath, importEntry{Path: tgtPath})
 		}
 
 		// Sort added imports for deterministic output.

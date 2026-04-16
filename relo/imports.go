@@ -155,15 +155,23 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 
 // addImportEntry registers entry as an import to add to filePath. On the
 // first call for a file, the file's pre-existing imports are loaded
-// from the index into ic.Existing. The entry is deduplicated against
-// both Existing and Add by import path; if its desired local name
-// (entry.Alias or guessed from path) collides with a different
+// from the index into ic.Existing. When entry.Alias is empty and the
+// package's real name (per ix.Pkgs) differs from the path basename, an
+// explicit alias is set so the rewritten code's qualifier resolves.
+// The entry is deduplicated against both Existing and Add by import
+// path; if its desired local name still collides with a different
 // already-known import, a parent-prefixed alias is assigned and
 // recorded in ic.Aliases. applyImportsPass picks the entries up after
 // assembly.
 func addImportEntry(is *importSet, ix *mast.Index, filePath string, entry importEntry) {
 	ic := is.ensureFile(filePath)
 	loadExistingImports(ic, ix, filePath)
+
+	if entry.Alias == "" {
+		if real := packageNameForImport(ix, entry.Path); real != guessImportLocalName(entry.Path) {
+			entry.Alias = real
+		}
+	}
 
 	used := make(map[string]string, len(ic.Existing)+len(ic.Add))
 	addToUsed := func(e importEntry) {
@@ -201,6 +209,19 @@ func addImportEntry(is *importSet, ix *mast.Index, filePath string, entry import
 		ic.Aliases[entry.Path] = alias
 	}
 	ic.Add = append(ic.Add, entry)
+}
+
+// packageNameForImport returns the actual package name for impPath if
+// the package is in ix; otherwise the guess from the path's basename.
+func packageNameForImport(ix *mast.Index, impPath string) string {
+	if ix != nil {
+		for _, pkg := range ix.Pkgs {
+			if pkg.Path == impPath {
+				return pkg.Name
+			}
+		}
+	}
+	return guessImportLocalName(impPath)
 }
 
 // loadExistingImports populates ic.Existing from the file's parsed

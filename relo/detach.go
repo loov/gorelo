@@ -185,7 +185,7 @@ func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl
 	var pkgQualifier string
 	if recvDir != tgtDir {
 		if recvImportPath := guessImportPath(recvDir); recvImportPath != "" {
-			pkgQualifier = guessImportLocalName(recvImportPath)
+			pkgQualifier = packageNameForImport(ix, recvImportPath)
 		}
 	}
 	return formatRecvAsParam(fd.Recv, fset, pkgQualifier, recvNewName)
@@ -245,7 +245,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 		qualName := newName
 		if detachTgtDir != "" && callerFinalDir != detachTgtDir {
 			if tgtImportPath := guessImportPath(detachTgtDir); tgtImportPath != "" {
-				qualName = guessImportLocalName(tgtImportPath) + "." + newName
+				qualName = packageNameForImport(ix, tgtImportPath) + "." + newName
 				// Add import to the caller's FINAL file.
 				addImportEntry(imports, ix, callerFinalFile, importEntry{Path: tgtImportPath})
 			}
