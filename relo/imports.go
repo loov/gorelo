@@ -3,7 +3,6 @@ package relo
 import (
 	"go/ast"
 	"go/token"
-	"maps"
 	"path"
 	"path/filepath"
 	"sort"
@@ -14,17 +13,15 @@ import (
 )
 
 // importChange describes import modifications needed for a file.
-//
-// Existing is loaded lazily from the file's parsed AST on the first call
-// to addImportEntry; Add accumulates new imports; Aliases records any
-// alias assignments the collision-resolution path made for added entries
-// (used by rewriteSpanQualifiers to look up the destination's local name
-// for an import path when emitting qualifier-rewrite edits).
+// Existing is loaded lazily from the file's parsed AST on the first
+// call to addImportEntry; Add accumulates new imports. Each entry's
+// Alias field carries any explicit alias (from the source spec, the
+// package's real name when it differs from the path basename, or
+// collision resolution).
 type importChange struct {
 	Existing       []importEntry
 	existingLoaded bool
 	Add            []importEntry
-	Aliases        map[string]string
 }
 
 // importEntry is a single import to add.
@@ -141,12 +138,6 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		if len(entries) > 0 {
 			ic := is.ensureFile(targetFile)
 			ic.Add = append(ic.Add, entries...)
-			if len(aliases) > 0 {
-				if ic.Aliases == nil {
-					ic.Aliases = make(map[string]string)
-				}
-				maps.Copy(ic.Aliases, aliases)
-			}
 		}
 	}
 
@@ -203,10 +194,6 @@ func addImportEntry(is *importSet, ix *mast.Index, filePath string, entry import
 			}
 		}
 		entry.Alias = alias
-		if ic.Aliases == nil {
-			ic.Aliases = make(map[string]string)
-		}
-		ic.Aliases[entry.Path] = alias
 	}
 	ic.Add = append(ic.Add, entry)
 }
