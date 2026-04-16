@@ -261,7 +261,8 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 
 	// Apply per-decl extracted edits (cross-target qualification, rename
 	// edits inside spans, import-alias fixups, self-import unqualification)
-	// at absolute source offsets. applyEdits sorts them itself.
+	// at absolute source offsets via applyEditsViaPlan, which sorts and
+	// drops contained overlaps before running plan.Apply.
 	var absEdits []edit
 	ic := a.imports.byFile[info.move.To]
 	targetImportPath := guessImportPath(filepath.Dir(info.move.To))
