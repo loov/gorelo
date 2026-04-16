@@ -14,7 +14,8 @@ import (
 	"github.com/loov/gorelo/mast"
 )
 
-// assembler holds state shared across the target, source, and rename phases.
+// assembler holds the state shared by the file-move, plan.Apply, and
+// import-application passes that compose Plan.Edits.
 type assembler struct {
 	ix       *mast.Index
 	resolved []*resolvedRelo
@@ -28,9 +29,9 @@ type assembler struct {
 	byTarget map[string][]*resolvedRelo
 	bySource map[string][]*resolvedRelo
 
-	// fileMovePaths names every source and target path already written by
-	// the whole-file-move pass; the per-decl target/source phases skip
-	// these to avoid clobbering the wholesale content.
+	// fileMovePaths names every source and target path written by the
+	// whole-file-move pass; singlePassApply special-cases these so the
+	// pre-rendered file-move content is preserved.
 	fileMovePaths map[string]bool
 }
 
@@ -65,11 +66,11 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 
 // applyImportsPass adds importSet entries to each affected file's
 // post-Apply content. It runs after the main assembly so it operates
-// on the final layout produced by plan.Apply (and the legacy applier
-// paths that remain), and before removeUnusedImportsText so any
-// imports it adds that turn out to be unused get pruned in the same
-// run. Entries are pre-deduped and alias-resolved at addition time
-// (see addImportEntry); ensureImport handles the actual insertion.
+// on the final layout produced by plan.Apply, and before
+// removeUnusedImportsText so any imports it adds that turn out to be
+// unused get pruned in the same run. Entries are pre-deduped and
+// alias-resolved at addition time (see addImportEntry); ensureImport
+// handles the actual insertion.
 func (a *assembler) applyImportsPass() {
 	for _, filePath := range sortedKeys(a.imports.byFile) {
 		ic := a.imports.byFile[filePath]
@@ -284,126 +285,6 @@ func (a *assembler) generateAllStubs() map[string]string {
 		}
 	}
 	return out
-}
-
-// computeImportAliasEdits generates edits for an extracted span to rename
-// import qualifier idents that were aliased due to collision resolution.
-// For each import in rr's source file that received an alias in the target,
-// it maps the old local name to the new alias and rewrites SelectorExpr
-// qualifiers within the span.
-func computeImportAliasEdits(ix *mast.Index, rr *resolvedRelo, s *span, ic *importChange) []edit {
-	if rr.File == nil || ic == nil || len(ic.Aliases) == 0 {
-		return nil
-	}
-
-	// Build a map of oldLocalName -> newAlias for imports used by this rr's source file.
-	localToAlias := make(map[string]string)
-	for _, imp := range rr.File.Syntax.Imports {
-		impPath := importPath(imp)
-		alias, ok := ic.Aliases[impPath]
-		if !ok {
-			continue
-		}
-		oldLocal := importLocalName(imp, impPath)
-		if oldLocal != alias {
-			localToAlias[oldLocal] = alias
-		}
-	}
-	if len(localToAlias) == 0 {
-		return nil
-	}
-
-	var edits []edit
-	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		newAlias, ok := localToAlias[ident.Name]
-		if !ok {
-			return true
-		}
-		off := ix.Fset.Position(ident.Pos()).Offset
-		endOff := off + len(ident.Name)
-		if off >= s.Start && endOff <= s.End {
-			edits = append(edits, edit{
-				Start: off - s.Start,
-				End:   endOff - s.Start,
-				New:   newAlias,
-			})
-		}
-		return true
-	})
-	return edits
-}
-
-// collectSelfImportEdits finds selector expressions like pkg.Foo where pkg
-// is the target package (self-import) and unqualifies them. Selectors
-// whose ident is in a moved group are skipped: computeExtractedEdits
-// already emits a Replace covering qualifier+ident for those, and
-// emitting a separate self-import Delete would overlap that Replace.
-func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImportPath string, resolved []*resolvedRelo) []edit {
-	if rr.File == nil {
-		return nil
-	}
-
-	selfLocalNames := make(map[string]bool)
-	for _, imp := range rr.File.Syntax.Imports {
-		impPath := importPath(imp)
-		if impPath == selfImportPath {
-			if imp.Name != nil {
-				selfLocalNames[imp.Name.Name] = true
-			} else {
-				selfLocalNames[guessImportLocalName(impPath)] = true
-			}
-		}
-	}
-	if len(selfLocalNames) == 0 {
-		return nil
-	}
-
-	movedGroups := make(map[*mast.Group]bool)
-	for _, r := range resolved {
-		if r.Group != nil {
-			movedGroups[r.Group] = true
-		}
-	}
-
-	var edits []edit
-	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		if !selfLocalNames[ident.Name] {
-			return true
-		}
-		// Skip if the selected ident is in a moved group;
-		// computeExtractedEdits handles its qualifier rewrite.
-		if grp := ix.Group(sel.Sel); grp != nil && movedGroups[grp] {
-			return true
-		}
-
-		startOff := ix.Fset.Position(ident.Pos()).Offset
-		selOff := ix.Fset.Position(sel.Sel.Pos()).Offset
-		if startOff >= s.Start && selOff <= s.End {
-			edits = append(edits, edit{
-				Start: startOff - s.Start,
-				End:   selOff - s.Start,
-				New:   "",
-			})
-		}
-		return true
-	})
-	return edits
 }
 
 // determineTargetPkgName figures out the package name for a new target file.

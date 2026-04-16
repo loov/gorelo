@@ -22,10 +22,8 @@ import (
 // discovered during the walk are added to the importSet so that
 // applyImportsPass can install them in the destination file.
 //
-// After this pass, source-file processing (assembleSources) and
-// target-file processing (assembleTargets) both rely on plan.Apply
-// to materialize content; the per-rr extraction loop in
-// assembleTargets is gone.
+// File-move-synthesized rrs are skipped — assembleFileMoves owns
+// their rendering via a sub-Plan.
 func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
 	type spanKey struct {
 		path       string
@@ -111,11 +109,12 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 	}
 }
 
-// emitSpanRelativeAtAbs emits a single span-relative legacy edit as the
-// equivalent absolute-coord Plan primitive in the source file. Used by
-// emitCrossFileExtraction to lower the span-relative outputs of
-// computeExtractedEdits / collectSelfImportEdits / computeImportAliasEdits
-// into primitives that ride along with the Move.
+// emitSpanRelativeAtAbs emits a single span-relative edit as the
+// equivalent absolute-coord Plan primitive on srcPath. Used to lower
+// the span-relative outputs of computeExtractedEdits /
+// collectSelfImportEdits / computeImportAliasEdits into primitives
+// that ride along with the enclosing Move (or a sub-Plan for
+// whole-file moves).
 func emitSpanRelativeAtAbs(edits *ed.Plan, srcPath string, spanStart int, e edit, origin string) {
 	absStart := spanStart + e.Start
 	absEnd := spanStart + e.End
@@ -198,15 +197,12 @@ func planEditPaths(p *ed.Plan) []string {
 	return out
 }
 
-// computeDetachEdits emits primitives that detach methods (converting to
-// standalone functions) and attach functions (converting to methods).
-// Declaration edits land in the shared edits Plan and call-site edits
-// are also merged into edits.
-//
-// Cross-file detach edits are picked up later by the in-span filter in
-// assembleTargets / filemove and converted to span-relative offsets;
-// the source-side application path skips them as overlap against the
-// deleted span.
+// computeDetachEdits emits primitives that detach methods (converting
+// to standalone functions) and attach functions (converting to
+// methods). Declaration edits land in the shared edits Plan; call-site
+// edits are emitted onto the same Plan. For cross-file moves, the decl
+// edits sit inside the moved span and ride along with the enclosing
+// Move (or carryPlanInSpans for file-move targets).
 func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
 	for _, rr := range resolved {
 		switch {
@@ -230,12 +226,10 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 		return
 	}
 
-	// Emit declaration edits unconditionally. The cross-file path uses a
-	// package-qualified recvParam so the receiver type compiles in the
-	// target package; the in-span filter in assembleTargets / filemove
-	// extracts these into the relocated span span-relative, and the
-	// source-side application skips them as overlap against the deleted
-	// span.
+	// Emit declaration edits unconditionally. The cross-file path uses
+	// a package-qualified recvParam so the receiver type compiles in
+	// the target package; the decl edits sit inside the moved span and
+	// ride along with the enclosing Move at apply time.
 	var recvParam string
 	if rr.isCrossFileMove() {
 		recvParam = detachRecvParamForTarget(ix, rr, fd, resolved)
@@ -511,11 +505,11 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *imp
 		return
 	}
 
-	// Emit declaration edits unconditionally. The cross-file path strips
-	// the receiver type's package qualifier when moving into that type's
-	// package (self-import removal); the in-span filter in
-	// assembleTargets / filemove extracts and converts to span-relative
-	// for the relocated copy.
+	// Emit declaration edits unconditionally. The cross-file path
+	// strips the receiver type's package qualifier when moving into
+	// that type's package (self-import removal); the decl edits sit
+	// inside the moved span and ride along with the enclosing Move at
+	// apply time.
 	unqualifyPkgPath := ""
 	if rr.isCrossFileMove() {
 		unqualifyPkgPath = finalImportPath(rr)

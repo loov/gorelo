@@ -183,10 +183,10 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		resolvedGroups[r.Group] = true
 
 		// Detach/attach relos have their declaration rewritten by
-		// structuralDeclEdits and their call sites rewritten by
-		// detachCallSites/attachCallSites. Emitting a rename action
-		// here would collide with the structural edit at the decl
-		// name's offset and drop the receiver.
+		// detachDeclEdits/attachDeclEdits and their call sites rewritten
+		// by detachCallSites/attachCallSites. Emitting a rename action
+		// here would collide with the decl edit at the name's offset
+		// and drop the receiver.
 		if r.Relo.Detach || r.Relo.MethodOf != "" {
 			continue
 		}
@@ -428,6 +428,126 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		imports: neededImports,
 		aliases: resultAliases,
 	}
+}
+
+// computeImportAliasEdits generates edits for an extracted span to rename
+// import qualifier idents that were aliased due to collision resolution.
+// For each import in rr's source file that received an alias in the target,
+// it maps the old local name to the new alias and rewrites SelectorExpr
+// qualifiers within the span.
+func computeImportAliasEdits(ix *mast.Index, rr *resolvedRelo, s *span, ic *importChange) []edit {
+	if rr.File == nil || ic == nil || len(ic.Aliases) == 0 {
+		return nil
+	}
+
+	// Build a map of oldLocalName -> newAlias for imports used by this rr's source file.
+	localToAlias := make(map[string]string)
+	for _, imp := range rr.File.Syntax.Imports {
+		impPath := importPath(imp)
+		alias, ok := ic.Aliases[impPath]
+		if !ok {
+			continue
+		}
+		oldLocal := importLocalName(imp, impPath)
+		if oldLocal != alias {
+			localToAlias[oldLocal] = alias
+		}
+	}
+	if len(localToAlias) == 0 {
+		return nil
+	}
+
+	var edits []edit
+	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		newAlias, ok := localToAlias[ident.Name]
+		if !ok {
+			return true
+		}
+		off := ix.Fset.Position(ident.Pos()).Offset
+		endOff := off + len(ident.Name)
+		if off >= s.Start && endOff <= s.End {
+			edits = append(edits, edit{
+				Start: off - s.Start,
+				End:   endOff - s.Start,
+				New:   newAlias,
+			})
+		}
+		return true
+	})
+	return edits
+}
+
+// collectSelfImportEdits finds selector expressions like pkg.Foo where pkg
+// is the target package (self-import) and unqualifies them. Selectors
+// whose ident is in a moved group are skipped: computeExtractedEdits
+// already emits a Replace covering qualifier+ident for those, and
+// emitting a separate self-import Delete would overlap that Replace.
+func collectSelfImportEdits(ix *mast.Index, rr *resolvedRelo, s *span, selfImportPath string, resolved []*resolvedRelo) []edit {
+	if rr.File == nil {
+		return nil
+	}
+
+	selfLocalNames := make(map[string]bool)
+	for _, imp := range rr.File.Syntax.Imports {
+		impPath := importPath(imp)
+		if impPath == selfImportPath {
+			if imp.Name != nil {
+				selfLocalNames[imp.Name.Name] = true
+			} else {
+				selfLocalNames[guessImportLocalName(impPath)] = true
+			}
+		}
+	}
+	if len(selfLocalNames) == 0 {
+		return nil
+	}
+
+	movedGroups := make(map[*mast.Group]bool)
+	for _, r := range resolved {
+		if r.Group != nil {
+			movedGroups[r.Group] = true
+		}
+	}
+
+	var edits []edit
+	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if !selfLocalNames[ident.Name] {
+			return true
+		}
+		// Skip if the selected ident is in a moved group;
+		// computeExtractedEdits handles its qualifier rewrite.
+		if grp := ix.Group(sel.Sel); grp != nil && movedGroups[grp] {
+			return true
+		}
+
+		startOff := ix.Fset.Position(ident.Pos()).Offset
+		selOff := ix.Fset.Position(sel.Sel.Pos()).Offset
+		if startOff >= s.Start && selOff <= s.End {
+			edits = append(edits, edit{
+				Start: startOff - s.Start,
+				End:   selOff - s.Start,
+				New:   "",
+			})
+		}
+		return true
+	})
+	return edits
 }
 
 // resolvedForGroup finds the resolvedRelo for a given group.
