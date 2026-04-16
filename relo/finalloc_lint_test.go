@@ -45,7 +45,7 @@ func TestNoRawIdentityReadsInRewriters(t *testing.T) {
 		{
 			name:   "rr.Group.Pkg direct read",
 			banned: regexp.MustCompile(`\brr\.Group\.Pkg\b`),
-			hint:   "use finalImportPathForGroup(resolved, rr.Group) or finalDirForGroup — rr.Group.Pkg is always the PRE-move path",
+			hint:   "rr.Group.Pkg is always the PRE-move path; use finalImportPath(rr) or finalDir(rr) instead",
 		},
 	}
 

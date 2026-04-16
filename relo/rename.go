@@ -430,16 +430,6 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 	})
 }
 
-// resolvedForGroup finds the resolvedRelo for a given group.
-func resolvedForGroup(resolved []*resolvedRelo, grp *mast.Group) *resolvedRelo {
-	for _, r := range resolved {
-		if r.Group == grp {
-			return r
-		}
-	}
-	return nil
-}
-
 // typeHasEmbeddedUses checks if a TypeName group has any Use idents
 // that appear as embedded fields in struct declarations.
 func typeHasEmbeddedUses(ix *mast.Index, grp *mast.Group) bool {
