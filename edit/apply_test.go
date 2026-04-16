@@ -223,14 +223,201 @@ func TestApply_OutOfBoundsDelete(t *testing.T) {
 	}
 }
 
-func TestApply_MoveNotYetSupported(t *testing.T) {
-	files := map[string][]byte{"a.go": []byte("hi")}
+func TestApply_MoveSameFile(t *testing.T) {
+	files := map[string][]byte{"a.go": []byte("Hello, world")}
 	var p Plan
-	p.Move(Span{Path: "a.go", Start: 0, End: 2}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
-	_, err := p.Apply(files)
-	if err == nil {
-		t.Fatal("want error for unsupported Move")
+	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "a.go", Offset: 12}, MoveOptions{}, "m")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", ", worldHello")
+}
+
+func TestApply_MoveToOtherFile(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("Hello, world"),
+		"b.go": []byte("<>"),
 	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "b.go", Offset: 1}, MoveOptions{}, "m")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", ", world")
+	assertFile(t, out, "b.go", "<Hello>")
+}
+
+func TestApply_MoveToNewFile(t *testing.T) {
+	files := map[string][]byte{"a.go": []byte("Hello, world")}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "new.go", Offset: 0}, MoveOptions{}, "m")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", ", world")
+	assertFile(t, out, "new.go", "Hello")
+}
+
+func TestApply_MoveToEndOfFile(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("ABCDE"),
+		"b.go": []byte("xyz"),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 1, End: 3}, Anchor{Path: "b.go", Offset: -1}, MoveOptions{}, "m")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", "ADE")
+	assertFile(t, out, "b.go", "xyzBC")
+}
+
+func TestApply_MoveCarriesReplace(t *testing.T) {
+	// Input: "prefix[Foo bar]suffix" — move "[Foo bar]" (positions 6..15)
+	// to another file while renaming Foo→Baz inside the moved region.
+	files := map[string][]byte{
+		"a.go": []byte("prefix[Foo bar]suffix"),
+		"b.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 6, End: 15}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
+	p.Replace(Span{Path: "a.go", Start: 7, End: 10}, "Baz", "r") // "Foo" → "Baz" inside the moved span
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", "prefixsuffix")
+	assertFile(t, out, "b.go", "[Baz bar]")
+}
+
+func TestApply_MoveCarriesInsert(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("prefix[x]suffix"),
+		"b.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 6, End: 9}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
+	p.Insert(Anchor{Path: "a.go", Offset: 7}, "INS", Before, "i") // inside moved span, before 'x'
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", "prefixsuffix")
+	assertFile(t, out, "b.go", "[INSx]")
+}
+
+func TestApply_MoveCarriesDelete(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("prefix[AB]suffix"),
+		"b.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 6, End: 10}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
+	p.Delete(Span{Path: "a.go", Start: 7, End: 8}, "d") // delete 'A' inside moved span
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", "prefixsuffix")
+	assertFile(t, out, "b.go", "[B]")
+}
+
+func TestApply_NestedMoves(t *testing.T) {
+	// Outer: move [6, 15) to b.go. Inner: move [8, 11) from that range to c.go.
+	// Outer's realized content excludes [8,11); inner's content emits at c.go.
+	files := map[string][]byte{
+		"a.go": []byte("prefix[ABXYZCD]suffix"),
+		"b.go": []byte(""),
+		"c.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 6, End: 15}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "outer")
+	p.Move(Span{Path: "a.go", Start: 9, End: 12}, Anchor{Path: "c.go", Offset: 0}, MoveOptions{}, "inner")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", "prefixsuffix")
+	assertFile(t, out, "b.go", "[ABCD]")
+	assertFile(t, out, "c.go", "XYZ")
+}
+
+func TestApply_MoveGroupKeywordMerges(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("<Foo Bar>"),
+		"b.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const", AppendNewline: true}, "m1")
+	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const", AppendNewline: true}, "m2")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "a.go", "< >")
+	assertFile(t, out, "b.go", "const (\nFoo\nBar\n)\n")
+}
+
+func TestApply_MoveGroupKeywordMismatchConflict(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("<Foo Bar>"),
+		"b.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const"}, "m1")
+	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "var"}, "m2")
+	_, err := p.Apply(files)
+	var ce *ConflictError
+	if !errors.As(err, &ce) {
+		t.Fatalf("want ConflictError, got %v", err)
+	}
+}
+
+func TestApply_MoveOverlapConflict(t *testing.T) {
+	files := map[string][]byte{"a.go": []byte("0123456789")}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m1")
+	p.Move(Span{Path: "a.go", Start: 3, End: 8}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m2")
+	_, err := p.Apply(files)
+	var ce *ConflictError
+	if !errors.As(err, &ce) {
+		t.Fatalf("want ConflictError, got %v", err)
+	}
+}
+
+func TestApply_MoveEqualSpanConflict(t *testing.T) {
+	files := map[string][]byte{"a.go": []byte("0123456789")}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m1")
+	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m2")
+	_, err := p.Apply(files)
+	var ce *ConflictError
+	if !errors.As(err, &ce) {
+		t.Fatalf("want ConflictError, got %v", err)
+	}
+}
+
+func TestApply_MoveDedentOption(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("PRE\tfoo\n\tbar\nPOST"),
+		"b.go": []byte(""),
+	}
+	// Move span: "\tfoo\n\tbar" at [3, 12). Dedent strips the shared tab.
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 3, End: 12}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{Dedent: true}, "m")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "b.go", "foo\nbar")
+}
+
+func TestApply_MoveAppendNewlineOption(t *testing.T) {
+	files := map[string][]byte{
+		"a.go": []byte("abc"),
+		"b.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 0, End: 3}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{AppendNewline: true}, "m")
+	out := mustApply(t, &p, files)
+	assertFile(t, out, "b.go", "abc\n")
+}
+
+func TestApply_DetachMethodExample(t *testing.T) {
+	// The user's driving example:
+	//   func (server *Server) ServeHTTP(w int) {}
+	// ↓ four primitives ↓
+	//   func ServeHTTP(server *Server, w int) {}
+	src := "func (server *Server) ServeHTTP(w int) {}"
+	files := map[string][]byte{"a.go": []byte(src)}
+
+	var p Plan
+	// 1. Move "server *Server" (bytes [6, 20)) to just after '(' of ServeHTTP (offset 32).
+	p.Move(Span{Path: "a.go", Start: 6, End: 20}, Anchor{Path: "a.go", Offset: 32}, MoveOptions{}, "detach-recv")
+	// 2. Insert ", " right after the Move's destination (Side=After so it follows the Move's Before-Insert).
+	p.Insert(Anchor{Path: "a.go", Offset: 32}, ", ", After, "detach-sep")
+	// 3. Delete " (" preceding the receiver (bytes [4, 6)).
+	p.Delete(Span{Path: "a.go", Start: 4, End: 6}, "detach-openparen")
+	// 4. Delete ")" after the receiver (byte [20, 21)).
+	p.Delete(Span{Path: "a.go", Start: 20, End: 21}, "detach-closeparen")
+
+	out := mustApply(t, &p, files)
+	want := "func ServeHTTP(server *Server, w int) {}"
+	assertFile(t, out, "a.go", want)
 }
 
 func TestApply_UnknownFileTreatedAsEmpty(t *testing.T) {

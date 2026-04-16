@@ -1,34 +1,51 @@
 package edit
 
 import (
-	"errors"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Apply applies the plan to files and returns the resulting contents.
 //
 // files is a map from file path to original byte contents. Paths not
 // present in files but referenced by a primitive are treated as if
-// their original content were empty.
+// their original content were empty (Move destinations may create new
+// files this way).
 //
 // On any composition conflict Apply returns a *ConflictError; on a
 // bounds error or other structural problem it returns a plain error.
 func (p *Plan) Apply(files map[string][]byte) (map[string][]byte, error) {
-	byFile := make(map[string][]Primitive)
 	for _, prim := range p.prims {
-		switch x := prim.(type) {
-		case Insert:
-			byFile[x.Anchor.Path] = append(byFile[x.Anchor.Path], prim)
-		case Delete:
-			byFile[x.Span.Path] = append(byFile[x.Span.Path], prim)
-		case Replace:
-			byFile[x.Span.Path] = append(byFile[x.Span.Path], prim)
-		case Move:
-			return nil, errors.New("edit: Move primitives are not yet supported")
-		default:
-			return nil, fmt.Errorf("edit: unknown primitive type %T", prim)
+		if err := validatePrimitive(prim, files); err != nil {
+			return nil, err
 		}
+	}
+
+	parent, err := classifyContainment(p.prims)
+	if err != nil {
+		return nil, err
+	}
+
+	children := make(map[int][]int, len(p.prims))
+	for i := range p.prims {
+		children[parent[i]] = append(children[parent[i]], i)
+	}
+
+	realized, err := computeRealizedContent(p.prims, children, files)
+	if err != nil {
+		return nil, err
+	}
+
+	topLevel, groupInserts, err := lowerMoves(p.prims, parent, realized)
+	if err != nil {
+		return nil, err
+	}
+	topLevel = append(topLevel, groupInserts...)
+
+	byFile := make(map[string][]Primitive)
+	for _, prim := range topLevel {
+		byFile[pathOf(prim)] = append(byFile[pathOf(prim)], prim)
 	}
 
 	out := make(map[string][]byte, len(files))
@@ -47,6 +64,391 @@ func (p *Plan) Apply(files map[string][]byte) (map[string][]byte, error) {
 		out[path] = newSrc
 	}
 	return out, nil
+}
+
+// pathOf returns the file path a primitive addresses.
+func pathOf(prim Primitive) string {
+	switch x := prim.(type) {
+	case Insert:
+		return x.Anchor.Path
+	case Delete:
+		return x.Span.Path
+	case Replace:
+		return x.Span.Path
+	}
+	return ""
+}
+
+// validatePrimitive checks a primitive's coordinates against the input
+// file lengths. Move destinations on new files are permitted; all other
+// coordinates must be within their file's bounds.
+func validatePrimitive(prim Primitive, files map[string][]byte) error {
+	switch x := prim.(type) {
+	case Insert:
+		src := files[x.Anchor.Path]
+		off := x.Anchor.Offset
+		if off == -1 {
+			return nil
+		}
+		if off < 0 || off > len(src) {
+			return fmt.Errorf("edit: Insert offset %d out of range [0,%d] in %q (origin %q)",
+				off, len(src), x.Anchor.Path, x.Origin())
+		}
+	case Delete:
+		return checkSpanBounds("Delete", x.Span, len(files[x.Span.Path]), x.Origin())
+	case Replace:
+		return checkSpanBounds("Replace", x.Span, len(files[x.Span.Path]), x.Origin())
+	case Move:
+		if err := checkSpanBounds("Move source", x.Span, len(files[x.Span.Path]), x.Origin()); err != nil {
+			return err
+		}
+		dstLen := len(files[x.Dest.Path])
+		off := x.Dest.Offset
+		if off == -1 {
+			return nil
+		}
+		if off < 0 || off > dstLen {
+			return fmt.Errorf("edit: Move destination offset %d out of range [0,%d] in %q (origin %q)",
+				off, dstLen, x.Dest.Path, x.Origin())
+		}
+	}
+	return nil
+}
+
+// classifyContainment returns, for each primitive, the index of the
+// innermost Move that contains it, or -1 if none does. Two Moves that
+// overlap without nesting are reported as ConflictError.
+func classifyContainment(prims []Primitive) ([]int, error) {
+	parent := make([]int, len(prims))
+	for i := range parent {
+		parent[i] = -1
+	}
+
+	var moveIdx []int
+	for i, prim := range prims {
+		if _, ok := prim.(Move); ok {
+			moveIdx = append(moveIdx, i)
+		}
+	}
+
+	// Move-vs-Move: detect overlap-without-nesting as conflict; record
+	// strict containment into parent.
+	for _, i := range moveIdx {
+		for _, j := range moveIdx {
+			if i == j {
+				continue
+			}
+			mi := prims[i].(Move)
+			mj := prims[j].(Move)
+			switch spanRelation(mi.Span, mj.Span) {
+			case relEqual:
+				return nil, &ConflictError{A: prims[i], B: prims[j], Reason: "two Moves share the exact same source span"}
+			case relOverlapping:
+				return nil, &ConflictError{A: prims[i], B: prims[j], Reason: "Move spans overlap without nesting"}
+			case relContained:
+				// mi is inside mj; mj is a candidate parent.
+				updateInnermost(parent, prims, i, j)
+			}
+		}
+	}
+
+	// Non-Move vs Move: classify containment; detect overlap as conflict.
+	for i, prim := range prims {
+		if _, isMove := prim.(Move); isMove {
+			continue
+		}
+		for _, j := range moveIdx {
+			mv := prims[j].(Move)
+			rel, err := relateToMove(prim, mv)
+			if err != nil {
+				return nil, &ConflictError{A: prim, B: prims[j], Reason: err.Error()}
+			}
+			if rel == relContained {
+				updateInnermost(parent, prims, i, j)
+			}
+		}
+	}
+
+	return parent, nil
+}
+
+// updateInnermost records j as the containing Move of i if j is strictly
+// smaller than any previously recorded containing Move.
+func updateInnermost(parent []int, prims []Primitive, i, j int) {
+	if parent[i] == -1 {
+		parent[i] = j
+		return
+	}
+	prev := prims[parent[i]].(Move).Span
+	next := prims[j].(Move).Span
+	if spanArea(next) < spanArea(prev) {
+		parent[i] = j
+	}
+}
+
+func spanArea(s Span) int { return s.End - s.Start }
+
+type spanRel int
+
+const (
+	relDisjoint spanRel = iota
+	relEqual
+	relContained // a inside b (strict)
+	relContains  // b inside a (strict)
+	relOverlapping
+)
+
+// spanRelation classifies the geometric relationship between two spans.
+// Spans in different files are treated as disjoint.
+func spanRelation(a, b Span) spanRel {
+	if a.Path != b.Path {
+		return relDisjoint
+	}
+	if a == b {
+		return relEqual
+	}
+	if a.End <= b.Start || b.End <= a.Start {
+		return relDisjoint
+	}
+	if a.Start >= b.Start && a.End <= b.End {
+		return relContained
+	}
+	if b.Start >= a.Start && b.End <= a.End {
+		return relContains
+	}
+	return relOverlapping
+}
+
+// relateToMove classifies a non-Move primitive's relationship to a Move.
+// Returns relContained if the primitive is carried; relDisjoint otherwise.
+// Partial overlap returns an error message describing the conflict.
+func relateToMove(prim Primitive, mv Move) (spanRel, error) {
+	switch x := prim.(type) {
+	case Insert:
+		if x.Anchor.Path != mv.Span.Path {
+			return relDisjoint, nil
+		}
+		off := x.Anchor.Offset
+		if off <= mv.Span.Start || off >= mv.Span.End {
+			return relDisjoint, nil
+		}
+		return relContained, nil
+	case Delete:
+		return classifySpanIntoMove(x.Span, mv)
+	case Replace:
+		return classifySpanIntoMove(x.Span, mv)
+	}
+	return relDisjoint, nil
+}
+
+func classifySpanIntoMove(sp Span, mv Move) (spanRel, error) {
+	switch spanRelation(sp, mv.Span) {
+	case relDisjoint:
+		return relDisjoint, nil
+	case relContained, relEqual:
+		return relContained, nil
+	case relContains:
+		return 0, fmt.Errorf("Delete/Replace span fully contains a Move span")
+	case relOverlapping:
+		return 0, fmt.Errorf("Delete/Replace span partially overlaps a Move span")
+	}
+	return relDisjoint, nil
+}
+
+// computeRealizedContent produces the emitted bytes for each Move,
+// indexed by the Move's position in prims. Carried non-Move primitives
+// are applied in span-relative coordinates; carried Moves contribute a
+// Delete for their source range (their bytes relocate separately).
+func computeRealizedContent(prims []Primitive, children map[int][]int, files map[string][]byte) (map[int][]byte, error) {
+	realized := make(map[int][]byte)
+	for i, prim := range prims {
+		mv, ok := prim.(Move)
+		if !ok {
+			continue
+		}
+		src := files[mv.Span.Path]
+		span := src[mv.Span.Start:mv.Span.End]
+
+		var rel []Primitive
+		for _, ci := range children[i] {
+			switch x := prims[ci].(type) {
+			case Insert:
+				x.Anchor = Anchor{Path: "<carry>", Offset: x.Anchor.Offset - mv.Span.Start}
+				rel = append(rel, x)
+			case Delete:
+				x.Span = Span{Path: "<carry>", Start: x.Span.Start - mv.Span.Start, End: x.Span.End - mv.Span.Start}
+				rel = append(rel, x)
+			case Replace:
+				x.Span = Span{Path: "<carry>", Start: x.Span.Start - mv.Span.Start, End: x.Span.End - mv.Span.Start}
+				rel = append(rel, x)
+			case Move:
+				rel = append(rel, Delete{
+					Span:   Span{Path: "<carry>", Start: x.Span.Start - mv.Span.Start, End: x.Span.End - mv.Span.Start},
+					origin: x.origin,
+				})
+			}
+		}
+
+		out, err := applyToFile(span, rel)
+		if err != nil {
+			return nil, err
+		}
+		realized[i] = applyMoveOptions(out, mv.Options)
+	}
+	return realized, nil
+}
+
+// lowerMoves converts Moves into (top-level Delete at source, top-level
+// grouped Insert at destination) pairs and returns the remaining
+// top-level non-Move primitives alongside the synthesized Inserts.
+//
+// Nested Moves do not emit a source-side Delete (the enclosing Move
+// already covers their source range) but do emit a destination-side
+// Insert.
+func lowerMoves(prims []Primitive, parent []int, realized map[int][]byte) ([]Primitive, []Primitive, error) {
+	var topLevel []Primitive
+	var pending []pendingInsert
+
+	for i, prim := range prims {
+		if mv, ok := prim.(Move); ok {
+			pending = append(pending, pendingInsert{
+				dest:    mv.Dest,
+				keyword: mv.Options.GroupKeyword,
+				content: realized[i],
+				origin:  mv.origin,
+			})
+			if parent[i] == -1 {
+				topLevel = append(topLevel, Delete{Span: mv.Span, origin: mv.origin})
+			}
+			continue
+		}
+		if parent[i] == -1 {
+			topLevel = append(topLevel, prim)
+		}
+	}
+
+	groupInserts, err := mergeMoveInserts(pending)
+	if err != nil {
+		return nil, nil, err
+	}
+	return topLevel, groupInserts, nil
+}
+
+// mergeMoveInserts consolidates pending Move-destination Inserts. Moves
+// sharing (path, offset, non-empty GroupKeyword) merge into one
+// `keyword (…)` block. Moves sharing (path, offset) with mismatched
+// GroupKeyword return a ConflictError.
+func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
+	type groupKey struct {
+		path    string
+		offset  int
+		keyword string
+	}
+	type anchorKey struct {
+		path   string
+		offset int
+	}
+	groups := make(map[groupKey][]pendingInsert)
+	var order []groupKey
+	byAnchor := make(map[anchorKey]groupKey)
+	for _, mi := range pending {
+		gk := groupKey{mi.dest.Path, mi.dest.Offset, mi.keyword}
+		ak := anchorKey{mi.dest.Path, mi.dest.Offset}
+		if existing, ok := byAnchor[ak]; ok && existing != gk {
+			return nil, &ConflictError{
+				A:      Move{Dest: mi.dest, Options: MoveOptions{GroupKeyword: mi.keyword}, origin: mi.origin},
+				B:      Move{Dest: Anchor{Path: existing.path, Offset: existing.offset}, Options: MoveOptions{GroupKeyword: existing.keyword}, origin: groups[existing][0].origin},
+				Reason: "Moves share a destination anchor with mismatched GroupKeyword",
+			}
+		}
+		byAnchor[ak] = gk
+		if _, seen := groups[gk]; !seen {
+			order = append(order, gk)
+		}
+		groups[gk] = append(groups[gk], mi)
+	}
+
+	var out []Primitive
+	for _, gk := range order {
+		grp := groups[gk]
+		var content []byte
+		if gk.keyword == "" {
+			for _, mi := range grp {
+				content = append(content, mi.content...)
+			}
+		} else {
+			var b strings.Builder
+			b.WriteString(gk.keyword)
+			b.WriteString(" (\n")
+			for _, mi := range grp {
+				b.Write(mi.content)
+			}
+			b.WriteString(")\n")
+			content = []byte(b.String())
+		}
+		out = append(out, Insert{
+			Anchor: Anchor{Path: gk.path, Offset: gk.offset},
+			Text:   string(content),
+			Side:   Before,
+			origin: grp[0].origin,
+		})
+	}
+	return out, nil
+}
+
+// applyMoveOptions applies TrimLeadingBlank, Dedent, and AppendNewline
+// to the realized content of a Move, in that order.
+func applyMoveOptions(b []byte, opts MoveOptions) []byte {
+	s := string(b)
+	if opts.TrimLeadingBlank {
+		for strings.HasPrefix(s, "\n") {
+			s = s[1:]
+		}
+	}
+	if opts.Dedent {
+		s = dedent(s)
+	}
+	if opts.AppendNewline && !strings.HasSuffix(s, "\n") {
+		s += "\n"
+	}
+	return []byte(s)
+}
+
+// dedent strips the common leading run of spaces-and-tabs from each
+// non-blank line of s. Blank lines are left as-is.
+func dedent(s string) string {
+	lines := strings.Split(s, "\n")
+	minIndent := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		n := 0
+		for n < len(line) && (line[n] == ' ' || line[n] == '\t') {
+			n++
+		}
+		if minIndent == -1 || n < minIndent {
+			minIndent = n
+		}
+	}
+	if minIndent <= 0 {
+		return s
+	}
+	for i, line := range lines {
+		if len(line) >= minIndent {
+			lines[i] = line[minIndent:]
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// pendingInsert represents a Move destination Insert awaiting group
+// merging.
+type pendingInsert struct {
+	dest    Anchor
+	keyword string
+	content []byte
+	origin  string
 }
 
 // applyToFile applies a batch of Insert/Delete/Replace primitives targeting
