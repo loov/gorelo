@@ -369,78 +369,73 @@ func lowerMoves(prims []Primitive, parent []int, realized map[int][]byte) ([]Pri
 	return topLevel, groupInserts, nil
 }
 
-// mergeMoveInserts consolidates pending Move-destination Inserts. Moves
-// sharing (path, offset, non-empty GroupKeyword) merge into one
-// `keyword (…)` block. Moves sharing (path, offset) with mismatched
-// GroupKeyword return a ConflictError.
+// mergeMoveInserts consolidates pending Move-destination Inserts into one
+// Insert per anchor. Items sharing an anchor are sorted by source span;
+// consecutive items with the same non-empty GroupKeyword are wrapped in
+// one `keyword (…)` block, while items with empty GroupKeyword (or that
+// transition between keywords) emit their content directly. This lets
+// callers append multiple Moves to the same destination — including
+// interleaved const/var/type sections — without an artificial conflict.
 func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
-	type groupKey struct {
-		path    string
-		offset  int
-		keyword string
-	}
 	type anchorKey struct {
 		path   string
 		offset int
 	}
-	groups := make(map[groupKey][]pendingInsert)
-	byAnchor := make(map[anchorKey]groupKey)
+	byAnchor := make(map[anchorKey][]pendingInsert)
 	for _, mi := range pending {
-		gk := groupKey{mi.dest.Path, mi.dest.Offset, mi.keyword}
 		ak := anchorKey{mi.dest.Path, mi.dest.Offset}
-		if existing, ok := byAnchor[ak]; ok && existing != gk {
-			return nil, &ConflictError{
-				A:      Move{Dest: mi.dest, Options: MoveOptions{GroupKeyword: mi.keyword}, origin: mi.origin},
-				B:      Move{Dest: Anchor{Path: existing.path, Offset: existing.offset}, Options: MoveOptions{GroupKeyword: existing.keyword}, origin: groups[existing][0].origin},
-				Reason: "Moves share a destination anchor with mismatched GroupKeyword",
-			}
+		byAnchor[ak] = append(byAnchor[ak], mi)
+	}
+
+	// Stable order for anchor iteration.
+	aks := make([]anchorKey, 0, len(byAnchor))
+	for ak := range byAnchor {
+		aks = append(aks, ak)
+	}
+	sort.SliceStable(aks, func(i, j int) bool {
+		if aks[i].path != aks[j].path {
+			return aks[i].path < aks[j].path
 		}
-		byAnchor[ak] = gk
-		groups[gk] = append(groups[gk], mi)
-	}
-
-	// Sort each group's members by source span so concatenation order is
-	// independent of Plan insertion order.
-	for gk, grp := range groups {
-		sort.SliceStable(grp, func(i, j int) bool {
-			return sourceLess(grp[i].sourceSpan, grp[j].sourceSpan)
-		})
-		groups[gk] = grp
-	}
-
-	// Sort groups by the earliest source span of their members so the
-	// emitted Insert list is also deterministic.
-	gks := make([]groupKey, 0, len(groups))
-	for gk := range groups {
-		gks = append(gks, gk)
-	}
-	sort.SliceStable(gks, func(i, j int) bool {
-		return sourceLess(groups[gks[i]][0].sourceSpan, groups[gks[j]][0].sourceSpan)
+		return aks[i].offset < aks[j].offset
 	})
 
 	var out []Primitive
-	for _, gk := range gks {
-		grp := groups[gk]
+	for _, ak := range aks {
+		items := byAnchor[ak]
+		// Within an anchor, order by source span so output is independent
+		// of Plan insertion order.
+		sort.SliceStable(items, func(i, j int) bool {
+			return sourceLess(items[i].sourceSpan, items[j].sourceSpan)
+		})
+
 		var content []byte
-		if gk.keyword == "" {
-			for _, mi := range grp {
-				content = append(content, mi.content...)
+		i := 0
+		for i < len(items) {
+			kw := items[i].keyword
+			j := i + 1
+			for j < len(items) && items[j].keyword == kw {
+				j++
 			}
-		} else {
-			var b strings.Builder
-			b.WriteString(gk.keyword)
-			b.WriteString(" (\n")
-			for _, mi := range grp {
-				b.Write(mi.content)
+			if kw == "" {
+				for k := i; k < j; k++ {
+					content = append(content, items[k].content...)
+				}
+			} else {
+				content = append(content, kw...)
+				content = append(content, " (\n"...)
+				for k := i; k < j; k++ {
+					content = append(content, items[k].content...)
+				}
+				content = append(content, ")\n"...)
 			}
-			b.WriteString(")\n")
-			content = []byte(b.String())
+			i = j
 		}
+
 		out = append(out, Insert{
-			Anchor: Anchor{Path: gk.path, Offset: gk.offset},
+			Anchor: Anchor{Path: ak.path, Offset: ak.offset},
 			Text:   string(content),
 			Side:   Before,
-			origin: grp[0].origin,
+			origin: items[0].origin,
 		})
 	}
 	return out, nil

@@ -429,15 +429,23 @@ func TestApply_MoveGroupKeywordMerges(t *testing.T) {
 	})
 }
 
-func TestApply_MoveGroupKeywordMismatchConflict(t *testing.T) {
+func TestApply_MoveGroupKeywordMixedAtSameAnchor(t *testing.T) {
+	// Two Moves to the same destination anchor with different keywords
+	// emit two separate `keyword (…)` blocks in source-span order. This
+	// supports interleaved const/var/type sections at one anchor.
 	files := map[string][]byte{
 		"a.go": []byte("<Foo Bar>"),
 		"b.go": []byte(""),
 	}
 	var p Plan
-	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const"}, "m1")
-	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "var"}, "m2")
-	checkApplyConflict(t, &p, files)
+	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0},
+		MoveOptions{GroupKeyword: "const", AppendNewline: true}, "m1")
+	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0},
+		MoveOptions{GroupKeyword: "var", AppendNewline: true}, "m2")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "< >",
+		"b.go": "const (\nFoo\n)\nvar (\nBar\n)\n",
+	})
 }
 
 func TestApply_MoveOverlapConflict(t *testing.T) {
