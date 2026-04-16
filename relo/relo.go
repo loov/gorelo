@@ -97,10 +97,15 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	edits := &ed.Plan{}
 	computeRenames(ix, resolved, spans, opts, plan, edits)
 
-	// Phase 7: compute import changes.
-	importChanges := computeImports(ix, resolved, spans, plan)
+	// Phase 7: import changes accumulate into importChanges.
+	// rewriteSpanQualifiers (called from emitCrossFileExtraction and
+	// assembleFileMoves) registers all source-side imports the moved
+	// span actually uses; computeDetachEdits and computeConsumerEdits
+	// register the imports specific to their rewrites.
+	importChanges := &importSet{byFile: make(map[string]*importChange)}
+	warnNontransferableImports(ix, resolved, plan)
 
-	// Phase 7a: compute detach/attach edits (after imports for cross-pkg qualification).
+	// Phase 7a: compute detach/attach edits.
 	computeDetachEdits(ix, resolved, spans, edits, importChanges, plan)
 
 	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).

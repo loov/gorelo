@@ -5,7 +5,6 @@ import (
 	"go/token"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -35,91 +34,30 @@ type importSet struct {
 	byFile map[string]*importChange
 }
 
-// computeImports determines import changes for all affected files
-// (phase 7). For each target file, walks the moved spans collecting
-// the source-side imports their identifiers reference, then registers
-// each via addImportEntry — which dedups against the destination's
-// existing+queued imports, auto-sets aliases when the package's real
-// name differs from the path basename, and resolves any local-name
-// collisions with parent-prefixed aliases.
-func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) *importSet {
-	is := &importSet{
-		byFile: make(map[string]*importChange),
-	}
-
-	for targetFile, rrs := range groupByTarget(resolved) {
-		targetDir := filepath.Dir(targetFile)
-		targetImportPath := guessImportPath(targetDir)
-
-		// Collect imports used by declarations being moved to this
-		// target, keyed by impPath so the same import referenced from
-		// multiple spans dedups naturally.
-		neededImports := make(map[string]*ast.ImportSpec)
-		for _, rr := range rrs {
-			if rr.File == nil {
-				continue
-			}
-			s := spans[rr]
-			if s == nil {
-				continue
-			}
-
-			usedIdents := make(map[string]bool)
-			walkRange(rr.File.Syntax, ix.Fset, s.Start, s.End, func(n ast.Node) {
-				sel, ok := n.(*ast.SelectorExpr)
-				if !ok {
-					return
-				}
-				if ident, ok := sel.X.(*ast.Ident); ok {
-					usedIdents[ident.Name] = true
-				}
-			})
-
-			for _, imp := range rr.File.Syntax.Imports {
-				impPath := importPath(imp)
-				localName := importLocalName(imp, impPath)
-				if localName == "." {
-					plan.Warnings.AddAtf(rr, ix,
-						"moved decl %s uses dot import %s which cannot be automatically transferred",
-						rr.Group.Name, imp.Path.Value)
-					continue
-				}
-				if localName == "_" {
-					plan.Warnings.AddAtf(rr, ix,
-						"moved decl %s has blank import %s for side effects which cannot be automatically transferred",
-						rr.Group.Name, imp.Path.Value)
-					continue
-				}
-				if impPath == targetImportPath {
-					continue // self-import: target package, skip
-				}
-				if usedIdents[localName] {
-					neededImports[impPath] = imp
-				}
-			}
+// warnNontransferableImports emits a warning for every dot or blank
+// import in any source file with a moved declaration. These imports
+// cannot be auto-transferred to the destination — the user must
+// reproduce them manually if the moved code relies on them.
+func warnNontransferableImports(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) {
+	for _, rr := range resolved {
+		if rr.File == nil {
+			continue
 		}
-
-		// Path-sorted registration so addImportEntry's first-come
-		// alias collision resolution gives deterministic results.
-		impPaths := make([]string, 0, len(neededImports))
-		for p := range neededImports {
-			impPaths = append(impPaths, p)
-		}
-		sort.Strings(impPaths)
-
-		for _, impPath := range impPaths {
-			spec := neededImports[impPath]
-			entry := importEntry{Path: impPath}
-			// Preserve source-side explicit alias when it isn't
-			// redundant with the path basename.
-			if spec.Name != nil && spec.Name.Name != path.Base(impPath) {
-				entry.Alias = spec.Name.Name
+		for _, imp := range rr.File.Syntax.Imports {
+			impPath := importPath(imp)
+			localName := importLocalName(imp, impPath)
+			switch localName {
+			case ".":
+				plan.Warnings.AddAtf(rr, ix,
+					"moved decl %s uses dot import %s which cannot be automatically transferred",
+					rr.Group.Name, imp.Path.Value)
+			case "_":
+				plan.Warnings.AddAtf(rr, ix,
+					"moved decl %s has blank import %s for side effects which cannot be automatically transferred",
+					rr.Group.Name, imp.Path.Value)
 			}
-			addImportEntry(is, ix, targetFile, entry)
 		}
 	}
-
-	return is
 }
 
 // addImportEntry registers entry as an import to add to filePath. On the

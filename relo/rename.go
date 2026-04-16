@@ -3,6 +3,7 @@ package relo
 import (
 	"go/ast"
 	"go/token"
+	"path"
 	"path/filepath"
 	"sort"
 
@@ -136,14 +137,16 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 // rewriteSpanQualifiers walks the moved span in rr's source file once
 // and emits span-relative edits that transform every package qualifier
 // and every moved-group ident reference to its destination
-// representation. As a side effect it registers the destination imports
-// the rewrites need on the importSet — addImportEntry resolves
-// collisions against the destination's existing+queued imports, so the
-// alias used in the emitted edits matches what applyImportsPass will
-// actually install.
+// representation. As a side effect it registers every destination
+// import the rewrites need on the importSet — external imports the
+// span uses (subsuming the old computeImports phase), cross-target
+// moved-group imports, and the source-package import for cross-pkg
+// stay-references. addImportEntry resolves collisions against the
+// destination's existing+queued imports, so the alias used in the
+// emitted edits matches what applyImportsPass will actually install.
 //
-// Subsumes the trio computeExtractedEdits + collectSelfImportEdits +
-// computeImportAliasEdits with one ast.Inspect.
+// Subsumes computeImports + the trio computeExtractedEdits +
+// collectSelfImportEdits + computeImportAliasEdits with one walk.
 func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, imports *importSet) []edit {
 	if rr.File == nil || s == nil {
 		return nil
@@ -267,18 +270,25 @@ func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	}
 
 	// Source-file imports keyed by their local name as referenced in
-	// source code.
+	// source code, plus the spec for each so we can preserve explicit
+	// aliases when registering imports in the destination.
 	importByLocal := make(map[string]string)
+	specByPath := make(map[string]*ast.ImportSpec)
 	for _, imp := range rr.File.Syntax.Imports {
 		impPath := importPath(imp)
 		importByLocal[importLocalName(imp, impPath)] = impPath
+		specByPath[impPath] = imp
 	}
 
-	// Pre-pass: for every SelectorExpr X.Sel where Sel is in a moved
-	// group, mark X so the SelectorExpr qualifier-rewrite handler
-	// skips it (the Ident handler for Sel will extend left to swallow
-	// X. itself).
+	// Pre-pass: walk every SelectorExpr in the span. Two outputs:
+	//   - handledQualifier marks X for every X.Sel where Sel is in a
+	//     moved group (so the qualifier-rewrite handler in the main
+	//     walk skips it; the Ident handler for Sel extends left).
+	//   - usedExternalImpPaths collects every source-side import the
+	//     span actually references (subsumes computeImports). dot/
+	//     blank/self imports are filtered out and warned about.
 	handledQualifier := make(map[*ast.Ident]bool)
+	usedExternalImpPaths := make(map[string]bool)
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
@@ -288,13 +298,43 @@ func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		if !ok {
 			return true
 		}
-		grp := ix.Group(sel.Sel)
-		if grp == nil || actions[grp] == nil {
+		qOff := ix.Fset.Position(qid.Pos()).Offset
+		sOff := ix.Fset.Position(sel.Sel.Pos()).Offset
+		if qOff < s.Start || sOff > s.End {
 			return true
 		}
-		handledQualifier[qid] = true
+		if grp := ix.Group(sel.Sel); grp != nil && actions[grp] != nil {
+			handledQualifier[qid] = true
+		}
+		if impPath, isImport := importByLocal[qid.Name]; isImport && impPath != targetImportPath {
+			usedExternalImpPaths[impPath] = true
+		}
 		return true
 	})
+
+	// Register every external import the span uses (path-sorted so
+	// collision aliasing is deterministic). dot/blank imports are
+	// skipped here; warnNontransferableImports emits warnings about
+	// them once at phase 7.
+	{
+		sortedExternal := make([]string, 0, len(usedExternalImpPaths))
+		for p := range usedExternalImpPaths {
+			sortedExternal = append(sortedExternal, p)
+		}
+		sort.Strings(sortedExternal)
+		for _, impPath := range sortedExternal {
+			spec := specByPath[impPath]
+			localName := importLocalName(spec, impPath)
+			if localName == "." || localName == "_" {
+				continue
+			}
+			entry := importEntry{Path: impPath}
+			if spec.Name != nil && spec.Name.Name != path.Base(impPath) {
+				entry.Alias = spec.Name.Name
+			}
+			addImportEntry(imports, ix, targetPath, entry)
+		}
+	}
 
 	inSpan := func(start, end int) bool {
 		return start >= s.Start && end <= s.End
