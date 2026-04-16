@@ -307,11 +307,13 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 				New:   e.New,
 			})
 		}
-		if inSpan := a.renames.byFile[src.Path]; len(inSpan) > 0 {
-			for _, e := range inSpan {
-				if e.Start >= s.Start && e.End <= s.End {
-					absEdits = append(absEdits, e)
-				}
+		// Pull in any in-span Plan edits for this source path (detach
+		// decl rewrites, consumer rename edits inside the moved span)
+		// in absolute coordinates so they apply alongside the
+		// absEdits already collected.
+		for _, e := range planEditsForFile(a.edits, src.Path) {
+			if e.Start >= s.Start && e.End <= s.End {
+				absEdits = append(absEdits, e)
 			}
 		}
 	}

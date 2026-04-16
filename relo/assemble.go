@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
 
@@ -18,7 +19,7 @@ type assembler struct {
 	ix        *mast.Index
 	resolved  []*resolvedRelo
 	spans     map[*resolvedRelo]*span
-	renames   *renameSet
+	edits     *ed.Plan
 	imports   *importSet
 	fileMoves []*fileMoveInfo
 	opts      *Options
@@ -40,12 +41,12 @@ type assembler struct {
 }
 
 // assemble builds the final FileEdit list (phase 8).
-func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, fileMoves []*fileMoveInfo, opts *Options, plan *Plan) {
+func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, fileMoves []*fileMoveInfo, opts *Options, plan *Plan) {
 	a := &assembler{
 		ix:             ix,
 		resolved:       resolved,
 		spans:          spans,
-		renames:        renames,
+		edits:          edits,
 		imports:        imports,
 		fileMoves:      fileMoves,
 		opts:           opts,
@@ -183,17 +184,7 @@ func (a *assembler) assembleTargets() {
 			// call-site rewrites whose enclosing decl is itself moving).
 			// Source-file processing filters these out for the source path,
 			// so applying them here is the only place they take effect.
-			if inSpan := a.renames.byFile[rr.File.Path]; len(inSpan) > 0 {
-				for _, e := range inSpan {
-					if e.Start >= s.Start && e.End <= s.End {
-						edits = append(edits, edit{
-							Start: e.Start - s.Start,
-							End:   e.End - s.Start,
-							New:   e.New,
-						})
-					}
-				}
-			}
+			edits = append(edits, planEditsInSpan(a.edits, rr.File.Path, s.Start, s.End)...)
 
 			var text string
 			if len(edits) > 0 {
@@ -291,7 +282,7 @@ func (a *assembler) assembleTargets() {
 			content := string(existing)
 
 			// Apply rename edits for references in the existing content.
-			if targetRenames := a.renames.byFile[targetPath]; len(targetRenames) > 0 {
+			if targetRenames := planEditsForFile(a.edits, targetPath); len(targetRenames) > 0 {
 				content = applyEditsToString(content, targetRenames)
 			}
 
@@ -388,7 +379,7 @@ func (a *assembler) assembleSources() {
 
 		if allSameFile {
 			// Same-file renames: apply rename edits only.
-			edits := a.renames.byFile[sourcePath]
+			edits := planEditsForFile(a.edits, sourcePath)
 			if len(edits) == 0 {
 				continue
 			}
@@ -451,7 +442,7 @@ func (a *assembler) assembleSources() {
 		}
 
 		// Get rename edits for remaining code.
-		renameEdits := a.renames.byFile[sourcePath]
+		renameEdits := planEditsForFile(a.edits, sourcePath)
 
 		// Filter rename edits that fall inside removed ranges.
 		if len(renameEdits) > 0 {
@@ -546,9 +537,9 @@ func (a *assembler) assembleSources() {
 }
 
 func (a *assembler) assembleRenames() {
-	sortedRenameFiles := sortedKeys(a.renames.byFile)
+	sortedRenameFiles := planEditPaths(a.edits)
 	for _, filePath := range sortedRenameFiles {
-		edits := a.renames.byFile[filePath]
+		edits := planEditsForFile(a.edits, filePath)
 		if _, isSource := a.bySource[filePath]; isSource {
 			continue
 		}

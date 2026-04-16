@@ -4,14 +4,29 @@ import (
 	"path/filepath"
 	"sort"
 
+	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
 
+// emitConsumerEdit translates a consumer-built {Start,End,New} edit into
+// the equivalent Plan primitive on path.
+func emitConsumerEdit(edits *ed.Plan, path string, e edit, origin string) {
+	switch {
+	case e.Start == e.End:
+		edits.Insert(ed.Anchor{Path: path, Offset: e.Start}, e.New, ed.Before, origin)
+	case e.New == "":
+		edits.Delete(ed.Span{Path: path, Start: e.Start, End: e.End}, origin)
+	default:
+		edits.Replace(ed.Span{Path: path, Start: e.Start, End: e.End}, e.New, origin)
+	}
+}
+
 // computeConsumerEdits finds files in the index that reference moved groups
 // from external packages and generates edits to update their qualifier
-// expressions and imports. Results are merged into the provided renameSet
-// and importSet so that the assembly phase applies them uniformly.
-func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, opts *Options, plan *Plan) {
+// expressions and imports. Edits are emitted onto the shared edits Plan;
+// import additions go into the importSet so that the assembly phase
+// applies them uniformly.
+func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, opts *Options, plan *Plan) {
 	// Build lookup structures.
 	type moveInfo struct {
 		srcPkgPath string // source package import path
@@ -230,32 +245,19 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		}
 	}
 
-	// Merge consumer edits into the rename set and import set.
-	// Process files in sorted order for deterministic output.
+	// Emit consumer edits onto the shared Plan and add target imports.
+	// Process files in sorted order for deterministic output. Note that
+	// computeRenames already skips cross-package-moved groups, so the
+	// qualifier/name edits below have no overlapping rename emissions to
+	// supersede.
 	sortedConsumerFiles := sortedKeys(byFile)
 	for _, filePath := range sortedConsumerFiles {
 		fe := byFile[filePath]
-		// Merge qualifier and name edits into renames.
-		allEdits := make([]edit, 0, len(fe.qualifierEdits)+len(fe.nameEdits))
-		allEdits = append(allEdits, fe.qualifierEdits...)
-		allEdits = append(allEdits, fe.nameEdits...)
-		allEdits = deduplicateEdits(allEdits)
-		if len(allEdits) > 0 {
-			// Consumer edits supersede rename edits at the same offset
-			// (e.g., a source-file qualification edit replaces a plain
-			// rename edit because it includes the qualifier prefix).
-			consumerOffsets := make(map[int]bool)
-			for _, e := range allEdits {
-				consumerOffsets[e.Start] = true
-			}
-			var kept []edit
-			for _, e := range renames.byFile[filePath] {
-				if !consumerOffsets[e.Start] {
-					kept = append(kept, e)
-				}
-			}
-			renames.byFile[filePath] = append(kept, allEdits...)
-			renames.byFile[filePath] = deduplicateEdits(renames.byFile[filePath])
+		for _, e := range fe.qualifierEdits {
+			emitConsumerEdit(edits, filePath, e, "consumer-qualifier")
+		}
+		for _, e := range fe.nameEdits {
+			emitConsumerEdit(edits, filePath, e, "consumer-name")
 		}
 
 		// Add target imports in sorted order for deterministic output.

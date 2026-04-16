@@ -8,21 +8,13 @@ import (
 	"sort"
 	"strconv"
 
+	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
 
-// renameSet holds all rename edits organized by file.
-type renameSet struct {
-	// byFile maps file path to edits for that file.
-	byFile map[string][]edit
-}
-
-// computeRenames uses mast groups to find all occurrences needing rename (phase 6).
-func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, opts *Options, plan *Plan) *renameSet {
-	rs := &renameSet{
-		byFile: make(map[string][]edit),
-	}
-
+// computeRenames uses mast groups to find all occurrences needing rename
+// (phase 6) and emits the corresponding Replace primitives onto edits.
+func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, opts *Options, plan *Plan, edits *ed.Plan) {
 	// Build the set of groups being renamed and their new names.
 	renamedGroups := make(map[*mast.Group]string)
 	movedSpans := buildMovedSpanIndex(resolved, spans)
@@ -44,9 +36,23 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	// callers need the new name.
 	stubGroups := make(map[*mast.Group]bool)
 
+	// Cross-package-moved groups: their use-sites are emitted by
+	// computeConsumerEdits with full package qualification. computeRenames
+	// must skip them to avoid emitting overlapping plain-rename Replace
+	// primitives that would conflict with the consumer's qualified ones.
+	crossPkgMovedGroups := make(map[*mast.Group]bool)
+
 	for _, rr := range resolved {
 		if rr.TargetName != rr.Group.Name {
 			renamedGroups[rr.Group] = rr.TargetName
+		}
+
+		if rr.File != nil && !rr.Relo.Detach && rr.Relo.MethodOf == "" {
+			srcDir := filepath.Dir(rr.File.Path)
+			tgtDir := filepath.Dir(rr.TargetFile)
+			if srcDir != tgtDir {
+				crossPkgMovedGroups[rr.Group] = true
+			}
 		}
 
 		if opts.stubsEnabled() && rr.isCrossFileMove() {
@@ -59,7 +65,7 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	}
 
 	if len(renamedGroups) == 0 {
-		return rs
+		return
 	}
 
 	// Warn about type renames that may affect embedded field names,
@@ -88,9 +94,16 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	}
 
 	// For each renamed group, iterate through all its idents and create edits.
-	// Skip groups handled by the detach/attach phase.
+	// Skip groups handled by the detach/attach phase. Non-method/field
+	// cross-package-moved groups have their use-sites handled exclusively
+	// by computeConsumerEdits (whose qualified Replace overlaps the plain
+	// rename); method/field groups still need this loop because consumer
+	// only handles the in-target-package case for them.
 	for grp, newName := range renamedGroups {
 		if detachGroups[grp] {
+			continue
+		}
+		if crossPkgMovedGroups[grp] && !grp.Kind.TravelsWithType() {
 			continue
 		}
 		for _, id := range grp.Idents {
@@ -117,20 +130,9 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			// This is a use-site in non-moved code that needs renaming.
 			// For qualified references (pkg.Name), the qualifier might
 			// need changing too, but that's handled by the imports phase.
-			rs.byFile[id.File.Path] = append(rs.byFile[id.File.Path], edit{
-				Start: off,
-				End:   endOff,
-				New:   newName,
-			})
+			edits.Replace(ed.Span{Path: id.File.Path, Start: off, End: endOff}, newName, "rename-use")
 		}
 	}
-
-	// Deduplicate edits per file.
-	for path, edits := range rs.byFile {
-		rs.byFile[path] = deduplicateEdits(edits)
-	}
-
-	return rs
 }
 
 // extractedEditsResult holds the output of computeExtractedEdits.

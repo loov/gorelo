@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	ed "github.com/loov/gorelo/edit"
@@ -12,9 +13,9 @@ import (
 
 // primitivesToEditsOn converts a slice of edit.Primitive values targeting
 // path into the package-local []edit representation. Primitives targeting
-// other paths and Move primitives are dropped — Task 2 uses Plan only as
-// the internal emission API for detach/attach decl edits; whole-Plan
-// application (including Move handling) arrives in a later task.
+// other paths and Move primitives are dropped — the legacy applier path
+// does not understand Move; whole-Plan application arrives in a later
+// task.
 func primitivesToEditsOn(prims []ed.Primitive, path string) []edit {
 	var out []edit
 	for _, prim := range prims {
@@ -39,26 +40,106 @@ func primitivesToEditsOn(prims []ed.Primitive, path string) []edit {
 	return out
 }
 
-// computeDetachEdits generates edits for detaching methods (converting to
-// standalone functions) and attaching functions (converting to methods).
-// Declaration edits are stored in the renameSet (for same-file application)
-// and call-site edits are also merged into renames.
+// planEditsForFile returns the legacy []edit form of every primitive in
+// p that targets path, in plan-insertion order.
+func planEditsForFile(p *ed.Plan, path string) []edit {
+	return primitivesToEditsOn(p.Primitives(), path)
+}
+
+// planEditsInSpan returns []edit for the subset of p's primitives that
+// target path and lie strictly within [start, end). Offsets are shifted
+// to span-relative.
+func planEditsInSpan(p *ed.Plan, path string, start, end int) []edit {
+	var out []edit
+	for _, prim := range p.Primitives() {
+		switch x := prim.(type) {
+		case ed.Insert:
+			if x.Anchor.Path != path {
+				continue
+			}
+			if x.Anchor.Offset < start || x.Anchor.Offset > end {
+				continue
+			}
+			out = append(out, edit{
+				Start: x.Anchor.Offset - start,
+				End:   x.Anchor.Offset - start,
+				New:   x.Text,
+			})
+		case ed.Delete:
+			if x.Span.Path != path {
+				continue
+			}
+			if x.Span.Start < start || x.Span.End > end {
+				continue
+			}
+			out = append(out, edit{
+				Start: x.Span.Start - start,
+				End:   x.Span.End - start,
+				New:   "",
+			})
+		case ed.Replace:
+			if x.Span.Path != path {
+				continue
+			}
+			if x.Span.Start < start || x.Span.End > end {
+				continue
+			}
+			out = append(out, edit{
+				Start: x.Span.Start - start,
+				End:   x.Span.End - start,
+				New:   x.Text,
+			})
+		}
+	}
+	return out
+}
+
+// planEditPaths returns the sorted set of file paths referenced by any
+// primitive in p.
+func planEditPaths(p *ed.Plan) []string {
+	seen := make(map[string]bool)
+	for _, prim := range p.Primitives() {
+		switch x := prim.(type) {
+		case ed.Insert:
+			seen[x.Anchor.Path] = true
+		case ed.Delete:
+			seen[x.Span.Path] = true
+		case ed.Replace:
+			seen[x.Span.Path] = true
+		case ed.Move:
+			seen[x.Span.Path] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for path := range seen {
+		out = append(out, path)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// computeDetachEdits emits primitives that detach methods (converting to
+// standalone functions) and attach functions (converting to methods).
+// Declaration edits land in the shared edits Plan and call-site edits
+// are also merged into edits.
 //
-// For cross-file moves, declaration edits must also be applied during span
-// extraction — see structuralDeclEdits used in assembleTargets.
-func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
+// Cross-file detach edits are picked up later by the in-span filter in
+// assembleTargets / filemove and converted to span-relative offsets;
+// the source-side application path skips them as overlap against the
+// deleted span.
+func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
 	for _, rr := range resolved {
 		switch {
 		case rr.Relo.Detach:
-			detachMethod(ix, rr, resolved, spans, renames, imports, plan)
+			detachMethod(ix, rr, resolved, spans, edits, imports, plan)
 		case rr.Relo.MethodOf != "":
-			attachMethod(ix, rr, renames, imports, plan)
+			attachMethod(ix, rr, edits, imports, plan)
 		}
 	}
 }
 
 // detachMethod converts a method to a standalone function.
-func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
+func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
 	if rr.File == nil {
 		return
 	}
@@ -69,21 +150,19 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 		return
 	}
 
-	// Add declaration edits to renameSet unconditionally. For cross-file
-	// moves, the in-span filter in assembleTargets / filemove extracts
-	// these into the relocated span and converts them to span-relative
-	// offsets; the source-side application path swallows them as overlap
-	// against the deleted span. The recvParam is qualified for cross-file
-	// detach so that the receiver type compiles in the target package.
-	filePath := rr.File.Path
+	// Emit declaration edits unconditionally. The cross-file path uses a
+	// package-qualified recvParam so the receiver type compiles in the
+	// target package; the in-span filter in assembleTargets / filemove
+	// extracts these into the relocated span span-relative, and the
+	// source-side application skips them as overlap against the deleted
+	// span.
 	var recvParam string
 	if rr.isCrossFileMove() {
 		recvParam = detachRecvParamForTarget(ix, rr, fd, resolved)
 	} else {
 		recvParam = formatRecvAsParam(fd.Recv, ix.Fset, "", "")
 	}
-	renames.byFile[filePath] = append(renames.byFile[filePath],
-		detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName)...)
+	detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName, edits)
 
 	// For cross-package moves, the detached function's parameter references
 	// the receiver type. Add the import for the receiver type's final
@@ -96,7 +175,7 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 		}
 	}
 
-	detachCallSites(ix, rr, fd, resolved, spans, renames, imports, plan)
+	detachCallSites(ix, rr, fd, resolved, spans, edits, imports, plan)
 }
 
 // detachedReceiverImportPath returns the import path the detached
@@ -165,13 +244,12 @@ func receiverTypeIdent(recv *ast.FieldList) *ast.Ident {
 	return nil
 }
 
-// detachDeclEdits returns absolute-offset edits that convert a method
+// detachDeclEdits emits primitives onto edits that convert a method
 // declaration into a standalone function. recvParam is the receiver
 // text formatted as a function parameter; callers decide whether to
 // qualify it with a package prefix and/or substitute a renamed base
 // type. newName is the function's target identifier name.
-func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvParam, newName string) []edit {
-	p := &ed.Plan{}
+func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvParam, newName string, edits *ed.Plan) {
 	fset := ix.Fset
 	src := fileContent(rr.File)
 	path := rr.File.Path
@@ -183,13 +261,13 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvPar
 	for recvEnd < len(src) && src[recvEnd] == ' ' {
 		recvEnd++
 	}
-	p.Delete(ed.Span{Path: path, Start: recvOpen, End: recvEnd}, "detach-remove-recv")
+	edits.Delete(ed.Span{Path: path, Start: recvOpen, End: recvEnd}, "detach-remove-recv")
 
 	// Rename ident if needed.
 	if newName != fd.Name.Name {
 		nameStart := fset.Position(fd.Name.Pos()).Offset
 		nameEnd := nameStart + len(fd.Name.Name)
-		p.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd}, newName, "detach-rename")
+		edits.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd}, newName, "detach-rename")
 	}
 
 	// Insert receiver as first parameter.
@@ -199,9 +277,7 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvPar
 	if hasParams {
 		insertText += ", "
 	}
-	p.Insert(ed.Anchor{Path: path, Offset: paramsOpen + 1}, insertText, ed.Before, "detach-insert-param")
-
-	return primitivesToEditsOn(p.Primitives(), path)
+	edits.Insert(ed.Anchor{Path: path, Offset: paramsOpen + 1}, insertText, ed.Before, "detach-insert-param")
 }
 
 // detachRecvParamForTarget returns the receiver text formatted as a
@@ -233,7 +309,7 @@ func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl
 // based on the caller's FINAL location — if the caller is itself being
 // moved to the same target package as the detached function, no
 // qualifier is needed.
-func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, renames *renameSet, imports *importSet, plan *Plan) {
+func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
 	newName := finalName(rr)
 
 	var detachTgtDir string
@@ -291,9 +367,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 		// Replace "recv.Method" with the (possibly qualified) function name.
 		selStart := fset.Position(sel.Sel.Pos()).Offset
 		selEnd := selStart + len(sel.Sel.Name)
-		renames.byFile[filePath] = append(renames.byFile[filePath], edit{
-			Start: xStart, End: selEnd, New: qualName,
-		})
+		edits.Replace(ed.Span{Path: filePath, Start: xStart, End: selEnd}, qualName, "detach-callsite-rename")
 
 		if call != nil {
 			lparen := fset.Position(call.Lparen).Offset
@@ -302,9 +376,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 			if hasArgs {
 				insertText += ", "
 			}
-			renames.byFile[filePath] = append(renames.byFile[filePath], edit{
-				Start: lparen + 1, End: lparen + 1, New: insertText,
-			})
+			edits.Insert(ed.Anchor{Path: filePath, Offset: lparen + 1}, insertText, ed.Before, "detach-callsite-recv-arg")
 		} else {
 			plan.Warnings.Addf(
 				"method value reference to %s.%s will change signature after detach",
@@ -314,7 +386,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 }
 
 // attachMethod converts a standalone function to a method.
-func attachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports *importSet, plan *Plan) {
+func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
 	if rr.File == nil {
 		return
 	}
@@ -359,29 +431,26 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports 
 		return
 	}
 
-	// Add declaration edits to renameSet unconditionally. The cross-file
-	// path strips the receiver type's package qualifier when moving into
-	// that type's package (self-import removal); the in-span filter in
+	// Emit declaration edits unconditionally. The cross-file path strips
+	// the receiver type's package qualifier when moving into that type's
+	// package (self-import removal); the in-span filter in
 	// assembleTargets / filemove extracts and converts to span-relative
 	// for the relocated copy.
-	filePath := rr.File.Path
 	unqualifyPkgPath := ""
 	if rr.isCrossFileMove() {
 		unqualifyPkgPath = finalImportPath(rr)
 	}
 	recvText := attachRecvText(rr.File, ix.Fset, fd, unqualifyPkgPath)
-	renames.byFile[filePath] = append(renames.byFile[filePath],
-		attachDeclEdits(ix, rr, fd, recvText, rr.TargetName)...)
+	attachDeclEdits(ix, rr, fd, recvText, rr.TargetName, edits)
 
-	attachCallSites(ix, rr, fd, renames, imports, plan)
+	attachCallSites(ix, rr, fd, edits, imports, plan)
 }
 
-// attachDeclEdits returns absolute-offset edits that convert a function
+// attachDeclEdits emits primitives onto edits that convert a function
 // declaration into a method. recvText is the receiver formatted as the
 // field inside the method's receiver parens (typically "(<recvText>)").
 // newName is the target method name.
-func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvText, newName string) []edit {
-	p := &ed.Plan{}
+func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvText, newName string, edits *ed.Plan) {
 	fset := ix.Fset
 	path := rr.File.Path
 	firstField := fd.Type.Params.List[0]
@@ -389,7 +458,7 @@ func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvTex
 	// Replace function name with receiver + name.
 	nameStart := fset.Position(fd.Name.Pos()).Offset
 	nameEnd := nameStart + len(fd.Name.Name)
-	p.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd},
+	edits.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd},
 		"("+recvText+") "+newName, "attach-rewrite-name")
 
 	// Remove first parameter from parameter list.
@@ -400,9 +469,7 @@ func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvTex
 		nextStart := fset.Position(fd.Type.Params.List[1].Pos()).Offset
 		removeEnd = nextStart
 	}
-	p.Delete(ed.Span{Path: path, Start: paramsOpen + 1, End: removeEnd}, "attach-remove-first-param")
-
-	return primitivesToEditsOn(p.Primitives(), path)
+	edits.Delete(ed.Span{Path: path, Start: paramsOpen + 1, End: removeEnd}, "attach-remove-first-param")
 }
 
 // attachRecvText returns the receiver text for an attach declaration.
@@ -468,7 +535,7 @@ func findImportPathForIdent(f *mast.File, name string) string {
 }
 
 // attachCallSites rewrites call sites from Func(s, args) → s.Method(args).
-func attachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, renames *renameSet, imports *importSet, plan *Plan) {
+func attachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, edits *ed.Plan, imports *importSet, plan *Plan) {
 	newName := rr.TargetName
 
 	for _, id := range rr.Group.Idents {
@@ -496,23 +563,18 @@ func attachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, renames
 			editStart = fset.Position(id.Qualifier.Pos()).Offset
 		}
 
-		renames.byFile[filePath] = append(renames.byFile[filePath], edit{
-			Start: editStart, End: identStart + len(id.Ident.Name),
-			New: recvText + "." + newName,
-		})
+		edits.Replace(ed.Span{
+			Path: filePath, Start: editStart, End: identStart + len(id.Ident.Name),
+		}, recvText+"."+newName, "attach-callsite-rename")
 
 		lparen := fset.Position(call.Lparen).Offset
 		if len(call.Args) > 1 {
 			secondArg := call.Args[1]
 			secondStart := fset.Position(secondArg.Pos()).Offset
-			renames.byFile[filePath] = append(renames.byFile[filePath], edit{
-				Start: lparen + 1, End: secondStart, New: "",
-			})
+			edits.Delete(ed.Span{Path: filePath, Start: lparen + 1, End: secondStart}, "attach-callsite-strip-recv-arg")
 		} else {
 			rparen := fset.Position(call.Rparen).Offset
-			renames.byFile[filePath] = append(renames.byFile[filePath], edit{
-				Start: lparen + 1, End: rparen, New: "",
-			})
+			edits.Delete(ed.Span{Path: filePath, Start: lparen + 1, End: rparen}, "attach-callsite-empty-args")
 		}
 	}
 }

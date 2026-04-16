@@ -3,6 +3,7 @@ package relo
 import (
 	"go/ast"
 
+	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
 
@@ -92,20 +93,21 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 		return nil, err
 	}
 
-	// Phase 6: compute rename edits.
-	renameEdits := computeRenames(ix, resolved, spans, opts, plan)
+	// Phase 6: compute rename edits into the shared edit.Plan.
+	edits := &ed.Plan{}
+	computeRenames(ix, resolved, spans, opts, plan, edits)
 
 	// Phase 7: compute import changes.
 	importChanges := computeImports(ix, resolved, spans, plan)
 
 	// Phase 7a: compute detach/attach edits (after imports for cross-pkg qualification).
-	computeDetachEdits(ix, resolved, spans, renameEdits, importChanges, plan)
+	computeDetachEdits(ix, resolved, spans, edits, importChanges, plan)
 
 	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).
-	computeConsumerEdits(ix, resolved, spans, renameEdits, importChanges, opts, plan)
+	computeConsumerEdits(ix, resolved, spans, edits, importChanges, opts, plan)
 
 	// Phase 8: assemble file edits.
-	assemble(ix, resolved, spans, renameEdits, importChanges, fmInfos, opts, plan)
+	assemble(ix, resolved, spans, edits, importChanges, fmInfos, opts, plan)
 
 	return plan, nil
 }
