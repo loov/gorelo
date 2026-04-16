@@ -2,6 +2,8 @@ package edit
 
 import (
 	"errors"
+	"math/rand/v2"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +25,100 @@ func assertFile(t *testing.T, out map[string][]byte, path, want string) {
 	if string(got) != want {
 		t.Errorf("file %q:\n  got  %q\n  want %q", path, got, want)
 	}
+}
+
+// checkApplyAllOrders asserts that applying prims yields want regardless of
+// the order in which they were added to a Plan. Order-independence is a
+// design invariant of the package; this helper enforces it.
+//
+// For len(prims) ≤ 8 every permutation (up to 40320) is exercised; larger
+// inputs fall back to a fixed-seed sample of 2000 shuffled orderings to
+// keep test runtime bounded.
+func checkApplyAllOrders(t *testing.T, prims []Primitive, files map[string][]byte, want map[string]string) {
+	t.Helper()
+	if len(prims) <= 8 {
+		n := 0
+		permute(prims, func(perm []Primitive) {
+			n++
+			runOnePerm(t, n, perm, files, want)
+		})
+		return
+	}
+	rnd := rand.New(rand.NewPCG(1, 2))
+	for k := range 2000 {
+		perm := append([]Primitive(nil), prims...)
+		rnd.Shuffle(len(perm), func(i, j int) { perm[i], perm[j] = perm[j], perm[i] })
+		runOnePerm(t, k+1, perm, files, want)
+	}
+}
+
+func runOnePerm(t *testing.T, n int, perm []Primitive, files map[string][]byte, want map[string]string) {
+	t.Helper()
+	p := &Plan{prims: append([]Primitive(nil), perm...)}
+	got, err := p.Apply(files)
+	if err != nil {
+		t.Fatalf("perm %d order %v: Apply error: %v", n, originsOf(perm), err)
+	}
+	for path, w := range want {
+		if string(got[path]) != w {
+			t.Fatalf("perm %d order %v file %q:\n  got  %q\n  want %q",
+				n, originsOf(perm), path, got[path], w)
+		}
+	}
+}
+
+// permute calls fn for every permutation of items. Items are shuffled in
+// place via Heap's algorithm; fn must not retain the slice across calls.
+func permute(items []Primitive, fn func([]Primitive)) {
+	work := make([]Primitive, len(items))
+	copy(work, items)
+	permuteHelp(work, len(work), fn)
+}
+
+func permuteHelp(a []Primitive, k int, fn func([]Primitive)) {
+	if k == 1 {
+		fn(a)
+		return
+	}
+	for i := range k {
+		permuteHelp(a, k-1, fn)
+		if k%2 == 0 {
+			a[i], a[k-1] = a[k-1], a[i]
+		} else {
+			a[0], a[k-1] = a[k-1], a[0]
+		}
+	}
+}
+
+// TestPermute verifies the Heap's algorithm implementation: for N items it
+// must invoke the callback exactly N! times with every distinct ordering.
+func TestPermute(t *testing.T) {
+	items := []Primitive{
+		Insert{origin: "a"},
+		Insert{origin: "b"},
+		Insert{origin: "c"},
+		Insert{origin: "d"},
+	}
+	count := 0
+	seen := map[string]bool{}
+	permute(items, func(a []Primitive) {
+		count++
+		seen[strings.Join(originsOf(a), ",")] = true
+	})
+	if want := 24; count != want {
+		t.Errorf("total calls: got %d, want %d", count, want)
+	}
+	if len(seen) != 24 {
+		t.Errorf("unique orderings: got %d, want 24", len(seen))
+	}
+}
+
+func originsOf(prims []Primitive) []string {
+	out := make([]string, len(prims))
+	for i, p := range prims {
+		out[i] = p.Origin()
+	}
+	return out
 }
 
 func TestApply_EmptyPlan(t *testing.T) {
@@ -330,9 +426,10 @@ func TestApply_MoveGroupKeywordMerges(t *testing.T) {
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const", AppendNewline: true}, "m1")
 	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const", AppendNewline: true}, "m2")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "< >")
-	assertFile(t, out, "b.go", "const (\nFoo\nBar\n)\n")
+	checkApplyAllOrders(t, p.Primitives(), files, map[string]string{
+		"a.go": "< >",
+		"b.go": "const (\nFoo\nBar\n)\n",
+	})
 }
 
 func TestApply_MoveGroupKeywordMismatchConflict(t *testing.T) {
@@ -454,14 +551,14 @@ func TestApply_StressMoveRenameDetach(t *testing.T) {
 	p.Insert(Anchor{Path: "a.go", Offset: paramInsertAt},
 		"s *Host, ", Before, "detach-add-recv-param")
 
-	out := mustApply(t, &p, files)
-
 	wantA := "package src\n"
 	wantB := "type Host struct{ x int }\n" +
 		"func Serve(s *Host, n int) error { return nil }\n"
 
-	assertFile(t, out, "a.go", wantA)
-	assertFile(t, out, "b.go", wantB)
+	checkApplyAllOrders(t, p.Primitives(), files, map[string]string{
+		"a.go": wantA,
+		"b.go": wantB,
+	})
 }
 
 func TestApply_DetachMethodExample(t *testing.T) {
