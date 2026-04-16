@@ -2,45 +2,73 @@ package edit
 
 import (
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"strings"
 	"testing"
 )
 
-func mustApply(t *testing.T, p *Plan, files map[string][]byte) map[string][]byte {
-	t.Helper()
-	out, err := p.Apply(files)
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	return out
-}
-
-func assertFile(t *testing.T, out map[string][]byte, path, want string) {
-	t.Helper()
-	got, ok := out[path]
-	if !ok {
-		t.Fatalf("file %q missing from output", path)
-	}
-	if string(got) != want {
-		t.Errorf("file %q:\n  got  %q\n  want %q", path, got, want)
-	}
-}
-
-// checkApplyAllOrders asserts that applying prims yields want regardless of
-// the order in which they were added to a Plan. Order-independence is a
-// design invariant of the package; this helper enforces it.
+// checkApply applies p against files under every ordering of p's
+// primitives and asserts every permutation produces the same output.
+// For each listed path in want, the post-Apply content must match
+// exactly; paths not listed in want are not inspected.
 //
-// For len(prims) ≤ 8 every permutation (up to 40320) is exercised; larger
-// inputs fall back to a fixed-seed sample of 2000 shuffled orderings to
-// keep test runtime bounded.
-func checkApplyAllOrders(t *testing.T, prims []Primitive, files map[string][]byte, want map[string]string) {
+// Order-independence is a design invariant of the package; this helper
+// enforces it. For len(prims) ≤ 8 every permutation (up to 40320) is
+// exercised; larger plans fall back to a fixed-seed sample of 2000
+// shuffled orderings.
+func checkApply(t *testing.T, p *Plan, files map[string][]byte, want map[string]string) {
 	t.Helper()
+	runAllOrders(t, p, files, func(got map[string][]byte, err error, label string) {
+		if err != nil {
+			t.Fatalf("%s: Apply error: %v", label, err)
+		}
+		for path, w := range want {
+			if string(got[path]) != w {
+				t.Fatalf("%s file %q:\n  got  %q\n  want %q", label, path, got[path], w)
+			}
+		}
+	})
+}
+
+// checkApplyConflict asserts that every ordering of p's primitives
+// returns a *ConflictError from Apply.
+func checkApplyConflict(t *testing.T, p *Plan, files map[string][]byte) {
+	t.Helper()
+	runAllOrders(t, p, files, func(_ map[string][]byte, err error, label string) {
+		var ce *ConflictError
+		if !errors.As(err, &ce) {
+			t.Fatalf("%s: want *ConflictError, got %v", label, err)
+		}
+	})
+}
+
+// checkApplyError asserts that every ordering of p's primitives returns
+// a non-nil error that is not a *ConflictError (e.g., a bounds error).
+func checkApplyError(t *testing.T, p *Plan, files map[string][]byte) {
+	t.Helper()
+	runAllOrders(t, p, files, func(_ map[string][]byte, err error, label string) {
+		if err == nil {
+			t.Fatalf("%s: want error, got nil", label)
+		}
+		var ce *ConflictError
+		if errors.As(err, &ce) {
+			t.Fatalf("%s: want plain error, got *ConflictError: %v", label, err)
+		}
+	})
+}
+
+func runAllOrders(t *testing.T, p *Plan, files map[string][]byte, fn func(got map[string][]byte, err error, label string)) {
+	t.Helper()
+	prims := p.Primitives()
 	if len(prims) <= 8 {
 		n := 0
 		permute(prims, func(perm []Primitive) {
 			n++
-			runOnePerm(t, n, perm, files, want)
+			label := fmt.Sprintf("perm %d order %v", n, originsOf(perm))
+			pp := &Plan{prims: append([]Primitive(nil), perm...)}
+			got, err := pp.Apply(files)
+			fn(got, err, label)
 		})
 		return
 	}
@@ -48,30 +76,24 @@ func checkApplyAllOrders(t *testing.T, prims []Primitive, files map[string][]byt
 	for k := range 2000 {
 		perm := append([]Primitive(nil), prims...)
 		rnd.Shuffle(len(perm), func(i, j int) { perm[i], perm[j] = perm[j], perm[i] })
-		runOnePerm(t, k+1, perm, files, want)
+		label := fmt.Sprintf("sample %d order %v", k+1, originsOf(perm))
+		pp := &Plan{prims: perm}
+		got, err := pp.Apply(files)
+		fn(got, err, label)
 	}
 }
 
-func runOnePerm(t *testing.T, n int, perm []Primitive, files map[string][]byte, want map[string]string) {
-	t.Helper()
-	p := &Plan{prims: append([]Primitive(nil), perm...)}
-	got, err := p.Apply(files)
-	if err != nil {
-		t.Fatalf("perm %d order %v: Apply error: %v", n, originsOf(perm), err)
-	}
-	for path, w := range want {
-		if string(got[path]) != w {
-			t.Fatalf("perm %d order %v file %q:\n  got  %q\n  want %q",
-				n, originsOf(perm), path, got[path], w)
-		}
-	}
-}
-
-// permute calls fn for every permutation of items. Items are shuffled in
-// place via Heap's algorithm; fn must not retain the slice across calls.
+// permute calls fn for every permutation of items. An empty input
+// results in a single call with an empty slice. Items are shuffled in
+// place via Heap's algorithm; fn must not retain the slice across
+// calls.
 func permute(items []Primitive, fn func([]Primitive)) {
 	work := make([]Primitive, len(items))
 	copy(work, items)
+	if len(work) == 0 {
+		fn(work)
+		return
+	}
 	permuteHelp(work, len(work), fn)
 }
 
@@ -90,29 +112,6 @@ func permuteHelp(a []Primitive, k int, fn func([]Primitive)) {
 	}
 }
 
-// TestPermute verifies the Heap's algorithm implementation: for N items it
-// must invoke the callback exactly N! times with every distinct ordering.
-func TestPermute(t *testing.T) {
-	items := []Primitive{
-		Insert{origin: "a"},
-		Insert{origin: "b"},
-		Insert{origin: "c"},
-		Insert{origin: "d"},
-	}
-	count := 0
-	seen := map[string]bool{}
-	permute(items, func(a []Primitive) {
-		count++
-		seen[strings.Join(originsOf(a), ",")] = true
-	})
-	if want := 24; count != want {
-		t.Errorf("total calls: got %d, want %d", count, want)
-	}
-	if len(seen) != 24 {
-		t.Errorf("unique orderings: got %d, want 24", len(seen))
-	}
-}
-
 func originsOf(prims []Primitive) []string {
 	out := make([]string, len(prims))
 	for i, p := range prims {
@@ -121,51 +120,80 @@ func originsOf(prims []Primitive) []string {
 	return out
 }
 
+// TestPermute verifies the Heap's algorithm implementation: for N items
+// it must invoke the callback exactly N! times with every distinct
+// ordering; zero items must still invoke once with an empty slice.
+func TestPermute(t *testing.T) {
+	t.Run("four", func(t *testing.T) {
+		items := []Primitive{
+			Insert{origin: "a"},
+			Insert{origin: "b"},
+			Insert{origin: "c"},
+			Insert{origin: "d"},
+		}
+		count := 0
+		seen := map[string]bool{}
+		permute(items, func(a []Primitive) {
+			count++
+			seen[strings.Join(originsOf(a), ",")] = true
+		})
+		if count != 24 || len(seen) != 24 {
+			t.Errorf("count=%d unique=%d want 24/24", count, len(seen))
+		}
+	})
+	t.Run("empty", func(t *testing.T) {
+		count := 0
+		permute(nil, func(a []Primitive) {
+			count++
+			if len(a) != 0 {
+				t.Errorf("want empty slice, got %v", a)
+			}
+		})
+		if count != 1 {
+			t.Errorf("count=%d want 1", count)
+		}
+	})
+}
+
 func TestApply_EmptyPlan(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "hello")
+	checkApply(t, &p, files, map[string]string{"a.go": "hello"})
 }
 
 func TestApply_Insert(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
 	p.Insert(Anchor{Path: "a.go", Offset: 5}, " world", Before, "greet")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "hello world")
+	checkApply(t, &p, files, map[string]string{"a.go": "hello world"})
 }
 
 func TestApply_InsertAtStart(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
 	p.Insert(Anchor{Path: "a.go", Offset: 0}, "> ", Before, "prefix")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "> hello")
+	checkApply(t, &p, files, map[string]string{"a.go": "> hello"})
 }
 
 func TestApply_InsertAtEndOfFileAnchor(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
 	p.Insert(Anchor{Path: "a.go", Offset: -1}, " world", Before, "eof")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "hello world")
+	checkApply(t, &p, files, map[string]string{"a.go": "hello world"})
 }
 
 func TestApply_Delete(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("hello, world")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 5, End: 7}, "comma")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "helloworld")
+	checkApply(t, &p, files, map[string]string{"a.go": "helloworld"})
 }
 
 func TestApply_Replace(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("hello, world")}
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 7, End: 12}, "Go", "rename")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "hello, Go")
+	checkApply(t, &p, files, map[string]string{"a.go": "hello, Go"})
 }
 
 func TestApply_MultipleDisjointEdits(t *testing.T) {
@@ -174,8 +202,7 @@ func TestApply_MultipleDisjointEdits(t *testing.T) {
 	p.Replace(Span{Path: "a.go", Start: 0, End: 2}, "AA", "a")
 	p.Delete(Span{Path: "a.go", Start: 4, End: 6}, "b")
 	p.Insert(Anchor{Path: "a.go", Offset: 8}, "X", Before, "c")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "AA2367X89")
+	checkApply(t, &p, files, map[string]string{"a.go": "AA2367X89"})
 }
 
 func TestApply_TwoInsertsSameAnchorDifferentSide(t *testing.T) {
@@ -183,8 +210,7 @@ func TestApply_TwoInsertsSameAnchorDifferentSide(t *testing.T) {
 	var p Plan
 	p.Insert(Anchor{Path: "a.go", Offset: 1}, ">", Before, "before")
 	p.Insert(Anchor{Path: "a.go", Offset: 1}, "<", After, "after")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "A><B")
+	checkApply(t, &p, files, map[string]string{"a.go": "A><B"})
 }
 
 func TestApply_InsertAtDeleteStart(t *testing.T) {
@@ -192,8 +218,7 @@ func TestApply_InsertAtDeleteStart(t *testing.T) {
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 3}, "d")
 	p.Insert(Anchor{Path: "a.go", Offset: 1}, "Y", Before, "i")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "AYB")
+	checkApply(t, &p, files, map[string]string{"a.go": "AYB"})
 }
 
 func TestApply_InsertAtDeleteEnd(t *testing.T) {
@@ -201,8 +226,7 @@ func TestApply_InsertAtDeleteEnd(t *testing.T) {
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 3}, "d")
 	p.Insert(Anchor{Path: "a.go", Offset: 3}, "Y", After, "i")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "AYB")
+	checkApply(t, &p, files, map[string]string{"a.go": "AYB"})
 }
 
 func TestApply_MultipleFiles(t *testing.T) {
@@ -213,9 +237,10 @@ func TestApply_MultipleFiles(t *testing.T) {
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 0, End: 5}, "HI", "ra")
 	p.Replace(Span{Path: "b.go", Start: 0, End: 5}, "THERE", "rb")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "HI")
-	assertFile(t, out, "b.go", "THERE")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "HI",
+		"b.go": "THERE",
+	})
 }
 
 func TestApply_IdenticalReplaceDeduped(t *testing.T) {
@@ -223,8 +248,7 @@ func TestApply_IdenticalReplaceDeduped(t *testing.T) {
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 1, End: 3}, "YY", "one")
 	p.Replace(Span{Path: "a.go", Start: 1, End: 3}, "YY", "two")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "AYYB")
+	checkApply(t, &p, files, map[string]string{"a.go": "AYYB"})
 }
 
 func TestApply_IdenticalDeleteDeduped(t *testing.T) {
@@ -232,8 +256,7 @@ func TestApply_IdenticalDeleteDeduped(t *testing.T) {
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 3}, "one")
 	p.Delete(Span{Path: "a.go", Start: 1, End: 3}, "two")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "AB")
+	checkApply(t, &p, files, map[string]string{"a.go": "AB"})
 }
 
 func TestApply_IdenticalInsertDeduped(t *testing.T) {
@@ -241,8 +264,7 @@ func TestApply_IdenticalInsertDeduped(t *testing.T) {
 	var p Plan
 	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", Before, "one")
 	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", Before, "two")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "AXB")
+	checkApply(t, &p, files, map[string]string{"a.go": "AXB"})
 }
 
 func TestApply_ConflictOverlappingReplace(t *testing.T) {
@@ -250,11 +272,7 @@ func TestApply_ConflictOverlappingReplace(t *testing.T) {
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "XX", "a")
 	p.Replace(Span{Path: "a.go", Start: 2, End: 5}, "YY", "b")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_ConflictSameSpanDifferentReplace(t *testing.T) {
@@ -262,11 +280,7 @@ func TestApply_ConflictSameSpanDifferentReplace(t *testing.T) {
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "XX", "a")
 	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "YY", "b")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_ConflictDeleteAndReplaceSameSpan(t *testing.T) {
@@ -274,11 +288,7 @@ func TestApply_ConflictDeleteAndReplaceSameSpan(t *testing.T) {
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 4}, "d")
 	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "Y", "r")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_ConflictInsertInsideDelete(t *testing.T) {
@@ -286,11 +296,7 @@ func TestApply_ConflictInsertInsideDelete(t *testing.T) {
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 4}, "d")
 	p.Insert(Anchor{Path: "a.go", Offset: 2}, "X", Before, "i")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_ConflictTwoInsertsSameAnchorSameSideDifferentText(t *testing.T) {
@@ -298,33 +304,21 @@ func TestApply_ConflictTwoInsertsSameAnchorSameSideDifferentText(t *testing.T) {
 	var p Plan
 	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", Before, "one")
 	p.Insert(Anchor{Path: "a.go", Offset: 1}, "Y", Before, "two")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_OutOfBoundsDelete(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("hi")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 0, End: 10}, "d")
-	_, err := p.Apply(files)
-	if err == nil {
-		t.Fatal("want bounds error")
-	}
-	var ce *ConflictError
-	if errors.As(err, &ce) {
-		t.Fatalf("want plain error, got ConflictError: %v", err)
-	}
+	checkApplyError(t, &p, files)
 }
 
 func TestApply_MoveSameFile(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("Hello, world")}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "a.go", Offset: 12}, MoveOptions{}, "m")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", ", worldHello")
+	checkApply(t, &p, files, map[string]string{"a.go": ", worldHello"})
 }
 
 func TestApply_MoveToOtherFile(t *testing.T) {
@@ -334,18 +328,20 @@ func TestApply_MoveToOtherFile(t *testing.T) {
 	}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "b.go", Offset: 1}, MoveOptions{}, "m")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", ", world")
-	assertFile(t, out, "b.go", "<Hello>")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": ", world",
+		"b.go": "<Hello>",
+	})
 }
 
 func TestApply_MoveToNewFile(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte("Hello, world")}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "new.go", Offset: 0}, MoveOptions{}, "m")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", ", world")
-	assertFile(t, out, "new.go", "Hello")
+	checkApply(t, &p, files, map[string]string{
+		"a.go":   ", world",
+		"new.go": "Hello",
+	})
 }
 
 func TestApply_MoveToEndOfFile(t *testing.T) {
@@ -355,24 +351,24 @@ func TestApply_MoveToEndOfFile(t *testing.T) {
 	}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 3}, Anchor{Path: "b.go", Offset: -1}, MoveOptions{}, "m")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "ADE")
-	assertFile(t, out, "b.go", "xyzBC")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "ADE",
+		"b.go": "xyzBC",
+	})
 }
 
 func TestApply_MoveCarriesReplace(t *testing.T) {
-	// Input: "prefix[Foo bar]suffix" — move "[Foo bar]" (positions 6..15)
-	// to another file while renaming Foo→Baz inside the moved region.
 	files := map[string][]byte{
 		"a.go": []byte("prefix[Foo bar]suffix"),
 		"b.go": []byte(""),
 	}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 6, End: 15}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
-	p.Replace(Span{Path: "a.go", Start: 7, End: 10}, "Baz", "r") // "Foo" → "Baz" inside the moved span
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "prefixsuffix")
-	assertFile(t, out, "b.go", "[Baz bar]")
+	p.Replace(Span{Path: "a.go", Start: 7, End: 10}, "Baz", "r")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "prefixsuffix",
+		"b.go": "[Baz bar]",
+	})
 }
 
 func TestApply_MoveCarriesInsert(t *testing.T) {
@@ -382,10 +378,11 @@ func TestApply_MoveCarriesInsert(t *testing.T) {
 	}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 6, End: 9}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
-	p.Insert(Anchor{Path: "a.go", Offset: 7}, "INS", Before, "i") // inside moved span, before 'x'
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "prefixsuffix")
-	assertFile(t, out, "b.go", "[INSx]")
+	p.Insert(Anchor{Path: "a.go", Offset: 7}, "INS", Before, "i")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "prefixsuffix",
+		"b.go": "[INSx]",
+	})
 }
 
 func TestApply_MoveCarriesDelete(t *testing.T) {
@@ -395,15 +392,14 @@ func TestApply_MoveCarriesDelete(t *testing.T) {
 	}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 6, End: 10}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
-	p.Delete(Span{Path: "a.go", Start: 7, End: 8}, "d") // delete 'A' inside moved span
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "prefixsuffix")
-	assertFile(t, out, "b.go", "[B]")
+	p.Delete(Span{Path: "a.go", Start: 7, End: 8}, "d")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "prefixsuffix",
+		"b.go": "[B]",
+	})
 }
 
 func TestApply_NestedMoves(t *testing.T) {
-	// Outer: move [6, 15) to b.go. Inner: move [8, 11) from that range to c.go.
-	// Outer's realized content excludes [8,11); inner's content emits at c.go.
 	files := map[string][]byte{
 		"a.go": []byte("prefix[ABXYZCD]suffix"),
 		"b.go": []byte(""),
@@ -412,10 +408,11 @@ func TestApply_NestedMoves(t *testing.T) {
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 6, End: 15}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "outer")
 	p.Move(Span{Path: "a.go", Start: 9, End: 12}, Anchor{Path: "c.go", Offset: 0}, MoveOptions{}, "inner")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "a.go", "prefixsuffix")
-	assertFile(t, out, "b.go", "[ABCD]")
-	assertFile(t, out, "c.go", "XYZ")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "prefixsuffix",
+		"b.go": "[ABCD]",
+		"c.go": "XYZ",
+	})
 }
 
 func TestApply_MoveGroupKeywordMerges(t *testing.T) {
@@ -426,7 +423,7 @@ func TestApply_MoveGroupKeywordMerges(t *testing.T) {
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const", AppendNewline: true}, "m1")
 	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const", AppendNewline: true}, "m2")
-	checkApplyAllOrders(t, p.Primitives(), files, map[string]string{
+	checkApply(t, &p, files, map[string]string{
 		"a.go": "< >",
 		"b.go": "const (\nFoo\nBar\n)\n",
 	})
@@ -440,11 +437,7 @@ func TestApply_MoveGroupKeywordMismatchConflict(t *testing.T) {
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const"}, "m1")
 	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "var"}, "m2")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_MoveOverlapConflict(t *testing.T) {
@@ -452,11 +445,7 @@ func TestApply_MoveOverlapConflict(t *testing.T) {
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m1")
 	p.Move(Span{Path: "a.go", Start: 3, End: 8}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m2")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_MoveEqualSpanConflict(t *testing.T) {
@@ -464,11 +453,7 @@ func TestApply_MoveEqualSpanConflict(t *testing.T) {
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m1")
 	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m2")
-	_, err := p.Apply(files)
-	var ce *ConflictError
-	if !errors.As(err, &ce) {
-		t.Fatalf("want ConflictError, got %v", err)
-	}
+	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_MoveDedentOption(t *testing.T) {
@@ -476,11 +461,9 @@ func TestApply_MoveDedentOption(t *testing.T) {
 		"a.go": []byte("PRE\tfoo\n\tbar\nPOST"),
 		"b.go": []byte(""),
 	}
-	// Move span: "\tfoo\n\tbar" at [3, 12). Dedent strips the shared tab.
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 3, End: 12}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{Dedent: true}, "m")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "b.go", "foo\nbar")
+	checkApply(t, &p, files, map[string]string{"b.go": "foo\nbar"})
 }
 
 func TestApply_MoveAppendNewlineOption(t *testing.T) {
@@ -490,8 +473,7 @@ func TestApply_MoveAppendNewlineOption(t *testing.T) {
 	}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 0, End: 3}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{AppendNewline: true}, "m")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "b.go", "abc\n")
+	checkApply(t, &p, files, map[string]string{"b.go": "abc\n"})
 }
 
 func TestApply_StressMoveRenameDetach(t *testing.T) {
@@ -555,7 +537,7 @@ func TestApply_StressMoveRenameDetach(t *testing.T) {
 	wantB := "type Host struct{ x int }\n" +
 		"func Serve(s *Host, n int) error { return nil }\n"
 
-	checkApplyAllOrders(t, p.Primitives(), files, map[string]string{
+	checkApply(t, &p, files, map[string]string{
 		"a.go": wantA,
 		"b.go": wantB,
 	})
@@ -579,17 +561,15 @@ func TestApply_DetachMethodExample(t *testing.T) {
 	// 4. Delete ")" after the receiver (byte [20, 21)).
 	p.Delete(Span{Path: "a.go", Start: 20, End: 21}, "detach-closeparen")
 
-	out := mustApply(t, &p, files)
 	want := "func ServeHTTP(server *Server, w int) {}"
-	assertFile(t, out, "a.go", want)
+	checkApply(t, &p, files, map[string]string{"a.go": want})
 }
 
 func TestApply_UnknownFileTreatedAsEmpty(t *testing.T) {
 	files := map[string][]byte{}
 	var p Plan
 	p.Insert(Anchor{Path: "new.go", Offset: 0}, "hello", Before, "seed")
-	out := mustApply(t, &p, files)
-	assertFile(t, out, "new.go", "hello")
+	checkApply(t, &p, files, map[string]string{"new.go": "hello"})
 }
 
 func TestApply_DoesNotMutateInput(t *testing.T) {
@@ -597,7 +577,7 @@ func TestApply_DoesNotMutateInput(t *testing.T) {
 	files := map[string][]byte{"a.go": orig}
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 0, End: 5}, "HI", "r")
-	mustApply(t, &p, files)
+	checkApply(t, &p, files, map[string]string{"a.go": "HI"})
 	if string(orig) != "hello" {
 		t.Errorf("input slice mutated: %q", orig)
 	}
