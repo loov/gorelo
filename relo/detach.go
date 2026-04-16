@@ -128,11 +128,6 @@ func subPlanForFiles(p *ed.Plan, keep map[string]bool) *ed.Plan {
 	return sub
 }
 
-// discardPath is the destination path used for Move primitives that
-// only need source-side deletion. plan.Apply still produces output for
-// this path; the source-side application code drops it.
-const discardPath = "\x00<discard>\x00"
-
 // applyEditsViaPlan converts a slice of legacy edits into a per-file
 // sub-plan and runs plan.Apply to produce the result. Overlapping
 // edits are pre-processed to match legacy applyEdits semantics (the
@@ -194,21 +189,27 @@ func dropOverlappingEdits(edits []edit) []edit {
 	return out
 }
 
-// emitCrossFileMoves emits a Move primitive for each cross-file
-// extraction span in resolved. The destination is the sentinel
-// discardPath — only the source-side delete (and the carry of any
-// in-span Plan primitives away from the source file) is significant.
-// Spans are deduplicated by (path, start, end) because multi-name
-// declarations (e.g. `const A, B = 1, 2`) yield multiple rrs sharing
-// one span. Target-side content is still produced by the legacy
-// assembleTargets pass; once that migrates to Move primitives this
-// helper goes away.
-func emitCrossFileMoves(resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan) {
+// emitCrossFileExtraction emits the Plan primitives that move each
+// cross-file extracted span to its target file: a Move per unique
+// source span (with appropriate GroupRender so the destination text
+// is wrapped/separated correctly), plus carried Insert/Delete/Replace
+// primitives in the source span for the qualification rewrites
+// (renames, cross-target package qualifications, self-import
+// removals, import-alias rewrites). Cross-target imports/aliases
+// discovered during the walk are added to the importSet so that
+// applyImportsPass can install them in the destination file.
+//
+// After this pass, source-file processing (assembleSources) and
+// target-file processing (assembleTargets) both rely on plan.Apply
+// to materialize content; the per-rr extraction loop in
+// assembleTargets is gone.
+func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
 	type spanKey struct {
 		path       string
 		start, end int
 	}
-	seen := make(map[spanKey]bool)
+	emittedSpan := make(map[spanKey]bool)
+
 	for _, rr := range resolved {
 		if !rr.isCrossFileMove() {
 			continue
@@ -220,17 +221,82 @@ func emitCrossFileMoves(resolved []*resolvedRelo, spans map[*resolvedRelo]*span,
 		if s == nil {
 			continue
 		}
-		key := spanKey{rr.File.Path, s.Start, s.End}
-		if seen[key] {
+		srcPath := rr.File.Path
+		targetPath := rr.TargetFile
+
+		// Emit qualification edits (computeExtractedEdits returns
+		// span-relative; convert to absolute coords on the source file
+		// so the edits land inside the Move's span and get carried to
+		// the destination automatically).
+		er := computeExtractedEdits(ix, rr, s, resolved)
+		for _, e := range er.edits {
+			emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract-qualify")
+		}
+
+		// Self-import unqualification inside the span.
+		targetDir := filepath.Dir(targetPath)
+		if targetImportPath := guessImportPath(targetDir); targetImportPath != "" {
+			for _, e := range collectSelfImportEdits(ix, rr, s, targetImportPath, resolved) {
+				emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract-self-import")
+			}
+		}
+
+		// Import-alias rewrites inside the span (alias collisions
+		// resolved in computeImports / addImportEntry).
+		if ic := imports.byFile[targetPath]; ic != nil {
+			for _, e := range computeImportAliasEdits(ix, rr, s, ic) {
+				emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract-alias")
+			}
+		}
+
+		// Register cross-target imports for applyImportsPass.
+		for impPath := range er.imports {
+			entry := importEntry{Path: impPath}
+			if alias, ok := er.aliases[impPath]; ok {
+				entry.Alias = alias
+			}
+			addImportEntry(imports, ix, targetPath, entry)
+		}
+
+		// Emit the Move once per unique source span (multi-name decls
+		// like `const A, B = 1, 2` yield multiple rrs sharing one span).
+		key := spanKey{srcPath, s.Start, s.End}
+		if emittedSpan[key] {
 			continue
 		}
-		seen[key] = true
+		emittedSpan[key] = true
+
+		opts := ed.MoveOptions{Dedent: s.IsGrouped}
+		if s.IsGrouped {
+			opts.GroupKeyword = s.Keyword
+			opts.GroupRender = goBlockRenderer(s.Keyword)
+		} else {
+			opts.GroupRender = goItemRenderer()
+		}
 		edits.Move(
-			ed.Span{Path: rr.File.Path, Start: s.Start, End: s.End},
-			ed.Anchor{Path: discardPath, Offset: -1},
-			ed.MoveOptions{},
-			"extract-source-span",
+			ed.Span{Path: srcPath, Start: s.Start, End: s.End},
+			ed.Anchor{Path: targetPath, Offset: -1},
+			opts,
+			"extract",
 		)
+	}
+}
+
+// emitSpanRelativeAtAbs emits a single span-relative legacy edit as the
+// equivalent absolute-coord Plan primitive in the source file. Used by
+// emitCrossFileExtraction to lower the span-relative outputs of
+// computeExtractedEdits / collectSelfImportEdits / computeImportAliasEdits
+// into primitives that ride along with the Move.
+func emitSpanRelativeAtAbs(edits *ed.Plan, srcPath string, spanStart int, e edit, origin string) {
+	absStart := spanStart + e.Start
+	absEnd := spanStart + e.End
+	switch {
+	case absStart == absEnd:
+		edits.Insert(ed.Anchor{Path: srcPath, Offset: absStart}, e.New, ed.Before, origin)
+	case e.New == "":
+		edits.Delete(ed.Span{Path: srcPath, Start: absStart, End: absEnd}, origin)
+	default:
+		edits.Replace(ed.Span{Path: srcPath, Start: absStart, End: absEnd}, e.New, origin)
 	}
 }
 

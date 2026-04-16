@@ -106,9 +106,10 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).
 	computeConsumerEdits(ix, resolved, spans, edits, importChanges, opts, plan)
 
-	// Phase 7c: emit Move primitives so source-file processing can use
-	// plan.Apply for span deletion.
-	emitCrossFileMoves(resolved, spans, edits)
+	// Phase 7c: emit cross-file extraction (Move primitives + carried
+	// qualification edits) so plan.Apply produces both source-side
+	// deletions and target-side appended content.
+	emitCrossFileExtraction(ix, resolved, spans, edits, importChanges)
 
 	// Phase 8: assemble file edits.
 	assemble(ix, resolved, spans, edits, importChanges, fmInfos, opts, plan)

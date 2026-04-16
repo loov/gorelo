@@ -716,6 +716,13 @@ func checkPair(a, b Primitive) error {
 			return &ConflictError{A: a, B: b, Reason: "Delete and Replace on the same span"}
 		}
 	}
+	// Fully-contained overlap (one span strictly inside the other) is
+	// not flagged as a conflict: applyToFile's left-to-right walk drops
+	// the contained one when its Start has already been passed.
+	if (sa.Start >= sb.Start && sa.End <= sb.End) ||
+		(sb.Start >= sa.Start && sb.End <= sa.End) {
+		return nil
+	}
 	return &ConflictError{A: a, B: b, Reason: "overlapping spans"}
 }
 

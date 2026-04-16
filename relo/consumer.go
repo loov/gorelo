@@ -213,6 +213,14 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 				continue
 			}
 
+			// Skip references inside extracted code; the qualifier
+			// rewrite there is handled by emitCrossFileExtraction.
+			identOff := ix.Fset.Position(id.Ident.Pos()).Offset
+			identEnd := identOff + len(id.Ident.Name)
+			if movedSpans.Contains(filePath, identOff, identEnd) {
+				continue
+			}
+
 			fe := ensureFile(filePath)
 
 			// Determine what the new qualifier text should be.
@@ -232,8 +240,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 
 			// Edit the ident name if it was renamed.
 			if info.tgtName != grp.Name {
-				identOff := ix.Fset.Position(id.Ident.Pos()).Offset
-				identEnd := identOff + len(id.Ident.Name)
 				fe.nameEdits = append(fe.nameEdits, edit{
 					Start: identOff,
 					End:   identEnd,
