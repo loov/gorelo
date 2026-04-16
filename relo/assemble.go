@@ -20,7 +20,10 @@ type assembler struct {
 	imports  *importSet
 	opts     *Options
 	plan     *Plan
-	es       *editSet
+
+	// out collects per-path FileEdits as the assembly passes run. The
+	// final plan.Edits slice is built from out at the end of assemble.
+	out map[string]FileEdit
 
 	byTarget map[string][]*resolvedRelo
 	bySource map[string][]*resolvedRelo
@@ -41,7 +44,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		imports:  imports,
 		opts:     opts,
 		plan:     plan,
-		es:       newEditSet(),
+		out:      make(map[string]FileEdit),
 		byTarget: groupByTarget(resolved),
 		bySource: groupBySource(resolved),
 	}
@@ -50,14 +53,19 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 	a.singlePassApply()
 	a.applyImportsPass()
 
-	// Final pass: remove unused imports from all emitted files.
-	for i, fe := range a.es.Edits() {
+	// Final pass: remove unused imports, then materialize plan.Edits in
+	// path-sorted order for deterministic output.
+	for path, fe := range a.out {
 		if fe.IsDelete {
 			continue
 		}
-		a.es.edits[i].Content = removeUnusedImportsText(fe.Content)
+		fe.Content = removeUnusedImportsText(fe.Content)
+		a.out[path] = fe
 	}
-	plan.Edits = a.es.Edits()
+	plan.Edits = make([]FileEdit, 0, len(a.out))
+	for _, path := range sortedKeys(a.out) {
+		plan.Edits = append(plan.Edits, a.out[path])
+	}
 }
 
 // applyImportsPass adds importSet entries to each affected file's
@@ -73,10 +81,11 @@ func (a *assembler) applyImportsPass() {
 		if ic == nil || len(ic.Add) == 0 {
 			continue
 		}
-		content, ok := a.es.Get(filePath)
-		if !ok {
+		fe, ok := a.out[filePath]
+		if !ok || fe.IsDelete {
 			continue
 		}
+		content := fe.Content
 		sorted := make([]importEntry, len(ic.Add))
 		copy(sorted, ic.Add)
 		sort.Slice(sorted, func(i, j int) bool {
@@ -89,7 +98,8 @@ func (a *assembler) applyImportsPass() {
 				a.plan.Warnings.Add(warn)
 			}
 		}
-		a.es.Set(FileEdit{Path: filePath, Content: content})
+		fe.Content = content
+		a.out[filePath] = fe
 	}
 }
 
@@ -133,8 +143,8 @@ func (a *assembler) singlePassApply() {
 		// File-move targets: pre-load the assembled content so per-decl
 		// Moves at offset -1 append to it.
 		if a.fileMovePaths[path] {
-			if content, ok := a.es.Get(path); ok {
-				inputs[path] = []byte(content)
+			if fe, ok := a.out[path]; ok && !fe.IsDelete {
+				inputs[path] = []byte(fe.Content)
 				existedBefore[path] = true
 				continue
 			}
@@ -180,10 +190,10 @@ func (a *assembler) singlePassApply() {
 	}
 	sort.Strings(sortedPaths)
 	for _, path := range sortedPaths {
-		// File-move sources whose editSet entry is IsDelete keep that
-		// state; discard plan.Apply's modified output.
+		// File-move sources whose entry is IsDelete keep that state;
+		// discard plan.Apply's modified output.
 		if a.fileMovePaths[path] {
-			if existing, ok := a.es.Get(path); !ok || existing == "" {
+			if fe, ok := a.out[path]; !ok || fe.IsDelete || fe.Content == "" {
 				continue
 			}
 		}
@@ -199,11 +209,11 @@ func (a *assembler) singlePassApply() {
 		text = cleanBlankLines(text)
 		if _, isSource := a.bySource[path]; isSource && !a.fileMovePaths[path] {
 			if sourceFileIsEmpty(text) {
-				a.es.Set(FileEdit{Path: path, IsDelete: true})
+				a.out[path] = FileEdit{Path: path, IsDelete: true}
 				continue
 			}
 		}
-		a.es.Set(FileEdit{Path: path, Content: text, IsNew: !existedBefore[path]})
+		a.out[path] = FileEdit{Path: path, Content: text, IsNew: !existedBefore[path]}
 	}
 }
 

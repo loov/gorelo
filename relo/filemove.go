@@ -247,8 +247,8 @@ func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
 
 		content := a.renderMovedFile(info, targetPkgName, crossPackage)
 
-		a.es.Set(FileEdit{Path: info.move.To, IsNew: true, Content: content})
-		a.es.Set(FileEdit{Path: src.Path, IsDelete: true})
+		a.out[info.move.To] = FileEdit{Path: info.move.To, IsNew: true, Content: content}
+		a.out[src.Path] = FileEdit{Path: src.Path, IsDelete: true}
 
 		handled[info.move.To] = true
 		handled[src.Path] = true
