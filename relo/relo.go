@@ -75,6 +75,11 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 		return plan, nil
 	}
 
+	// Post-resolution validators (see validate.go).
+	if err := checkUnexportedCrossPkg(resolved, fmInfos); err != nil {
+		return nil, err
+	}
+
 	// Phase 2-3: compute spans with block semantics.
 	spans, err := computeSpans(ix, resolved, plan)
 	if err != nil {

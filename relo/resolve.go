@@ -28,18 +28,15 @@ func (rr *resolvedRelo) isCrossFileMove() bool {
 }
 
 // resolve validates, deduplicates, and synthesizes relos (phases 0-1).
+//
+// Phase 0 runs PRE-RESOLUTION validation per relo: kind compatibility,
+// rename-target identifier validity, dedup. Checks that depend on the
+// full resolved set (e.g. unexported cross-package moves riding along
+// with a file move) live in validate.go and run after resolve returns.
 func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) ([]*resolvedRelo, error) {
 	// Phase 0: validate each relo.
 	seen := make(map[seenKey]*resolvedRelo)
 	var resolved []*resolvedRelo
-
-	// fileMoveTargetDir maps each file being moved wholesale to its
-	// destination directory so the unexported-cross-package check can
-	// exempt uses that travel along with the def.
-	fileMoveTargetDir := make(map[string]string, len(fmInfos))
-	for _, info := range fmInfos {
-		fileMoveTargetDir[info.move.From] = filepath.Dir(info.move.To)
-	}
 
 	for _, r := range relos {
 		if r.Ident == nil {
@@ -120,25 +117,6 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 				}
 				if grp.Name != "main" && r.Rename == "main" {
 					plan.Warnings.Addf("renaming %q to main in main package gains entry-point semantics", grp.Name)
-				}
-			}
-		}
-
-		// Unexported cross-package check: reject only if the name has
-		// references that would break. An unreferenced unexported name
-		// can be safely moved to another package. A file-move also
-		// carries every use inside the moved file(s) along, so uses
-		// within files being moved to the same target directory are
-		// exempt.
-		if r.MoveTo != "" && defIdent.File != nil {
-			srcPkg := defIdent.File.Pkg
-			if srcPkg != nil && !isSamePackageDir(srcPkg, r.MoveTo) {
-				name := r.Rename
-				if name == "" {
-					name = grp.Name
-				}
-				if !token.IsExported(name) && hasExternalUses(grp, filepath.Dir(r.MoveTo), fileMoveTargetDir) {
-					return nil, fmt.Errorf("unexported name %q cannot be moved cross-package without a rename to an exported name", grp.Name)
 				}
 			}
 		}
