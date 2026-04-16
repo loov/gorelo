@@ -1,0 +1,66 @@
+# Attach a function as a method AND give the method a different name
+# than the original function. Consumer call sites must invoke the new
+# method name on the receiver.
+
+Start=Server#Boot -> srv/methods.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/util/funcs.go --
+package util
+
+import "example.com/test/srv"
+
+// Start starts the server.
+func Start(s *srv.Server) error {
+	return nil
+}
+
+// Keep keeps util alive.
+func Keep() {}
+-- input/srv/server.go --
+package srv
+
+type Server struct{}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/srv"
+	"example.com/test/util"
+)
+
+func Do() error {
+	s := &srv.Server{}
+	return util.Start(s)
+}
+-- golden/util/funcs.go --
+package util
+
+
+// Keep keeps util alive.
+func Keep() {}
+-- golden/srv/server.go --
+package srv
+
+type Server struct{}
+-- golden/srv/methods.go --
+package srv
+
+// Start starts the server.
+func (s *Server) Boot() error {
+	return nil
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/srv"
+)
+
+func Do() error {
+	s := &srv.Server{}
+	return s.Boot()
+}

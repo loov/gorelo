@@ -180,6 +180,15 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	for _, r := range resolved {
 		resolvedGroups[r.Group] = true
 
+		// Detach/attach relos have their declaration rewritten by
+		// structuralDeclEdits and their call sites rewritten by
+		// detachCallSites/attachCallSites. Emitting a rename action
+		// here would collide with the structural edit at the decl
+		// name's offset and drop the receiver.
+		if r.Relo.Detach || r.Relo.MethodOf != "" {
+			continue
+		}
+
 		// Fields and methods travel with their parent type — treat
 		// them as same-target renames so they produce plain rename
 		// edits, not cross-target package-qualified references.
