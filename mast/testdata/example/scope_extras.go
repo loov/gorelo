@@ -30,6 +30,14 @@ func GenericBody[PG any](in PG) PG {
 	return pg
 }
 
+// TShadow and TShadowAgain both declare a type parameter named T.
+// After the TypeName scope fix, each T is its own group (distinct from
+// each other AND from Accumulator's T in types.go); before the fix they
+// all merged into one group keyed by {Name:"T", PkgPath:example}.
+func TShadow[T any](in T) T { return in }
+
+func TShadowAgain[T comparable](a, b T) bool { return a == b }
+
 // MethodValueBind: captures `u.Greet` as a method value assigned to a
 // local `greet`. Both `greet` and the method-value use of `Greet`
 // occur inside a function body.

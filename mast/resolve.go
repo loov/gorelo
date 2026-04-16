@@ -150,6 +150,14 @@ func objectKeyFor(obj types.Object, fields *fieldOwnerCache) objectKey {
 	}
 
 	switch o := obj.(type) {
+	case *types.TypeName:
+		// Generic type parameters and locally-declared named types share
+		// the same name with package-level types across the program
+		// (e.g. `T` in `func F[T any]()` vs `type T int`). Distinguish
+		// them by declaring position when they are not at package scope.
+		if isLocalScope(o) {
+			key.Scope = fmt.Sprintf("%d", o.Pos())
+		}
 	case *types.Func:
 		if sig, ok := o.Type().(*types.Signature); ok {
 			if recv := sig.Recv(); recv != nil {
