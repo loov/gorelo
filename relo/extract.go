@@ -79,6 +79,16 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 	}
 }
 
+// edit is the package-local span-relative edit triple — replace bytes
+// [Start, End) with New. Producers (rewriteSpanQualifiers, consumer
+// edit collection) build []edit values; emitSpanRelativeAtAbs lowers
+// each one to the equivalent edit.Plan primitive.
+type edit struct {
+	Start int
+	End   int
+	New   string
+}
+
 // emitSpanRelativeAtAbs emits a single span-relative edit as the
 // equivalent absolute-coord Plan primitive on srcPath. Used to lower
 // the span-relative output of rewriteSpanQualifiers into primitives
