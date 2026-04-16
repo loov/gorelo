@@ -378,13 +378,18 @@ func (a *assembler) assembleSources() {
 		}
 
 		if allSameFile {
-			// Same-file renames: apply rename edits only.
-			edits := planEditsForFile(a.edits, sourcePath)
-			if len(edits) == 0 {
+			// Same-file renames: apply rename edits only via plan.Apply.
+			if len(planEditsForFile(a.edits, sourcePath)) == 0 {
 				continue
 			}
-			newSrc := applyEdits(src, edits)
-			a.es.Set(FileEdit{Path: sourcePath, Content: newSrc})
+			only := map[string]bool{sourcePath: true}
+			sub := subPlanForFiles(a.edits, only)
+			outputs, err := sub.Apply(map[string][]byte{sourcePath: src})
+			if err != nil {
+				a.plan.Warnings.Addf("plan.Apply failed for %s: %v", sourcePath, err)
+				continue
+			}
+			a.es.Set(FileEdit{Path: sourcePath, Content: string(outputs[sourcePath])})
 			continue
 		}
 
