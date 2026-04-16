@@ -312,10 +312,11 @@ func lowerMoves(prims []Primitive, parent []int, realized map[int][]byte) ([]Pri
 	for i, prim := range prims {
 		if mv, ok := prim.(Move); ok {
 			pending = append(pending, pendingInsert{
-				dest:    mv.Dest,
-				keyword: mv.Options.GroupKeyword,
-				content: realized[i],
-				origin:  mv.origin,
+				dest:       mv.Dest,
+				keyword:    mv.Options.GroupKeyword,
+				content:    realized[i],
+				origin:     mv.origin,
+				sourceSpan: mv.Span,
 			})
 			if parent[i] == -1 {
 				topLevel = append(topLevel, Delete{Span: mv.Span, origin: mv.origin})
@@ -349,7 +350,6 @@ func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
 		offset int
 	}
 	groups := make(map[groupKey][]pendingInsert)
-	var order []groupKey
 	byAnchor := make(map[anchorKey]groupKey)
 	for _, mi := range pending {
 		gk := groupKey{mi.dest.Path, mi.dest.Offset, mi.keyword}
@@ -362,14 +362,30 @@ func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
 			}
 		}
 		byAnchor[ak] = gk
-		if _, seen := groups[gk]; !seen {
-			order = append(order, gk)
-		}
 		groups[gk] = append(groups[gk], mi)
 	}
 
+	// Sort each group's members by source span so concatenation order is
+	// independent of Plan insertion order.
+	for gk, grp := range groups {
+		sort.SliceStable(grp, func(i, j int) bool {
+			return sourceLess(grp[i].sourceSpan, grp[j].sourceSpan)
+		})
+		groups[gk] = grp
+	}
+
+	// Sort groups by the earliest source span of their members so the
+	// emitted Insert list is also deterministic.
+	gks := make([]groupKey, 0, len(groups))
+	for gk := range groups {
+		gks = append(gks, gk)
+	}
+	sort.SliceStable(gks, func(i, j int) bool {
+		return sourceLess(groups[gks[i]][0].sourceSpan, groups[gks[j]][0].sourceSpan)
+	})
+
 	var out []Primitive
-	for _, gk := range order {
+	for _, gk := range gks {
 		grp := groups[gk]
 		var content []byte
 		if gk.keyword == "" {
@@ -394,6 +410,18 @@ func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
 		})
 	}
 	return out, nil
+}
+
+// sourceLess orders spans by (Path, Start, End) for stable deterministic
+// merging.
+func sourceLess(a, b Span) bool {
+	if a.Path != b.Path {
+		return a.Path < b.Path
+	}
+	if a.Start != b.Start {
+		return a.Start < b.Start
+	}
+	return a.End < b.End
 }
 
 // applyMoveOptions applies TrimLeadingBlank, Dedent, and AppendNewline
@@ -443,12 +471,15 @@ func dedent(s string) string {
 }
 
 // pendingInsert represents a Move destination Insert awaiting group
-// merging.
+// merging. sourceSpan is the Move's original source range; it is used
+// to order merged content deterministically regardless of the order in
+// which primitives were added to the Plan.
 type pendingInsert struct {
-	dest    Anchor
-	keyword string
-	content []byte
-	origin  string
+	dest       Anchor
+	keyword    string
+	content    []byte
+	origin     string
+	sourceSpan Span
 }
 
 // applyToFile applies a batch of Insert/Delete/Replace primitives targeting
