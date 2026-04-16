@@ -282,3 +282,121 @@ func TestIsPackageScope_GenericFunc(t *testing.T) {
 		t.Error("MakePair should be package-scope")
 	}
 }
+
+// The following cases all target scope constructs that used to be
+// blind spots for pattern-matching AST predicates. Each binding lives
+// inside a function body, a type-switch guard, a composite-literal
+// FuncLit, or a type parameter list, and must NOT be classified as
+// package-scope. They pin down the ast.Inspect-based scope walk so
+// a future refactor cannot silently reintroduce the shape-specific
+// bug class behind 4e8fc33.
+
+func TestIsPackageScope_TypeSwitchCaseBody(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	// localInt is declared inside a type-switch case body (not the
+	// guard itself — see the mast limitation note below). It must be
+	// classified as function-scope.
+	ids := findIdentsInFunc(ix, "localInt", "scope_extras.go", "TypeSwitchGuard")
+	if len(ids) == 0 {
+		t.Fatal("no localInt idents in TypeSwitchGuard")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("localInt has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("type-switch case-body local 'localInt' should NOT be package-scope")
+	}
+}
+
+func TestIsPackageScope_GenericTypeParam(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	// PG is a unique type-parameter name so it cannot collide with
+	// generic type parameters declared elsewhere in the testdata.
+	ids := findIdentsInFunc(ix, "PG", "scope_extras.go", "GenericBody")
+	if len(ids) == 0 {
+		t.Fatal("no PG idents in GenericBody")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("PG has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("type parameter 'PG' should NOT be package-scope")
+	}
+}
+
+func TestIsPackageScope_GenericLocalOfTypeParam(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	ids := findIdentsInFunc(ix, "pg", "scope_extras.go", "GenericBody")
+	if len(ids) == 0 {
+		t.Fatal("no pg idents in GenericBody")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("pg has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("local 'pg' of generic type should NOT be package-scope")
+	}
+}
+
+func TestIsPackageScope_MethodValueLocal(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	ids := findIdentsInFunc(ix, "greet", "scope_extras.go", "MethodValueBind")
+	if len(ids) == 0 {
+		t.Fatal("no greet idents in MethodValueBind")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("greet has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("method-value local 'greet' should NOT be package-scope")
+	}
+}
+
+func TestIsPackageScope_CompositeFuncLitParam(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	// "part" is a parameter of a function literal inside a composite
+	// literal return expression. It must not be treated as package-scope
+	// despite not being nested in a FuncDecl with a Name.
+	ids := findIdentsInFunc(ix, "part", "scope_extras.go", "CompositeFuncLit")
+	if len(ids) == 0 {
+		t.Fatal("no part idents in CompositeFuncLit")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("part has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("composite-literal FuncLit param 'part' should NOT be package-scope")
+	}
+}
+
+func TestIsPackageScope_DeeplyNestedFuncLitLocal(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	ids := findIdentsInFunc(ix, "step", "scope_extras.go", "NestedFuncLits")
+	if len(ids) == 0 {
+		t.Fatal("no step idents in NestedFuncLits")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("step has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("deeply-nested FuncLit local 'step' should NOT be package-scope")
+	}
+}
