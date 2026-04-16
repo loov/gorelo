@@ -94,6 +94,34 @@ func planEditsInSpan(p *ed.Plan, path string, start, end int) []edit {
 	return out
 }
 
+// subPlanForFiles returns a new Plan containing only primitives whose
+// target file path is in keep. Move primitives are skipped — relo's
+// legacy applier path doesn't construct Moves, and Move semantics
+// (with carrying across the keep set) would need explicit handling.
+func subPlanForFiles(p *ed.Plan, keep map[string]bool) *ed.Plan {
+	sub := &ed.Plan{}
+	for _, prim := range p.Primitives() {
+		switch x := prim.(type) {
+		case ed.Insert:
+			if !keep[x.Anchor.Path] {
+				continue
+			}
+			sub.Insert(x.Anchor, x.Text, x.Side, x.Origin())
+		case ed.Delete:
+			if !keep[x.Span.Path] {
+				continue
+			}
+			sub.Delete(x.Span, x.Origin())
+		case ed.Replace:
+			if !keep[x.Span.Path] {
+				continue
+			}
+			sub.Replace(x.Span, x.Text, x.Origin())
+		}
+	}
+	return sub
+}
+
 // planEditPaths returns the sorted set of file paths referenced by any
 // primitive in p.
 func planEditPaths(p *ed.Plan) []string {

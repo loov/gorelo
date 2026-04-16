@@ -537,44 +537,62 @@ func (a *assembler) assembleSources() {
 }
 
 func (a *assembler) assembleRenames() {
-	sortedRenameFiles := planEditPaths(a.edits)
-	for _, filePath := range sortedRenameFiles {
-		edits := planEditsForFile(a.edits, filePath)
+	// Identify consumer files (have edits but are not source/file-move).
+	// Files already emitted as targets need only import handling.
+	consumerPaths := map[string]bool{}
+	var alreadyEmitted []string
+	for _, filePath := range planEditPaths(a.edits) {
 		if _, isSource := a.bySource[filePath]; isSource {
 			continue
 		}
 		if a.fileMovePaths[filePath] {
 			continue
 		}
-		if len(edits) == 0 {
+		if a.es.Has(filePath) {
+			alreadyEmitted = append(alreadyEmitted, filePath)
 			continue
 		}
+		consumerPaths[filePath] = true
+	}
 
-		// If this file was already emitted as a target, renames were
-		// already applied during the target phase. Only apply consumer
-		// import entries here to avoid double-applying rename edits
-		// with stale offsets.
-		if content, ok := a.es.Get(filePath); ok {
-			if ic, ok := a.imports.byFile[filePath]; ok {
-				a.es.Set(FileEdit{Path: filePath, Content: applyImportEntries(content, ic.Add)})
-			}
-			continue
+	for _, filePath := range alreadyEmitted {
+		content, _ := a.es.Get(filePath)
+		if ic, ok := a.imports.byFile[filePath]; ok {
+			content = applyImportEntries(content, ic.Add)
 		}
+		a.es.Set(FileEdit{Path: filePath, Content: content})
+	}
 
+	if len(consumerPaths) == 0 {
+		return
+	}
+
+	inputs := make(map[string][]byte, len(consumerPaths))
+	var fileOrder []string
+	for filePath := range consumerPaths {
 		src, err := os.ReadFile(filePath)
 		if err != nil {
 			a.plan.Warnings.Addf("cannot read %s for rename edits: %v", filePath, err)
 			continue
 		}
+		inputs[filePath] = src
+		fileOrder = append(fileOrder, filePath)
+	}
+	sort.Strings(fileOrder)
 
-		newSrc := applyEdits(src, edits)
+	sub := subPlanForFiles(a.edits, consumerPaths)
+	outputs, err := sub.Apply(inputs)
+	if err != nil {
+		a.plan.Warnings.Addf("plan.Apply failed for consumer renames: %v", err)
+		return
+	}
 
-		// Apply import additions (e.g., from consumer rewriting).
+	for _, filePath := range fileOrder {
+		content := string(outputs[filePath])
 		if ic, ok := a.imports.byFile[filePath]; ok {
-			newSrc = applyImportEntries(newSrc, ic.Add)
+			content = applyImportEntries(content, ic.Add)
 		}
-
-		a.es.Set(FileEdit{Path: filePath, Content: newSrc})
+		a.es.Set(FileEdit{Path: filePath, Content: content})
 	}
 }
 
