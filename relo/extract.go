@@ -51,9 +51,7 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 		// edits (moved-group renames + cross-target qualifies +
 		// self-import unqualifies + alias rewrites + cross-pkg-stay
 		// qualifies) and registers destination imports inline.
-		for _, e := range rewriteSpanQualifiers(ix, rr, s, resolved, imports) {
-			emitSpanRelativeAtAbs(edits, srcPath, s.Start, e, "extract")
-		}
+		rewriteSpanQualifiers(edits, ix, rr, s, resolved, imports, "extract")
 
 		// Emit the Move once per unique source span (multi-name decls
 		// like `const A, B = 1, 2` yield multiple rrs sharing one span).
@@ -79,31 +77,17 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 	}
 }
 
-// edit is the package-local span-relative edit triple — replace bytes
-// [Start, End) with New. Producers (rewriteSpanQualifiers, consumer
-// edit collection) build []edit values; emitSpanRelativeAtAbs lowers
-// each one to the equivalent edit.Plan primitive.
-type edit struct {
-	Start int
-	End   int
-	New   string
-}
-
-// emitSpanRelativeAtAbs emits a single span-relative edit as the
-// equivalent absolute-coord Plan primitive on srcPath. Used to lower
-// the span-relative output of rewriteSpanQualifiers into primitives
-// that ride along with the enclosing Move (or a sub-Plan for
-// whole-file moves).
-func emitSpanRelativeAtAbs(edits *ed.Plan, srcPath string, spanStart int, e edit, origin string) {
-	absStart := spanStart + e.Start
-	absEnd := spanStart + e.End
+// emitEdit emits a single Insert, Delete, or Replace primitive onto
+// plan based on whether start==end (Insert), new=="" (Delete), or
+// neither (Replace).
+func emitEdit(plan *ed.Plan, path string, start, end int, new string, origin string) {
 	switch {
-	case absStart == absEnd:
-		edits.Insert(ed.Anchor{Path: srcPath, Offset: absStart}, e.New, ed.Before, origin)
-	case e.New == "":
-		edits.Delete(ed.Span{Path: srcPath, Start: absStart, End: absEnd}, origin)
+	case start == end:
+		plan.Insert(ed.Anchor{Path: path, Offset: start}, new, ed.Before, origin)
+	case new == "":
+		plan.Delete(ed.Span{Path: path, Start: start, End: end}, origin)
 	default:
-		edits.Replace(ed.Span{Path: srcPath, Start: absStart, End: absEnd}, e.New, origin)
+		plan.Replace(ed.Span{Path: path, Start: start, End: end}, new, origin)
 	}
 }
 

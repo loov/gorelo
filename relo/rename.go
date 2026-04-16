@@ -135,7 +135,7 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 }
 
 // rewriteSpanQualifiers walks the moved span in rr's source file once
-// and emits span-relative edits that transform every package qualifier
+// and emits primitives onto plan that transform every package qualifier
 // and every moved-group ident reference to its destination
 // representation. As a side effect it registers every destination
 // import the rewrites need on the importSet — external imports the
@@ -147,9 +147,9 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 //
 // Subsumes computeImports + the trio computeExtractedEdits +
 // collectSelfImportEdits + computeImportAliasEdits with one walk.
-func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, imports *importSet) []edit {
+func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, imports *importSet, origin string) {
 	if rr.File == nil || s == nil {
-		return nil
+		return
 	}
 
 	targetPath := rr.TargetFile
@@ -336,11 +336,11 @@ func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 		}
 	}
 
+	srcPath := rr.File.Path
 	inSpan := func(start, end int) bool {
 		return start >= s.Start && end <= s.End
 	}
 
-	var edits []edit
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
 		// SelectorExpr handler: rewrite import-qualifier idents that
 		// resolve to destination's package (strip) or to a destination
@@ -360,22 +360,14 @@ func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 				return true
 			}
 			if targetImportPath != "" && impPath == targetImportPath {
-				edits = append(edits, edit{
-					Start: qOff - s.Start,
-					End:   sOff - s.Start,
-					New:   "",
-				})
+				emitEdit(plan, srcPath, qOff, sOff, "", origin)
 				return true
 			}
 			destName := destLocal(impPath)
 			if destName == qid.Name {
 				return true
 			}
-			edits = append(edits, edit{
-				Start: qOff - s.Start,
-				End:   qOff - s.Start + len(qid.Name),
-				New:   destName,
-			})
+			emitEdit(plan, srcPath, qOff, qOff+len(qid.Name), destName, origin)
 			return true
 		}
 
@@ -413,11 +405,7 @@ func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			if editStart == off && newText == ident.Name {
 				return true
 			}
-			edits = append(edits, edit{
-				Start: editStart - s.Start,
-				End:   endOff - s.Start,
-				New:   newText,
-			})
+			emitEdit(plan, srcPath, editStart, endOff, newText, origin)
 			return true
 		}
 
@@ -447,15 +435,9 @@ func rewriteSpanQualifiers(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 			return true
 		}
 		registerImport(srcImportPath)
-		edits = append(edits, edit{
-			Start: off - s.Start,
-			End:   endOff - s.Start,
-			New:   destLocal(srcImportPath) + "." + grp.Name,
-		})
+		emitEdit(plan, srcPath, off, endOff, destLocal(srcImportPath)+"."+grp.Name, origin)
 		return true
 	})
-
-	return edits
 }
 
 // resolvedForGroup finds the resolvedRelo for a given group.

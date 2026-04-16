@@ -223,12 +223,57 @@ func lookupFile(ix *mast.Index, path string) *mast.File {
 	return nil
 }
 
-// assembleFileMoves emits FileEdits for every file move: the destination
-// receives the source bytes with the package clause rewritten and per-decl
-// qualification edits applied; the source path is scheduled for deletion.
-// Per-decl Moves into the same destination (synthesized by
-// emitCrossFileExtraction or method-follow expansion) append after this
-// pre-rendered content via singlePassApply.
+// isFileMoveSource reports whether every relo in rrs originated from
+// a whole-file move, meaning the source file is being entirely
+// relocated and should not generate stubs.
+func isFileMoveSource(rrs []*resolvedRelo) bool {
+	for _, rr := range rrs {
+		if rr.FromFileMove == nil {
+			return false
+		}
+	}
+	return len(rrs) > 0
+}
+
+// emitFileMoveEdits emits qualification edits and package-clause
+// Replaces for every file move onto the shared Plan. These primitives
+// target the source file path; assembleFileMoves builds a sub-Plan by
+// filtering them (along with detach/attach edits already on the shared
+// Plan) to render each file-move target. The rendered content is
+// pre-loaded as the target's input so per-decl Moves from other
+// sources append after it via plan.Apply.
+func emitFileMoveEdits(ix *mast.Index, infos []*fileMoveInfo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
+	for _, info := range infos {
+		src := info.srcFile
+		if src == nil || src.Src == nil {
+			continue
+		}
+		srcPath := src.Path
+
+		for _, rr := range info.relos {
+			s := spans[rr]
+			if s == nil {
+				continue
+			}
+			rewriteSpanQualifiers(edits, ix, rr, s, resolved, imports, "filemove")
+		}
+
+		targetDir := filepath.Dir(info.move.To)
+		targetPkgName := fileMovePackageName(ix, targetDir, src)
+		if targetPkgName != src.Syntax.Name.Name {
+			pkgName := src.Syntax.Name
+			pkgOff := ix.Fset.Position(pkgName.Pos()).Offset
+			pkgEnd := pkgOff + len(pkgName.Name)
+			edits.Replace(ed.Span{Path: srcPath, Start: pkgOff, End: pkgEnd}, targetPkgName, "filemove-pkg")
+		}
+	}
+}
+
+// assembleFileMoves renders each file-move target by extracting all
+// non-Move primitives targeting the source file from the shared Plan
+// and applying them to the source bytes. The rendered content is
+// stored in a.out so gatherInputs can pre-load it as the target's
+// input (allowing per-decl Moves to append via the main plan.Apply).
 func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
 	handled := make(map[string]bool)
 	if len(infos) == 0 {
@@ -240,129 +285,67 @@ func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
 		if src == nil || src.Src == nil {
 			continue
 		}
+		srcPath := src.Path
 
-		targetDir := filepath.Dir(info.move.To)
-		targetPkgName := a.packageNameForDir(targetDir, src)
-		crossPackage := targetPkgName != src.Syntax.Name.Name
+		sub := filterPlanForFile(a.edits, srcPath)
 
-		content := a.renderMovedFile(info, targetPkgName, crossPackage)
-
-		a.out[info.move.To] = FileEdit{Path: info.move.To, IsNew: true, Content: content}
-		a.out[src.Path] = FileEdit{Path: src.Path, IsDelete: true}
+		dup := make([]byte, len(src.Src))
+		copy(dup, src.Src)
+		outputs, err := sub.Apply(map[string][]byte{srcPath: dup})
+		if err != nil {
+			a.plan.Warnings.Addf("filemove sub-plan failed for %s: %v", srcPath, err)
+			a.out[info.move.To] = FileEdit{Path: info.move.To, IsNew: true, Content: string(src.Src)}
+		} else {
+			content := string(outputs[srcPath])
+			if !strings.HasSuffix(content, "\n") {
+				content += "\n"
+			}
+			a.out[info.move.To] = FileEdit{Path: info.move.To, IsNew: true, Content: content}
+		}
+		a.out[srcPath] = FileEdit{Path: srcPath, IsDelete: true}
 
 		handled[info.move.To] = true
-		handled[src.Path] = true
+		handled[srcPath] = true
 	}
 	return handled
 }
 
-// renderMovedFile produces the destination content for a file move by
-// running a sub-Plan over the source bytes. The sub-Plan carries every
-// per-decl extraction edit (qualification, self-import unqualification,
-// alias fixups), every in-span detach/attach decl rewrite already in the
-// shared a.edits Plan, and a package-clause Replace when the destination
-// lives in a different package. Cross-target imports referenced by the
-// moved decls are registered on the shared importSet so applyImportsPass
-// installs them in the destination.
-func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, crossPackage bool) string {
-	src := info.srcFile
-	srcPath := src.Path
-
+// filterPlanForFile builds a sub-Plan containing only the non-Move
+// primitives from shared that target path. Move primitives are
+// skipped: per-decl extraction Moves are handled by the main
+// plan.Apply pass, not by the file-move rendering.
+func filterPlanForFile(shared *ed.Plan, path string) *ed.Plan {
 	sub := &ed.Plan{}
-	for _, rr := range info.relos {
-		s := a.spans[rr]
-		if s == nil {
-			continue
-		}
-		for _, e := range rewriteSpanQualifiers(a.ix, rr, s, a.resolved, a.imports) {
-			emitSpanRelativeAtAbs(sub, srcPath, s.Start, e, "filemove")
-		}
-	}
-
-	// In-span primitives already on the shared Plan (detach/attach
-	// decl rewrites, consumer renames inside a moved span) — replay
-	// them onto the sub-Plan in absolute source coordinates.
-	carryPlanInSpans(sub, a.edits, srcPath, info.relos, a.spans)
-
-	if crossPackage {
-		pkgName := src.Syntax.Name
-		pkgOff := a.ix.Fset.Position(pkgName.Pos()).Offset
-		pkgEnd := pkgOff + len(pkgName.Name)
-		sub.Replace(ed.Span{Path: srcPath, Start: pkgOff, End: pkgEnd}, targetPkgName, "filemove-pkg")
-	}
-
-	dup := make([]byte, len(src.Src))
-	copy(dup, src.Src)
-	outputs, err := sub.Apply(map[string][]byte{srcPath: dup})
-	if err != nil {
-		a.plan.Warnings.Addf("filemove sub-plan failed for %s: %v", srcPath, err)
-		return string(src.Src)
-	}
-	content := string(outputs[srcPath])
-	if !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-	return content
-}
-
-// carryPlanInSpans copies primitives from src that target srcPath and
-// fall inside any rr's span into dst. Move primitives are skipped (they
-// belong to cross-file extraction, not whole-file rendering).
-func carryPlanInSpans(dst, src *ed.Plan, srcPath string, relos []*resolvedRelo, spans map[*resolvedRelo]*span) {
-	if len(relos) == 0 {
-		return
-	}
-	for _, prim := range src.Primitives() {
-		var pStart, pEnd int
-		var path string
+	for _, prim := range shared.Primitives() {
 		switch x := prim.(type) {
 		case ed.Insert:
-			path, pStart, pEnd = x.Anchor.Path, x.Anchor.Offset, x.Anchor.Offset
-		case ed.Delete:
-			path, pStart, pEnd = x.Span.Path, x.Span.Start, x.Span.End
-		case ed.Replace:
-			path, pStart, pEnd = x.Span.Path, x.Span.Start, x.Span.End
-		default:
-			continue
-		}
-		if path != srcPath {
-			continue
-		}
-		var inSpan bool
-		for _, rr := range relos {
-			s := spans[rr]
-			if s == nil {
-				continue
+			if x.Anchor.Path == path {
+				sub.Insert(x.Anchor, x.Text, x.Side, x.Origin())
 			}
-			if pStart >= s.Start && pEnd <= s.End {
-				inSpan = true
-				break
-			}
-		}
-		if !inSpan {
-			continue
-		}
-		switch x := prim.(type) {
-		case ed.Insert:
-			dst.Insert(x.Anchor, x.Text, x.Side, "filemove-carry")
 		case ed.Delete:
-			dst.Delete(x.Span, "filemove-carry")
+			if x.Span.Path == path {
+				sub.Delete(x.Span, x.Origin())
+			}
 		case ed.Replace:
-			dst.Replace(x.Span, x.Text, "filemove-carry")
+			if x.Span.Path == path {
+				sub.Replace(x.Span, x.Text, x.Origin())
+			}
 		}
 	}
+	return sub
 }
 
-// packageNameForDir finds the best package name to use for a target directory.
-// If the directory matches the source file's directory, the source package
-// name is used. Otherwise, existing mast packages rooted at that directory
-// take precedence; the directory basename is the final fallback.
-func (a *assembler) packageNameForDir(targetDir string, srcFile *mast.File) string {
+// fileMovePackageName determines the package name for a file-move
+// target directory. If the target is in the same directory as the
+// source, the source's package name is used. Otherwise, existing
+// packages in the target directory take precedence; the directory
+// basename is the final fallback.
+func fileMovePackageName(ix *mast.Index, targetDir string, srcFile *mast.File) string {
 	srcDir := filepath.Dir(srcFile.Path)
 	if targetDir == srcDir {
 		return srcFile.Syntax.Name.Name
 	}
-	for _, pkg := range a.ix.Pkgs {
+	for _, pkg := range ix.Pkgs {
 		if len(pkg.Files) == 0 {
 			continue
 		}

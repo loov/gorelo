@@ -116,6 +116,10 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	// deletions and target-side appended content.
 	emitCrossFileExtraction(ix, resolved, spans, edits, importChanges)
 
+	// Phase 7d: emit whole-file moves (Move + qualification edits +
+	// package-clause Replace) onto the shared Plan.
+	emitFileMoveEdits(ix, fmInfos, resolved, spans, edits, importChanges)
+
 	// Phase 8: assemble file edits.
 	assemble(ix, resolved, spans, edits, importChanges, fmInfos, opts, plan)
 

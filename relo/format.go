@@ -245,9 +245,12 @@ func cleanBlankLines(s string) string {
 	return strings.Join(out, "\n")
 }
 
-// sourceFileIsEmpty reports whether src parses as a Go file with no
-// non-import declarations.
+// sourceFileIsEmpty reports whether src is empty or parses as a Go
+// file with no non-import declarations.
 func sourceFileIsEmpty(src string) bool {
+	if strings.TrimSpace(src) == "" {
+		return true
+	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
 	if err != nil {

@@ -97,17 +97,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		return sortedGroups[i].Name < sortedGroups[j].Name
 	})
 
-	emit := func(filePath string, e edit, origin string) {
-		switch {
-		case e.Start == e.End:
-			edits.Insert(ed.Anchor{Path: filePath, Offset: e.Start}, e.New, ed.Before, origin)
-		case e.New == "":
-			edits.Delete(ed.Span{Path: filePath, Start: e.Start, End: e.End}, origin)
-		default:
-			edits.Replace(ed.Span{Path: filePath, Start: e.Start, End: e.End}, e.New, origin)
-		}
-	}
-
 	for _, grp := range sortedGroups {
 		if detachGroups[grp] {
 			continue
@@ -133,15 +122,15 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 					if movedSpans.Contains(filePath, identOff, identEnd) {
 						continue
 					}
-					emit(filePath, edit{Start: identOff, End: identEnd, New: info.tgtName}, "consumer-name")
+					emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
 					continue
 				}
 				// Qualified reference (e.g., src.Greet): remove qualifier.
 				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
 				selOff := ix.Fset.Position(id.Ident.Pos()).Offset
-				emit(filePath, edit{Start: qualOff, End: selOff, New: ""}, "consumer-qualifier")
+				emitEdit(edits, filePath, qualOff, selOff, "", "consumer-qualifier")
 				if info.tgtName != grp.Name {
-					emit(filePath, edit{Start: selOff, End: selOff + len(id.Ident.Name), New: info.tgtName}, "consumer-name")
+					emitEdit(edits, filePath, selOff, selOff+len(id.Ident.Name), info.tgtName, "consumer-name")
 				}
 				continue
 			}
@@ -161,11 +150,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 					continue // inside extracted code, handled during assembly
 				}
 				tgtLocalName := packageLocalName(ix, info.tgtDir)
-				emit(filePath, edit{
-					Start: identOff,
-					End:   identEnd,
-					New:   tgtLocalName + "." + info.tgtName,
-				}, "consumer-name")
+				emitEdit(edits, filePath, identOff, identEnd, tgtLocalName+"."+info.tgtName, "consumer-name")
 				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 				continue
 			}
@@ -186,10 +171,10 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
 			qualEnd := qualOff + len(id.Qualifier.Name)
 			if id.Qualifier.Name != tgtLocalName {
-				emit(filePath, edit{Start: qualOff, End: qualEnd, New: tgtLocalName}, "consumer-qualifier")
+				emitEdit(edits, filePath, qualOff, qualEnd, tgtLocalName, "consumer-qualifier")
 			}
 			if info.tgtName != grp.Name {
-				emit(filePath, edit{Start: identOff, End: identEnd, New: info.tgtName}, "consumer-name")
+				emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
 			}
 			addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 		}
