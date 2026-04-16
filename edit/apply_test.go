@@ -565,6 +565,56 @@ func TestApply_DetachMethodExample(t *testing.T) {
 	checkApply(t, &p, files, map[string]string{"a.go": want})
 }
 
+func TestApply_CreateNewFileAndMoveFuncsIn(t *testing.T) {
+	// Move the two funcs from src/a.go into a brand-new dst/b.go, inserting
+	// a fresh "package dst" header. The header is added by an Insert whose
+	// anchor falls strictly inside the first Move's span, so it is carried
+	// with the moved bytes into the new file rather than landing in the
+	// source. TrimLeadingBlank strips the Move span's leading blank line so
+	// the emitted bytes begin with the inserted header.
+	//
+	// Demonstrates:
+	//   - creating a destination file absent from the input
+	//   - a carried Insert that seeds the destination's package header
+	//   - two Moves merging at a shared destination anchor, ordered by
+	//     source span for deterministic output under any primitive ordering
+	src := "package src\n\nfunc Alpha() int { return 1 }\n\nfunc Beta() int { return 2 }\n"
+	files := map[string][]byte{"src/a.go": []byte(src)}
+
+	const (
+		blankBeforeAlpha = 12 // leading "\n" separator of Move #1's span
+		alphaStart       = 13
+		alphaEnd         = 43
+		fileEnd          = 73
+	)
+
+	var p Plan
+	// Carried Insert: the new package header for dst/b.go.
+	p.Insert(Anchor{Path: "src/a.go", Offset: alphaStart},
+		"package dst\n\n", Before, "insert-header")
+
+	// Move #1: Alpha's decl (with its preceding blank), TrimLeadingBlank
+	// strips that blank so the inserted header is the first thing emitted.
+	p.Move(Span{Path: "src/a.go", Start: blankBeforeAlpha, End: alphaEnd},
+		Anchor{Path: "dst/b.go", Offset: 0},
+		MoveOptions{TrimLeadingBlank: true}, "move-alpha")
+
+	// Move #2: Beta's decl with its preceding blank, preserving canonical
+	// spacing between the two funcs in the output.
+	p.Move(Span{Path: "src/a.go", Start: alphaEnd, End: fileEnd},
+		Anchor{Path: "dst/b.go", Offset: 0}, MoveOptions{}, "move-beta")
+
+	wantSrc := "package src\n"
+	wantDst := "package dst\n\n" +
+		"func Alpha() int { return 1 }\n\n" +
+		"func Beta() int { return 2 }\n"
+
+	checkApply(t, &p, files, map[string]string{
+		"src/a.go": wantSrc,
+		"dst/b.go": wantDst,
+	})
+}
+
 func TestApply_UnknownFileTreatedAsEmpty(t *testing.T) {
 	files := map[string][]byte{}
 	var p Plan
