@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"bytes"
 	"go/ast"
 	"go/token"
 	"path/filepath"
@@ -200,7 +201,8 @@ func dropOverlappingEdits(edits []edit) []edit {
 // Spans are deduplicated by (path, start, end) because multi-name
 // declarations (e.g. `const A, B = 1, 2`) yield multiple rrs sharing
 // one span. Target-side content is still produced by the legacy
-// assembleTargets pass.
+// assembleTargets pass; once that migrates to Move primitives this
+// helper goes away.
 func emitCrossFileMoves(resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan) {
 	type spanKey struct {
 		path       string
@@ -229,6 +231,51 @@ func emitCrossFileMoves(resolved []*resolvedRelo, spans map[*resolvedRelo]*span,
 			ed.MoveOptions{},
 			"extract-source-span",
 		)
+	}
+}
+
+// goBlockRenderer returns an edit.GroupRenderer that wraps a same-keyword
+// run of items in Go's `keyword (\n\t…\n)\n` block form, or in the
+// inline `keyword X` form when there's a single item. Each item is
+// expected to be the spec text without surrounding whitespace; the
+// renderer prepends a leading newline so consecutive groups at the
+// same destination are visually separated.
+func goBlockRenderer(kw string) ed.GroupRenderer {
+	return func(items [][]byte) []byte {
+		if len(items) == 1 {
+			body := bytes.TrimRight(items[0], "\n")
+			body = bytes.TrimLeft(body, " \t")
+			return []byte("\n" + kw + " " + string(body) + "\n")
+		}
+		var b bytes.Buffer
+		b.WriteString("\n" + kw + " (\n")
+		for _, item := range items {
+			body := bytes.TrimRight(item, "\n")
+			for _, line := range bytes.Split(body, []byte{'\n'}) {
+				b.WriteByte('\t')
+				b.Write(line)
+				b.WriteByte('\n')
+			}
+		}
+		b.WriteString(")\n")
+		return b.Bytes()
+	}
+}
+
+// goItemRenderer returns the GroupRenderer used for non-grouped
+// declarations (empty GroupKeyword): each item becomes its own
+// `\n<text>\n` block so adjacent items at the same destination are
+// separated by a blank line.
+func goItemRenderer() ed.GroupRenderer {
+	return func(items [][]byte) []byte {
+		var b bytes.Buffer
+		for _, item := range items {
+			body := bytes.TrimRight(item, "\n")
+			b.WriteByte('\n')
+			b.Write(body)
+			b.WriteByte('\n')
+		}
+		return b.Bytes()
 	}
 }
 
