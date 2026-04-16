@@ -51,12 +51,27 @@ type MoveOptions struct {
 	// moved bytes (useful when relocating an indented grouped spec).
 	Dedent bool
 
-	// GroupKeyword, when non-empty, causes contiguous Moves into the
-	// same destination that share this value to be wrapped in one
-	// `keyword (…)` block at the destination. The keyword text is
-	// emitted verbatim; the package does not interpret it.
+	// GroupKeyword groups consecutive Moves into the same destination
+	// anchor that share this value. The grouping itself (sort by source
+	// span, segment by keyword) is positional and language-agnostic;
+	// how each group renders is controlled by GroupRender (or the
+	// built-in fallback when GroupRender is nil).
 	GroupKeyword string
+
+	// GroupRender, when set on at least one Move in a same-anchor +
+	// same-GroupKeyword run, formats the group: it receives each item's
+	// realized content in source-span order and returns the bytes the
+	// group contributes at the destination. Use this to customize block
+	// wrapping (e.g., Go's `keyword (\n…)\n` with tab-indented items
+	// and an inline single-item form). When nil, the built-in fallback
+	// emits `keyword (\n…)\n` with no per-line indentation.
+	GroupRender GroupRenderer
 }
+
+// GroupRenderer formats a same-anchor + same-GroupKeyword run of Move
+// items at the destination. Items are passed in source-span order;
+// the returned bytes are inserted at the destination as one chunk.
+type GroupRenderer func(items [][]byte) []byte
 
 // Primitive is an edit operation in original-source coordinates.
 //

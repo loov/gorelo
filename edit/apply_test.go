@@ -429,6 +429,37 @@ func TestApply_MoveGroupKeywordMerges(t *testing.T) {
 	})
 }
 
+func TestApply_MoveGroupRenderer(t *testing.T) {
+	// Custom renderer wraps a same-keyword group as `kw {[items]}` with
+	// each item indented by two spaces. Demonstrates the renderer
+	// extension point that lets callers control block formatting
+	// without baking syntax knowledge into the edit package.
+	render := func(items [][]byte) []byte {
+		var b []byte
+		b = append(b, []byte("set {\n")...)
+		for _, item := range items {
+			b = append(b, []byte("  ")...)
+			b = append(b, item...)
+			b = append(b, '\n')
+		}
+		b = append(b, '}', '\n')
+		return b
+	}
+	files := map[string][]byte{
+		"a.go": []byte("<Foo Bar>"),
+		"b.go": []byte(""),
+	}
+	var p Plan
+	p.Move(Span{Path: "a.go", Start: 1, End: 4}, Anchor{Path: "b.go", Offset: 0},
+		MoveOptions{GroupKeyword: "set", GroupRender: render}, "m1")
+	p.Move(Span{Path: "a.go", Start: 5, End: 8}, Anchor{Path: "b.go", Offset: 0},
+		MoveOptions{GroupKeyword: "set", GroupRender: render}, "m2")
+	checkApply(t, &p, files, map[string]string{
+		"a.go": "< >",
+		"b.go": "set {\n  Foo\n  Bar\n}\n",
+	})
+}
+
 func TestApply_MoveGroupKeywordMixedAtSameAnchor(t *testing.T) {
 	// Two Moves to the same destination anchor with different keywords
 	// emit two separate `keyword (…)` blocks in source-span order. This

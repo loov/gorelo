@@ -351,6 +351,7 @@ func lowerMoves(prims []Primitive, parent []int, realized map[int][]byte) ([]Pri
 				content:    realized[i],
 				origin:     mv.origin,
 				sourceSpan: mv.Span,
+				render:     mv.Options.GroupRender,
 			})
 			if parent[i] == -1 {
 				topLevel = append(topLevel, Delete{Span: mv.Span, origin: mv.origin})
@@ -412,15 +413,26 @@ func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
 		i := 0
 		for i < len(items) {
 			kw := items[i].keyword
+			render := items[i].render
 			j := i + 1
 			for j < len(items) && items[j].keyword == kw {
+				if render == nil {
+					render = items[j].render
+				}
 				j++
 			}
-			if kw == "" {
+			switch {
+			case render != nil:
+				bodies := make([][]byte, 0, j-i)
+				for k := i; k < j; k++ {
+					bodies = append(bodies, items[k].content)
+				}
+				content = append(content, render(bodies)...)
+			case kw == "":
 				for k := i; k < j; k++ {
 					content = append(content, items[k].content...)
 				}
-			} else {
+			default:
 				content = append(content, kw...)
 				content = append(content, " (\n"...)
 				for k := i; k < j; k++ {
@@ -502,13 +514,17 @@ func dedent(s string) string {
 // pendingInsert represents a Move destination Insert awaiting group
 // merging. sourceSpan is the Move's original source range; it is used
 // to order merged content deterministically regardless of the order in
-// which primitives were added to the Plan.
+// which primitives were added to the Plan. render, when non-nil for at
+// least one item in a same-keyword run, formats the group; otherwise
+// the built-in fallback wraps in `keyword (\n…)\n` (or concatenates
+// when keyword is empty).
 type pendingInsert struct {
 	dest       Anchor
 	keyword    string
 	content    []byte
 	origin     string
 	sourceSpan Span
+	render     GroupRenderer
 }
 
 // applyToFile applies a batch of Insert/Delete/Replace primitives targeting
