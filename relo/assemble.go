@@ -364,117 +364,32 @@ func (a *assembler) assembleSources() {
 			}
 		}
 
-		// If a target edit was already emitted for this path, use its
-		// content as the base instead of re-reading from disk.
-		var src []byte
-		alsoTarget := a.es.Has(sourcePath)
-		if content, ok := a.es.Get(sourcePath); ok {
-			src = []byte(content)
-		} else {
-			src = fileContent(rrs[0].File)
-		}
+		// Apply the plan to the original source bytes. plan.Apply handles
+		// both the same-file rename case and the cross-file extraction
+		// case uniformly: rename Replaces apply, Move primitives delete
+		// the moved source spans (carrying any in-span Plan edits away
+		// to the discard sink). The targetNewDecls suffix from the
+		// target phase is re-appended below for the source-also-target
+		// case.
+		src := fileContent(rrs[0].File)
 		if src == nil {
 			continue
 		}
+		newDeclSuffix := a.targetNewDecls[sourcePath]
 
-		if allSameFile {
-			// Same-file renames: apply rename edits only via plan.Apply.
-			if len(planEditsForFile(a.edits, sourcePath)) == 0 {
-				continue
-			}
-			only := map[string]bool{sourcePath: true}
-			sub := subPlanForFiles(a.edits, only)
-			outputs, err := sub.Apply(map[string][]byte{sourcePath: src})
-			if err != nil {
-				a.plan.Warnings.Addf("plan.Apply failed for %s: %v", sourcePath, err)
-				continue
-			}
-			a.es.Set(FileEdit{Path: sourcePath, Content: string(outputs[sourcePath])})
+		only := map[string]bool{sourcePath: true}
+		sub := subPlanForFiles(a.edits, only)
+		outputs, err := sub.Apply(map[string][]byte{sourcePath: src})
+		if err != nil {
+			a.plan.Warnings.Addf("plan.Apply failed for source %s: %v", sourcePath, err)
 			continue
 		}
+		newSrc := string(outputs[sourcePath])
 
-		// When we are working on the already-emitted target content (which
-		// had new declarations appended), we must not remove those newly
-		// appended declarations.  The spans were computed against the
-		// original on-disk content, so they remain valid only if we apply
-		// them to the original bytes.  For the source-also-target case we
-		// therefore still use the original on-disk source for removal and
-		// then re-append the new declarations that were added by the target
-		// phase.
-		newDeclSuffix := a.targetNewDecls[sourcePath]
-		if alsoTarget {
-			origSrc := fileContent(rrs[0].File)
-			if origSrc != nil {
-				src = origSrc
-			}
+		if allSameFile {
+			a.es.Set(FileEdit{Path: sourcePath, Content: newSrc})
+			continue
 		}
-
-		// Collect byte ranges to remove.
-		type byteRange struct{ start, end int }
-		seen := make(map[[2]int]bool)
-		var ranges []byteRange
-		for _, rr := range rrs {
-			if !rr.isCrossFileMove() {
-				continue // not being moved, just renamed
-			}
-			s := a.spans[rr]
-			if s == nil {
-				continue
-			}
-
-			start, end := s.Start, s.End
-			key := [2]int{start, end}
-			if !seen[key] {
-				seen[key] = true
-				ranges = append(ranges, byteRange{start, end})
-			}
-		}
-
-		sort.Slice(ranges, func(i, j int) bool {
-			return ranges[i].start < ranges[j].start
-		})
-
-		// Merge overlapping ranges.
-		merged := ranges[:0:0]
-		for _, r := range ranges {
-			if len(merged) > 0 && r.start <= merged[len(merged)-1].end {
-				if r.end > merged[len(merged)-1].end {
-					merged[len(merged)-1].end = r.end
-				}
-			} else {
-				merged = append(merged, r)
-			}
-		}
-
-		// Get rename edits for remaining code.
-		renameEdits := planEditsForFile(a.edits, sourcePath)
-
-		// Filter rename edits that fall inside removed ranges.
-		if len(renameEdits) > 0 {
-			var filtered []edit
-			for _, e := range renameEdits {
-				inRemoved := false
-				for _, r := range merged {
-					if e.Start >= r.start && e.End <= r.end {
-						inRemoved = true
-						break
-					}
-				}
-				if !inRemoved {
-					filtered = append(filtered, e)
-				}
-			}
-			renameEdits = filtered
-		}
-
-		// Build edits: removals + a.renames.
-		var allEdits []edit
-		for _, r := range merged {
-			allEdits = append(allEdits, edit{Start: r.start, End: r.end, New: ""})
-		}
-		allEdits = append(allEdits, renameEdits...)
-
-		newSrc := applyEdits(src, allEdits)
 
 		// Re-append declarations that were added by the target phase.
 		if newDeclSuffix != "" {

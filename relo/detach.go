@@ -95,9 +95,9 @@ func planEditsInSpan(p *ed.Plan, path string, start, end int) []edit {
 }
 
 // subPlanForFiles returns a new Plan containing only primitives whose
-// target file path is in keep. Move primitives are skipped — relo's
-// legacy applier path doesn't construct Moves, and Move semantics
-// (with carrying across the keep set) would need explicit handling.
+// source-side file path is in keep. Move primitives are kept when
+// their source span belongs to keep; the destination may live outside
+// keep (e.g., the discard sink used for source-only application).
 func subPlanForFiles(p *ed.Plan, keep map[string]bool) *ed.Plan {
 	sub := &ed.Plan{}
 	for _, prim := range p.Primitives() {
@@ -117,9 +117,58 @@ func subPlanForFiles(p *ed.Plan, keep map[string]bool) *ed.Plan {
 				continue
 			}
 			sub.Replace(x.Span, x.Text, x.Origin())
+		case ed.Move:
+			if !keep[x.Span.Path] {
+				continue
+			}
+			sub.Move(x.Span, x.Dest, x.Options, x.Origin())
 		}
 	}
 	return sub
+}
+
+// discardPath is the destination path used for Move primitives that
+// only need source-side deletion. plan.Apply still produces output for
+// this path; the source-side application code drops it.
+const discardPath = "\x00<discard>\x00"
+
+// emitCrossFileMoves emits a Move primitive for each cross-file
+// extraction span in resolved. The destination is the sentinel
+// discardPath — only the source-side delete (and the carry of any
+// in-span Plan primitives away from the source file) is significant.
+// Spans are deduplicated by (path, start, end) because multi-name
+// declarations (e.g. `const A, B = 1, 2`) yield multiple rrs sharing
+// one span. Target-side content is still produced by the legacy
+// assembleTargets pass.
+func emitCrossFileMoves(resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan) {
+	type spanKey struct {
+		path       string
+		start, end int
+	}
+	seen := make(map[spanKey]bool)
+	for _, rr := range resolved {
+		if !rr.isCrossFileMove() {
+			continue
+		}
+		if rr.File == nil {
+			continue
+		}
+		s := spans[rr]
+		if s == nil {
+			continue
+		}
+		key := spanKey{rr.File.Path, s.Start, s.End}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		edits.Move(
+			ed.Span{Path: rr.File.Path, Start: s.Start, End: s.End},
+			ed.Anchor{Path: discardPath, Offset: -1},
+			ed.MoveOptions{},
+			"extract-source-span",
+		)
+	}
 }
 
 // planEditPaths returns the sorted set of file paths referenced by any
