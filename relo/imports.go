@@ -35,20 +35,26 @@ type importSet struct {
 	byFile map[string]*importChange
 }
 
-// computeImports determines import changes for all affected files (phase 7).
+// computeImports determines import changes for all affected files
+// (phase 7). For each target file, walks the moved spans collecting
+// the source-side imports their identifiers reference, then registers
+// each via addImportEntry — which dedups against the destination's
+// existing+queued imports, auto-sets aliases when the package's real
+// name differs from the path basename, and resolves any local-name
+// collisions with parent-prefixed aliases.
 func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) *importSet {
 	is := &importSet{
 		byFile: make(map[string]*importChange),
 	}
 
-	byTarget := groupByTarget(resolved)
-
-	// For each target file, collect imports needed by moved declarations.
-	for targetFile, rrs := range byTarget {
+	for targetFile, rrs := range groupByTarget(resolved) {
 		targetDir := filepath.Dir(targetFile)
+		targetImportPath := guessImportPath(targetDir)
 
-		// Collect imports used by declarations being moved to this target.
-		neededImports := make(map[string]*ast.ImportSpec) // importPath -> spec
+		// Collect imports used by declarations being moved to this
+		// target, keyed by impPath so the same import referenced from
+		// multiple spans dedups naturally.
+		neededImports := make(map[string]*ast.ImportSpec)
 		for _, rr := range rrs {
 			if rr.File == nil {
 				continue
@@ -58,7 +64,6 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 				continue
 			}
 
-			// Walk the AST within the span to find selector expressions.
 			usedIdents := make(map[string]bool)
 			walkRange(rr.File.Syntax, ix.Fset, s.Start, s.End, func(n ast.Node) {
 				sel, ok := n.(*ast.SelectorExpr)
@@ -70,7 +75,6 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 				}
 			})
 
-			// Match against file imports.
 			for _, imp := range rr.File.Syntax.Imports {
 				impPath := importPath(imp)
 				localName := importLocalName(imp, impPath)
@@ -86,58 +90,32 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 						rr.Group.Name, imp.Path.Value)
 					continue
 				}
+				if impPath == targetImportPath {
+					continue // self-import: target package, skip
+				}
 				if usedIdents[localName] {
 					neededImports[impPath] = imp
 				}
 			}
 		}
 
-		// Self-import elimination: if moving into a package, remove that
-		// package's own import.
-		targetImportPath := guessImportPath(targetDir)
-		if targetImportPath != "" {
-			delete(neededImports, targetImportPath)
+		// Path-sorted registration so addImportEntry's first-come
+		// alias collision resolution gives deterministic results.
+		impPaths := make([]string, 0, len(neededImports))
+		for p := range neededImports {
+			impPaths = append(impPaths, p)
 		}
+		sort.Strings(impPaths)
 
-		// Build import entries for the target file.
-		var entries []importEntry
-		usedNames := make(map[string]bool)
-
-		// Pre-populate usedNames with existing imports in the target file.
-		if existingFile := ix.FilesByPath[targetFile]; existingFile != nil {
-			for _, imp := range existingFile.Syntax.Imports {
-				impPath := importPath(imp)
-				usedNames[importLocalName(imp, impPath)] = true
+		for _, impPath := range impPaths {
+			spec := neededImports[impPath]
+			entry := importEntry{Path: impPath}
+			// Preserve source-side explicit alias when it isn't
+			// redundant with the path basename.
+			if spec.Name != nil && spec.Name.Name != path.Base(impPath) {
+				entry.Alias = spec.Name.Name
 			}
-		}
-
-		// First pass: collect all local names.
-		var infos []importInfo
-		for impPath, spec := range neededImports {
-			localName := importLocalName(spec, impPath)
-			infos = append(infos, importInfo{path: impPath, localName: localName, spec: spec})
-			usedNames[localName] = true
-		}
-		sort.Slice(infos, func(i, j int) bool {
-			return infos[i].path < infos[j].path
-		})
-
-		// Detect and resolve collisions.
-		aliases := resolveCollisions(infos, usedNames)
-
-		for _, info := range infos {
-			entry := importEntry{Path: info.path}
-			if alias, ok := aliases[info.path]; ok {
-				entry.Alias = alias
-			} else if info.spec.Name != nil && info.spec.Name.Name != path.Base(info.path) {
-				entry.Alias = info.spec.Name.Name
-			}
-			entries = append(entries, entry)
-		}
-
-		if len(entries) > 0 {
-			ic := is.ensureFile(targetFile)
-			ic.Add = append(ic.Add, entries...)
+			addImportEntry(is, ix, targetFile, entry)
 		}
 	}
 
@@ -251,45 +229,6 @@ func (is *importSet) ensureFile(path string) *importChange {
 		is.byFile[path] = ic
 	}
 	return ic
-}
-
-// importInfo describes a single needed import during collision resolution.
-type importInfo struct {
-	path      string
-	localName string
-	spec      *ast.ImportSpec
-}
-
-// resolveCollisions assigns aliases to imports that share the same localName.
-// The first import (by sorted order) in each collision group keeps its
-// localName; subsequent ones get a parentPrefixed alias or numeric suffix.
-// usedNames is updated in place.
-func resolveCollisions(infos []importInfo, usedNames map[string]bool) map[string]string {
-	byLocal := make(map[string][]int)
-	for i, info := range infos {
-		byLocal[info.localName] = append(byLocal[info.localName], i)
-	}
-
-	aliases := make(map[string]string) // importPath -> alias
-	for _, indices := range byLocal {
-		if len(indices) < 2 {
-			continue
-		}
-		// The first import keeps its short localName; only subsequent ones get aliased.
-		for _, idx := range indices[1:] {
-			info := infos[idx]
-			alias := parentPrefixedName(info.path)
-			if alias == info.localName || usedNames[alias] {
-				base := alias
-				for j := 2; usedNames[alias]; j++ {
-					alias = base + strconv.Itoa(j)
-				}
-			}
-			usedNames[alias] = true
-			aliases[info.path] = alias
-		}
-	}
-	return aliases
 }
 
 // findPkgForDir returns the package whose files reside in dir, or nil.

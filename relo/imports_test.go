@@ -126,84 +126,69 @@ func TestReadModulePath(t *testing.T) {
 	}
 }
 
-func TestResolveCollisions_FirstKeepsShortName(t *testing.T) {
+func TestAddImportEntry_FirstKeepsShortName(t *testing.T) {
 	t.Parallel()
 
-	// B10: When two imports share a localName, only the second (and later)
-	// should be aliased. The first keeps its short name.
-	infos := []importInfo{
-		{path: "crypto/rand", localName: "rand"},
-		{path: "math/rand", localName: "rand"},
-	}
-	usedNames := map[string]bool{
-		"rand": true, // already claimed by both infos
-	}
+	// When two imports share a localName, the first keeps the short
+	// name; subsequent ones get a parent-prefixed alias. Equivalent
+	// to the former resolveCollisions behavior, expressed via the
+	// addImportEntry path.
+	is := &importSet{byFile: make(map[string]*importChange)}
+	addImportEntry(is, nil, "/dst/file.go", importEntry{Path: "crypto/rand"})
+	addImportEntry(is, nil, "/dst/file.go", importEntry{Path: "math/rand"})
 
-	aliases := resolveCollisions(infos, usedNames)
-
-	// crypto/rand is first (sorted), so it should NOT be aliased.
-	if _, ok := aliases["crypto/rand"]; ok {
-		t.Errorf("crypto/rand should keep short name, but got alias %q", aliases["crypto/rand"])
+	ic := is.byFile["/dst/file.go"]
+	if ic == nil || len(ic.Add) != 2 {
+		t.Fatalf("want 2 added entries, got %v", ic)
 	}
-
-	// math/rand is second, so it should be aliased.
-	alias, ok := aliases["math/rand"]
-	if !ok {
-		t.Fatal("math/rand should be aliased, but no alias assigned")
+	if ic.Add[0].Alias != "" {
+		t.Errorf("crypto/rand should keep short name, got alias %q", ic.Add[0].Alias)
 	}
-	if alias != "mathrand" {
-		t.Errorf("math/rand alias = %q, want %q", alias, "mathrand")
+	if ic.Add[1].Alias != "mathrand" {
+		t.Errorf("math/rand alias = %q, want %q", ic.Add[1].Alias, "mathrand")
 	}
 }
 
-func TestResolveCollisions_NumericSuffixWhenParentPrefixUsed(t *testing.T) {
+func TestAddImportEntry_NumericSuffixWhenParentPrefixUsed(t *testing.T) {
 	t.Parallel()
 
-	// B5: When parentPrefixedName is already in usedNames, a numeric suffix
-	// should be generated.
-	infos := []importInfo{
-		{path: "aaa/rand", localName: "rand"},
-		{path: "bbb/rand", localName: "rand"},
-		{path: "ccc/rand", localName: "rand"},
-	}
-	usedNames := map[string]bool{
-		"rand": true,
-	}
+	// When parentPrefixedName is already taken, a numeric suffix is
+	// generated.
+	is := &importSet{byFile: make(map[string]*importChange)}
+	addImportEntry(is, nil, "/dst/file.go", importEntry{Path: "aaa/rand"})
+	addImportEntry(is, nil, "/dst/file.go", importEntry{Path: "bbb/rand"})
+	addImportEntry(is, nil, "/dst/file.go", importEntry{Path: "ccc/rand"})
 
-	aliases := resolveCollisions(infos, usedNames)
-
-	// aaa/rand is first, no alias.
-	if _, ok := aliases["aaa/rand"]; ok {
-		t.Errorf("aaa/rand should keep short name, but got alias %q", aliases["aaa/rand"])
+	ic := is.byFile["/dst/file.go"]
+	if ic == nil || len(ic.Add) != 3 {
+		t.Fatalf("want 3 added entries, got %v", ic)
 	}
-
-	// bbb/rand should get "bbbrand".
-	if alias := aliases["bbb/rand"]; alias != "bbbrand" {
-		t.Errorf("bbb/rand alias = %q, want %q", alias, "bbbrand")
+	if ic.Add[0].Alias != "" {
+		t.Errorf("aaa/rand should keep short name, got alias %q", ic.Add[0].Alias)
 	}
-
-	// ccc/rand should get "cccrand".
-	if alias := aliases["ccc/rand"]; alias != "cccrand" {
-		t.Errorf("ccc/rand alias = %q, want %q", alias, "cccrand")
+	if ic.Add[1].Alias != "bbbrand" {
+		t.Errorf("bbb/rand alias = %q, want %q", ic.Add[1].Alias, "bbbrand")
+	}
+	if ic.Add[2].Alias != "cccrand" {
+		t.Errorf("ccc/rand alias = %q, want %q", ic.Add[2].Alias, "cccrand")
 	}
 }
 
-func TestResolveCollisions_NoCollision(t *testing.T) {
+func TestAddImportEntry_NoCollision(t *testing.T) {
 	t.Parallel()
 
-	infos := []importInfo{
-		{path: "encoding/json", localName: "json"},
-		{path: "fmt", localName: "fmt"},
-	}
-	usedNames := map[string]bool{
-		"json": true,
-		"fmt":  true,
-	}
+	is := &importSet{byFile: make(map[string]*importChange)}
+	addImportEntry(is, nil, "/dst/file.go", importEntry{Path: "encoding/json"})
+	addImportEntry(is, nil, "/dst/file.go", importEntry{Path: "fmt"})
 
-	aliases := resolveCollisions(infos, usedNames)
-
-	if len(aliases) != 0 {
-		t.Errorf("expected no aliases for non-colliding imports, got %v", aliases)
+	ic := is.byFile["/dst/file.go"]
+	if ic == nil || len(ic.Add) != 2 {
+		t.Fatalf("want 2 added entries, got %v", ic)
+	}
+	for _, e := range ic.Add {
+		if e.Alias != "" {
+			t.Errorf("non-colliding import %q got unexpected alias %q", e.Path, e.Alias)
+		}
 	}
 }
 
