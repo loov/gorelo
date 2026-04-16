@@ -30,12 +30,6 @@ func (es *editSet) Get(path string) (string, bool) {
 	return es.edits[idx].Content, true
 }
 
-// Has reports whether an edit exists for path.
-func (es *editSet) Has(path string) bool {
-	_, ok := es.index[path]
-	return ok
-}
-
 // Edits returns the collected edits.
 func (es *editSet) Edits() []FileEdit {
 	return es.edits

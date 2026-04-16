@@ -340,15 +340,6 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 		})
 	}
 
-	// If the moved file referenced its own origin package through a
-	// self-import, drop that import from the output.
-	srcImportPath := guessImportPath(filepath.Dir(src.Path))
-	if srcImportPath != "" && srcImportPath != targetImportPath {
-		// Any siblings the moved file referenced unqualified now live in
-		// a different package. Add an import for the origin if there are
-		// consumer edits that qualified them.
-	}
-
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}

@@ -16,15 +16,14 @@ import (
 
 // assembler holds state shared across the target, source, and rename phases.
 type assembler struct {
-	ix        *mast.Index
-	resolved  []*resolvedRelo
-	spans     map[*resolvedRelo]*span
-	edits     *ed.Plan
-	imports   *importSet
-	fileMoves []*fileMoveInfo
-	opts      *Options
-	plan      *Plan
-	es        *editSet
+	ix       *mast.Index
+	resolved []*resolvedRelo
+	spans    map[*resolvedRelo]*span
+	edits    *ed.Plan
+	imports  *importSet
+	opts     *Options
+	plan     *Plan
+	es       *editSet
 
 	byTarget map[string][]*resolvedRelo
 	bySource map[string][]*resolvedRelo
@@ -33,28 +32,21 @@ type assembler struct {
 	// the whole-file-move pass; the per-decl target/source phases skip
 	// these to avoid clobbering the wholesale content.
 	fileMovePaths map[string]bool
-
-	// targetNewDecls tracks declarations appended during the target phase.
-	// When a file is both source and target, the source phase re-appends
-	// these after performing removals on the original on-disk content.
-	targetNewDecls map[string]string
 }
 
 // assemble builds the final FileEdit list (phase 8).
 func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, fileMoves []*fileMoveInfo, opts *Options, plan *Plan) {
 	a := &assembler{
-		ix:             ix,
-		resolved:       resolved,
-		spans:          spans,
-		edits:          edits,
-		imports:        imports,
-		fileMoves:      fileMoves,
-		opts:           opts,
-		plan:           plan,
-		es:             newEditSet(),
-		byTarget:       groupByTarget(resolved),
-		bySource:       groupBySource(resolved),
-		targetNewDecls: make(map[string]string),
+		ix:       ix,
+		resolved: resolved,
+		spans:    spans,
+		edits:    edits,
+		imports:  imports,
+		opts:     opts,
+		plan:     plan,
+		es:       newEditSet(),
+		byTarget: groupByTarget(resolved),
+		bySource: groupBySource(resolved),
 	}
 
 	a.fileMovePaths = a.assembleFileMoves(fileMoves)
@@ -293,10 +285,6 @@ func (a *assembler) generateAllStubs() map[string]string {
 	}
 	return out
 }
-
-// assembleTargets_legacy is the previous per-target loop, retained
-// temporarily during the migration. Once singlePassApply is verified
-// the body of this function is dropped.
 
 // computeImportAliasEdits generates edits for an extracted span to rename
 // import qualifier idents that were aliased due to collision resolution.
