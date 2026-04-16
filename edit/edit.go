@@ -1,0 +1,164 @@
+// Package edit composes byte-level text edits addressed in original-source
+// coordinates. Callers build a Plan of primitives (Insert, Delete, Replace,
+// Move) and invoke Plan.Apply to produce the resulting file contents.
+//
+// The package has no knowledge of Go syntax or AST: primitives carry byte
+// offsets into whatever input files the caller supplies, and the applier
+// performs position tracking so that primitives compose regardless of the
+// order in which they are emitted.
+package edit
+
+import "fmt"
+
+// Anchor points at a byte offset in a named file.
+//
+// Offset values are interpreted against the original (pre-Apply) contents.
+// Special value -1 for Offset means end-of-file.
+type Anchor struct {
+	Path   string
+	Offset int
+}
+
+// Span is a half-open byte range [Start, End) in a named file, addressed
+// against the original (pre-Apply) contents.
+type Span struct {
+	Path       string
+	Start, End int
+}
+
+// Side disambiguates the ordering of two Inserts that share an Anchor.
+// An Insert with Side=Before lands immediately before any Insert with
+// Side=After at the same offset.
+type Side int
+
+const (
+	Before Side = iota
+	After
+)
+
+// MoveOptions configures how a Move's relocated bytes are emitted at the
+// destination.
+type MoveOptions struct {
+	// TrimLeadingBlank strips leading blank lines from the moved bytes.
+	TrimLeadingBlank bool
+
+	// AppendNewline ensures the emitted bytes end with a newline.
+	AppendNewline bool
+
+	// Dedent strips the common leading whitespace from each line of the
+	// moved bytes (useful when relocating an indented grouped spec).
+	Dedent bool
+
+	// GroupKeyword, when non-empty, causes contiguous Moves into the
+	// same destination that share this value to be wrapped in one
+	// `keyword (…)` block at the destination. The keyword text is
+	// emitted verbatim; the package does not interpret it.
+	GroupKeyword string
+}
+
+// Primitive is an edit operation in original-source coordinates.
+//
+// Concrete primitives are Insert, Delete, Replace, and Move.
+type Primitive interface {
+	// Origin returns the free-form diagnostic tag the emission site
+	// supplied when adding the primitive to a Plan.
+	Origin() string
+
+	primitive()
+}
+
+// Insert places Text at Anchor. Side disambiguates the ordering of two
+// Inserts at the same anchor.
+type Insert struct {
+	Anchor Anchor
+	Text   string
+	Side   Side
+
+	origin string
+}
+
+func (i Insert) Origin() string { return i.origin }
+func (Insert) primitive()       {}
+
+// Delete removes the bytes covered by Span.
+type Delete struct {
+	Span Span
+
+	origin string
+}
+
+func (d Delete) Origin() string { return d.origin }
+func (Delete) primitive()       {}
+
+// Replace substitutes Text for the bytes covered by Span. It is an atomic
+// primitive (rather than a Delete + Insert pair) so that rename-like
+// operations remain one primitive for conflict detection.
+type Replace struct {
+	Span Span
+	Text string
+
+	origin string
+}
+
+func (r Replace) Origin() string { return r.origin }
+func (Replace) primitive()       {}
+
+// Move relocates the bytes covered by Span to Dest. Any Insert, Delete,
+// or Replace whose coordinates fall inside Span is automatically carried
+// with the moved bytes.
+type Move struct {
+	Span    Span
+	Dest    Anchor
+	Options MoveOptions
+
+	origin string
+}
+
+func (m Move) Origin() string { return m.origin }
+func (Move) primitive()       {}
+
+// Plan is an append-only collection of primitives. The zero value is an
+// empty Plan ready for use.
+type Plan struct {
+	prims []Primitive
+}
+
+// Insert appends an Insert primitive to the plan.
+func (p *Plan) Insert(anchor Anchor, text string, side Side, origin string) {
+	p.prims = append(p.prims, Insert{Anchor: anchor, Text: text, Side: side, origin: origin})
+}
+
+// Delete appends a Delete primitive to the plan.
+func (p *Plan) Delete(span Span, origin string) {
+	p.prims = append(p.prims, Delete{Span: span, origin: origin})
+}
+
+// Replace appends a Replace primitive to the plan.
+func (p *Plan) Replace(span Span, text string, origin string) {
+	p.prims = append(p.prims, Replace{Span: span, Text: text, origin: origin})
+}
+
+// Move appends a Move primitive to the plan.
+func (p *Plan) Move(span Span, dest Anchor, opts MoveOptions, origin string) {
+	p.prims = append(p.prims, Move{Span: span, Dest: dest, Options: opts, origin: origin})
+}
+
+// Primitives returns a copy of the primitives accumulated in the plan,
+// in insertion order.
+func (p *Plan) Primitives() []Primitive {
+	out := make([]Primitive, len(p.prims))
+	copy(out, p.prims)
+	return out
+}
+
+// ConflictError is returned by Plan.Apply when two primitives overlap in
+// a way that is not resolved by the carrying or endpoint-ordering rules.
+type ConflictError struct {
+	A, B   Primitive
+	Reason string
+}
+
+func (e *ConflictError) Error() string {
+	return fmt.Sprintf("edit conflict between %q and %q: %s",
+		e.A.Origin(), e.B.Origin(), e.Reason)
+}
