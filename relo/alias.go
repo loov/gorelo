@@ -122,12 +122,12 @@ func generateFuncAlias(rr *resolvedRelo, targetPkgName string, fset *token.FileS
 	}
 
 	buf.WriteString("(")
-	buf.WriteString(formatFieldList(fd.Type.Params, fset))
+	buf.WriteString(formatFieldList(fd.Type.Params, fset, true))
 	buf.WriteString(")")
 
 	hasResults := fd.Type.Results != nil && len(fd.Type.Results.List) > 0
 	if hasResults {
-		results := formatResultList(fd.Type.Results, fset)
+		results := formatFieldList(fd.Type.Results, fset, false)
 		if len(fd.Type.Results.List) > 1 || (len(fd.Type.Results.List) == 1 && len(fd.Type.Results.List[0].Names) > 0) {
 			buf.WriteString(" (")
 			buf.WriteString(results)
@@ -184,7 +184,11 @@ func formatTypeParams(fl *ast.FieldList, fset *token.FileSet) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatFieldList(fl *ast.FieldList, fset *token.FileSet) string {
+// formatFieldList formats an ast.FieldList as a comma-separated
+// string. When nameUnnamed is true, unnamed or underscore parameters
+// get synthetic names (p0, p1, …) so the output is valid in a
+// function signature that needs to forward arguments by name.
+func formatFieldList(fl *ast.FieldList, fset *token.FileSet, nameUnnamed bool) string {
 	if fl == nil || len(fl.List) == 0 {
 		return ""
 	}
@@ -193,38 +197,22 @@ func formatFieldList(fl *ast.FieldList, fset *token.FileSet) string {
 	for _, field := range fl.List {
 		typeStr := nodeString(field.Type, fset)
 		if len(field.Names) == 0 {
-			name := fmt.Sprintf("p%d", paramIdx)
+			if nameUnnamed {
+				name := fmt.Sprintf("p%d", paramIdx)
+				parts = append(parts, name+" "+typeStr)
+			} else {
+				parts = append(parts, typeStr)
+			}
 			paramIdx++
-			parts = append(parts, name+" "+typeStr)
 		} else {
 			names := make([]string, len(field.Names))
 			for i, n := range field.Names {
-				if n.Name == "_" {
+				if nameUnnamed && n.Name == "_" {
 					names[i] = fmt.Sprintf("p%d", paramIdx)
 				} else {
 					names[i] = n.Name
 				}
 				paramIdx++
-			}
-			parts = append(parts, strings.Join(names, ", ")+" "+typeStr)
-		}
-	}
-	return strings.Join(parts, ", ")
-}
-
-func formatResultList(fl *ast.FieldList, fset *token.FileSet) string {
-	if fl == nil || len(fl.List) == 0 {
-		return ""
-	}
-	var parts []string
-	for _, field := range fl.List {
-		typeStr := nodeString(field.Type, fset)
-		if len(field.Names) == 0 {
-			parts = append(parts, typeStr)
-		} else {
-			names := make([]string, len(field.Names))
-			for i, n := range field.Names {
-				names[i] = n.Name
 			}
 			parts = append(parts, strings.Join(names, ", ")+" "+typeStr)
 		}
