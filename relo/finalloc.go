@@ -40,6 +40,8 @@ func finalImportPath(rr *resolvedRelo) string {
 // qualifier) of the package the relo's declaration will live in after
 // the run. When the destination package exists in ix, its declared name
 // wins; otherwise the directory basename is used.
+//
+//lint:ignore U1000 preventive API; emission sites should call this instead of recomputing
 func finalPkgName(rr *resolvedRelo, ix *mast.Index) string {
 	return packageLocalName(ix, finalDir(rr))
 }
@@ -47,6 +49,8 @@ func finalPkgName(rr *resolvedRelo, ix *mast.Index) string {
 // finalNameForGroup returns the post-operation name for grp, looking
 // through the resolved set. If grp is not being renamed in this run,
 // returns grp.Name.
+//
+//lint:ignore U1000 preventive API; emission sites should call this instead of reading grp.Name
 func finalNameForGroup(resolved []*resolvedRelo, grp *mast.Group) string {
 	if rr := resolvedForGroup(resolved, grp); rr != nil {
 		return rr.TargetName
@@ -57,6 +61,8 @@ func finalNameForGroup(resolved []*resolvedRelo, grp *mast.Group) string {
 // finalDirForGroup returns the post-operation directory for grp,
 // looking through the resolved set. If grp is not being moved in this
 // run, returns the directory of its existing def file (or "" if none).
+//
+//lint:ignore U1000 preventive API; referenced by finalloc_lint_test.go hints
 func finalDirForGroup(resolved []*resolvedRelo, grp *mast.Group) string {
 	if rr := resolvedForGroup(resolved, grp); rr != nil {
 		return finalDir(rr)
@@ -72,6 +78,8 @@ func finalDirForGroup(resolved []*resolvedRelo, grp *mast.Group) string {
 // finalImportPathForGroup returns the post-operation import path for
 // grp's package, looking through the resolved set. Returns "" if the
 // directory cannot be resolved to an import path.
+//
+//lint:ignore U1000 preventive API; referenced by finalloc_lint_test.go hints
 func finalImportPathForGroup(resolved []*resolvedRelo, grp *mast.Group) string {
 	dir := finalDirForGroup(resolved, grp)
 	if dir == "" {

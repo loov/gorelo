@@ -260,14 +260,6 @@ const fullModule = "example.com/full"
 // goMod is the standard go.mod file shared by every scenario.
 const goMod = "module " + fullModule + "\n\ngo 1.21\n"
 
-// srcDir is always "src"; cross-pkg destinations go under "dst"; consumers
-// live under "consumer".
-const (
-	srcDir      = "src"
-	dstDir      = "dst"
-	consumerDir = "consumer"
-)
-
 func generateFullScenarios() []fullScenario {
 	var scs []fullScenario
 	scs = append(scs, genFuncScenarios()...)
