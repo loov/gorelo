@@ -1,0 +1,59 @@
+# Detach a method, rename the detached function, AND move it to another
+# package in the same run. Call sites in a consumer package must be
+# rewritten to the new package-qualified, renamed form.
+
+Server#Start=!BeginServer -> ops/ops.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Do() error {
+	s := &src.Server{Addr: "localhost"}
+	return s.Start()
+}
+-- golden/src/server.go --
+package src
+
+type Server struct {
+	Addr string
+}
+-- golden/ops/ops.go --
+package ops
+
+import (
+	"example.com/test/src"
+)
+
+// Start begins listening.
+func BeginServer(s *src.Server) error {
+	return nil
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/src"
+	"example.com/test/ops"
+)
+
+func Do() error {
+	s := &src.Server{Addr: "localhost"}
+	return ops.BeginServer(s)
+}

@@ -1,0 +1,68 @@
+# Cross-package move with rename where a consumer uses a chained
+# expression (constructor → method → method). Every link in the chain
+# must resolve through the post-rename, post-move identifiers.
+
+Config=Settings NewConfig=NewSettings -> cfg/settings.go
+
+@warn renaming type Config to Settings will also change embedded field names
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+type Config struct {
+	Addr string
+}
+
+func NewConfig(addr string) *Config {
+	return &Config{Addr: addr}
+}
+
+func (c *Config) WithAddr(addr string) *Config {
+	c.Addr = addr
+	return c
+}
+
+func (c *Config) Describe() string {
+	return c.Addr
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Describe() string {
+	return src.NewConfig("default").WithAddr("localhost").Describe()
+}
+-- golden/cfg/settings.go --
+package cfg
+
+type Settings struct {
+	Addr string
+}
+
+func NewSettings(addr string) *Settings {
+	return &Settings{Addr: addr}
+}
+
+func (c *Settings) WithAddr(addr string) *Settings {
+	c.Addr = addr
+	return c
+}
+
+func (c *Settings) Describe() string {
+	return c.Addr
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/cfg"
+)
+
+func Describe() string {
+	return cfg.NewSettings("default").WithAddr("localhost").Describe()
+}

@@ -1,0 +1,84 @@
+# Attach a function as a method cross-package with @stubs enabled, AND
+# keep a sibling in the source package that still calls the function.
+# Attach changes the kind (func→method) so no forwarding stub is
+# generated; the sibling call and the external consumer must both be
+# rewritten to invoke the method on the receiver.
+
+@stubs
+Start=Server#Start -> srv/methods.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/util/funcs.go --
+package util
+
+import "example.com/test/srv"
+
+// Start starts the server.
+func Start(s *srv.Server) error {
+	return nil
+}
+
+// StartAll calls Start on many servers.
+func StartAll(ss []*srv.Server) error {
+	for _, s := range ss {
+		if err := Start(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+-- input/srv/server.go --
+package srv
+
+type Server struct{}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/srv"
+	"example.com/test/util"
+)
+
+func Do() error {
+	s := &srv.Server{}
+	return util.Start(s)
+}
+-- golden/util/funcs.go --
+package util
+
+import "example.com/test/srv"
+
+// StartAll calls Start on many servers.
+func StartAll(ss []*srv.Server) error {
+	for _, s := range ss {
+		if err := s.Start(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+-- golden/srv/server.go --
+package srv
+
+type Server struct{}
+-- golden/srv/methods.go --
+package srv
+
+// Start starts the server.
+func (s *Server) Start() error {
+	return nil
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/srv"
+)
+
+func Do() error {
+	s := &srv.Server{}
+	return s.Start()
+}

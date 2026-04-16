@@ -1,0 +1,53 @@
+# File move combined with detaching AND renaming a method inside the moved
+# file. The detached function must use the post-move package and the
+# post-rename name at every call site.
+
+src/server.go -> dst/server.go
+Server#Start=!Begin
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+// Server handles requests.
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+-- input/src/use.go --
+package src
+
+func Use() error {
+	s := &Server{Addr: "localhost"}
+	return s.Start()
+}
+-- golden/src/use.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() error {
+	s := &dst.Server{Addr: "localhost"}
+	return dst.Begin(s)
+}
+-- golden/dst/server.go --
+package dst
+
+// Server handles requests.
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func Begin(s *Server) error {
+	return nil
+}

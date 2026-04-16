@@ -1,0 +1,50 @@
+# Detach and rename a method without moving it cross-package. A consumer
+# in another package must use the renamed function qualified with the
+# source package.
+
+Server#Start=!Begin
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Do() error {
+	s := &src.Server{Addr: "localhost"}
+	return s.Start()
+}
+-- golden/src/server.go --
+package src
+
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func Begin(s *Server) error {
+	return nil
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Do() error {
+	s := &src.Server{Addr: "localhost"}
+	return src.Begin(s)
+}

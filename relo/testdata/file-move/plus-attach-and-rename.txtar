@@ -1,0 +1,62 @@
+# File move combined with attaching a function inside the moved file
+# AND renaming the resulting method.
+
+src/helpers.go -> dst/helpers.go
+src/helpers.go:Start=Server#Boot
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/helpers.go --
+package src
+
+import "example.com/test/dst"
+
+// Start starts the server.
+func Start(s *dst.Server) error {
+	_ = s
+	return nil
+}
+-- input/dst/types.go --
+package dst
+
+// Server lives in dst.
+type Server struct{}
+-- input/caller/caller.go --
+package caller
+
+import (
+	"example.com/test/dst"
+	"example.com/test/src"
+)
+
+func Call() error {
+	s := &dst.Server{}
+	return src.Start(s)
+}
+-- golden/dst/types.go --
+package dst
+
+// Server lives in dst.
+type Server struct{}
+-- golden/dst/helpers.go --
+package dst
+
+
+// Start starts the server.
+func (s *Server) Boot() error {
+	_ = s
+	return nil
+}
+-- golden/caller/caller.go --
+package caller
+
+import (
+	"example.com/test/dst"
+)
+
+func Call() error {
+	s := &dst.Server{}
+	return s.Boot()
+}

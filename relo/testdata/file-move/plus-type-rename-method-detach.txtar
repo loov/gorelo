@@ -1,0 +1,69 @@
+# File move that renames the type AND detaches a method on that type.
+# After the run, the detached function must reference the RENAMED type.
+# This exercises the "original vs. final state" hazard from 7d8c120.
+
+src/server.go -> dst/server.go
+Server=Host Server#Start=!BeginHost
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/server.go --
+package src
+
+// Server handles requests.
+type Server struct {
+	Addr string
+}
+
+// Start begins listening.
+func (s *Server) Start() error {
+	return nil
+}
+
+// Stop shuts the server down.
+func (s *Server) Stop() error {
+	return nil
+}
+-- input/src/use.go --
+package src
+
+func Use() error {
+	s := &Server{Addr: "localhost"}
+	if err := s.Start(); err != nil {
+		return err
+	}
+	return s.Stop()
+}
+-- golden/src/use.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+func Use() error {
+	s := &dst.Host{Addr: "localhost"}
+	if err := dst.BeginHost(s); err != nil {
+		return err
+	}
+	return s.Stop()
+}
+-- golden/dst/server.go --
+package dst
+
+// Server handles requests.
+type Host struct {
+	Addr string
+}
+
+// Start begins listening.
+func BeginHost(s *Host) error {
+	return nil
+}
+
+// Stop shuts the server down.
+func (s *Host) Stop() error {
+	return nil
+}
