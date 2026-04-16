@@ -132,6 +132,67 @@ func subPlanForFiles(p *ed.Plan, keep map[string]bool) *ed.Plan {
 // this path; the source-side application code drops it.
 const discardPath = "\x00<discard>\x00"
 
+// applyEditsViaPlan converts a slice of legacy edits into a per-file
+// sub-plan and runs plan.Apply to produce the result. Overlapping
+// edits are pre-processed to match legacy applyEdits semantics (the
+// edit with the lower Start wins; later overlapping edits drop) so
+// the Plan never sees a conflict from multiple emitters writing into
+// the same byte range.
+func applyEditsViaPlan(plan *Plan, path string, src []byte, edits []edit) string {
+	if len(edits) == 0 {
+		return string(src)
+	}
+	edits = dropOverlappingEdits(edits)
+	sub := &ed.Plan{}
+	for _, e := range edits {
+		switch {
+		case e.Start == e.End:
+			sub.Insert(ed.Anchor{Path: path, Offset: e.Start}, e.New, ed.Before, "applyViaPlan")
+		case e.New == "":
+			sub.Delete(ed.Span{Path: path, Start: e.Start, End: e.End}, "applyViaPlan")
+		default:
+			sub.Replace(ed.Span{Path: path, Start: e.Start, End: e.End}, e.New, "applyViaPlan")
+		}
+	}
+	outputs, err := sub.Apply(map[string][]byte{path: src})
+	if err != nil {
+		plan.Warnings.Addf("plan.Apply failed for %s: %v", path, err)
+		return string(src)
+	}
+	return string(outputs[path])
+}
+
+// dropOverlappingEdits sorts edits by Start and drops any whose
+// [Start, End) range overlaps an already-accepted edit. Matches the
+// legacy applyEdits overlap-skip rule.
+func dropOverlappingEdits(edits []edit) []edit {
+	if len(edits) <= 1 {
+		return edits
+	}
+	sorted := make([]edit, len(edits))
+	copy(sorted, edits)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Start != sorted[j].Start {
+			return sorted[i].Start < sorted[j].Start
+		}
+		// At the same start, prefer the WIDER range first so any
+		// narrower contained edits get dropped after it.
+		return sorted[i].End > sorted[j].End
+	})
+	out := sorted[:0:0]
+	pos := 0
+	for _, e := range sorted {
+		if e.Start < pos {
+			continue
+		}
+		out = append(out, e)
+		if e.End > pos {
+			pos = e.End
+		}
+	}
+	return out
+}
+
 // emitCrossFileMoves emits a Move primitive for each cross-file
 // extraction span in resolved. The destination is the sentinel
 // discardPath — only the source-side delete (and the carry of any

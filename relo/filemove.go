@@ -317,7 +317,7 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 			}
 		}
 	}
-	content = applyEditsToString(content, absEdits)
+	content = applyEditsViaPlan(a.plan, src.Path, []byte(content), absEdits)
 
 	// Rewrite the package clause if the destination lives in a different
 	// package. The assembled span above did not touch the package decl,

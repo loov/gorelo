@@ -186,12 +186,7 @@ func (a *assembler) assembleTargets() {
 			// so applying them here is the only place they take effect.
 			edits = append(edits, planEditsInSpan(a.edits, rr.File.Path, s.Start, s.End)...)
 
-			var text string
-			if len(edits) > 0 {
-				text = applyEdits(src[s.Start:s.End], edits)
-			} else {
-				text = string(src[s.Start:s.End])
-			}
+			text := applyEditsViaPlan(a.plan, "<span>", src[s.Start:s.End], edits)
 
 			if isGroupedSpec {
 				text = dedentBlock(text)

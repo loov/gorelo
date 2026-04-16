@@ -424,7 +424,7 @@ func computeExtractedEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved [
 	}
 
 	return extractedEditsResult{
-		edits:   deduplicateEdits(edits),
+		edits:   edits,
 		imports: neededImports,
 		aliases: resultAliases,
 	}
