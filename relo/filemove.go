@@ -284,13 +284,8 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 				New:   e.New,
 			})
 		}
-		for _, e := range structuralDeclEdits(a.ix, rr, s, a.resolved) {
-			absEdits = append(absEdits, edit{
-				Start: s.Start + e.Start,
-				End:   s.Start + e.End,
-				New:   e.New,
-			})
-		}
+		// Detach/attach decl edits live in renames.byFile and are picked
+		// up by the in-span filter below.
 		for impPath := range er.imports {
 			if _, ok := addImports[impPath]; !ok {
 				addImports[impPath] = er.aliases[impPath]

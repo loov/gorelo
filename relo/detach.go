@@ -69,16 +69,21 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 		return
 	}
 
-	// Add declaration edits to renameSet for same-file (rename-only)
-	// operations. Cross-file moves use structuralDeclEdits during
-	// extraction — emitting decl edits here as well would double-apply
-	// the receiver insertion through the in-span rename pass.
+	// Add declaration edits to renameSet unconditionally. For cross-file
+	// moves, the in-span filter in assembleTargets / filemove extracts
+	// these into the relocated span and converts them to span-relative
+	// offsets; the source-side application path swallows them as overlap
+	// against the deleted span. The recvParam is qualified for cross-file
+	// detach so that the receiver type compiles in the target package.
 	filePath := rr.File.Path
-	if !rr.isCrossFileMove() {
-		recvParam := formatRecvAsParam(fd.Recv, ix.Fset, "", "")
-		renames.byFile[filePath] = append(renames.byFile[filePath],
-			detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName)...)
+	var recvParam string
+	if rr.isCrossFileMove() {
+		recvParam = detachRecvParamForTarget(ix, rr, fd, resolved)
+	} else {
+		recvParam = formatRecvAsParam(fd.Recv, ix.Fset, "", "")
 	}
+	renames.byFile[filePath] = append(renames.byFile[filePath],
+		detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName)...)
 
 	// For cross-package moves, the detached function's parameter references
 	// the receiver type. Add the import for the receiver type's final
@@ -354,9 +359,17 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports 
 		return
 	}
 
-	// Add declaration edits to renameSet.
+	// Add declaration edits to renameSet unconditionally. The cross-file
+	// path strips the receiver type's package qualifier when moving into
+	// that type's package (self-import removal); the in-span filter in
+	// assembleTargets / filemove extracts and converts to span-relative
+	// for the relocated copy.
 	filePath := rr.File.Path
-	recvText := attachRecvText(rr.File, ix.Fset, fd, "")
+	unqualifyPkgPath := ""
+	if rr.isCrossFileMove() {
+		unqualifyPkgPath = finalImportPath(rr)
+	}
+	recvText := attachRecvText(rr.File, ix.Fset, fd, unqualifyPkgPath)
 	renames.byFile[filePath] = append(renames.byFile[filePath],
 		attachDeclEdits(ix, rr, fd, recvText, rr.TargetName)...)
 
@@ -523,48 +536,6 @@ func addImportToFile(imports *importSet, ix *mast.Index, filePath, impPath strin
 		}
 	}
 	ic.Add = append(ic.Add, importEntry{Path: impPath})
-}
-
-// structuralDeclEdits computes span-relative edits for the declaration
-// of a detach/attach relo. Used during span extraction in assembleTargets.
-func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo) []edit {
-	if rr.File == nil || s == nil {
-		return nil
-	}
-
-	var absEdits []edit
-
-	if rr.Relo.Detach {
-		fd := findFuncDecl(rr.File.Syntax, rr.DefIdent.Ident)
-		if fd == nil || fd.Recv == nil {
-			return nil
-		}
-		// For cross-package moves, the receiver type may need a package
-		// qualifier and/or substituted name when the type itself is being
-		// concurrently moved or renamed in this run.
-		recvParam := detachRecvParamForTarget(ix, rr, fd, resolved)
-		absEdits = detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName)
-	} else if rr.Relo.MethodOf != "" {
-		fd := findFuncDecl(rr.File.Syntax, rr.DefIdent.Ident)
-		if fd == nil {
-			return nil
-		}
-		// When moving into the receiver type's package, strip its
-		// package qualifier from the receiver (self-import removal).
-		recvText := attachRecvText(rr.File, ix.Fset, fd, finalImportPath(rr))
-		absEdits = attachDeclEdits(ix, rr, fd, recvText, rr.TargetName)
-	}
-
-	// Convert to span-relative offsets.
-	var relEdits []edit
-	for _, e := range absEdits {
-		relEdits = append(relEdits, edit{
-			Start: e.Start - s.Start,
-			End:   e.End - s.Start,
-			New:   e.New,
-		})
-	}
-	return relEdits
 }
 
 // findFuncDecl returns the FuncDecl whose Name matches ident.

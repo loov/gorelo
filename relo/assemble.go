@@ -151,11 +151,11 @@ func (a *assembler) assembleTargets() {
 			}
 
 			// Get rename and cross-target qualification edits for this span.
+			// Detach/attach decl edits live in renames.byFile and are
+			// extracted into the span by the in-span filter below.
 			er := computeExtractedEdits(a.ix, rr, s, a.resolved)
 			edits := er.edits
 
-			// Add structural edits for detach/attach declarations.
-			edits = append(edits, structuralDeclEdits(a.ix, rr, s, a.resolved)...)
 			for impPath := range er.imports {
 				crossTargetImports[impPath] = true
 			}
