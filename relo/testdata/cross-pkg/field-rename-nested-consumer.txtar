@@ -1,0 +1,63 @@
+# Rename a nested field on an exported struct and verify that
+# consumer packages' selector chains through the parent field get updated.
+
+Server#TLS.CertFile=Certificate
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/srv/server.go --
+package srv
+
+type Server struct {
+	Addr string
+	TLS  struct {
+		CertFile string
+		KeyFile  string
+	}
+}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+
+	"example.com/test/srv"
+)
+
+func Show(s *srv.Server) {
+	fmt.Println(s.TLS.CertFile)
+	fmt.Println(s.TLS.KeyFile)
+}
+
+func Configure(s *srv.Server, cert string) {
+	s.TLS.CertFile = cert
+}
+-- golden/srv/server.go --
+package srv
+
+type Server struct {
+	Addr string
+	TLS  struct {
+		Certificate string
+		KeyFile  string
+	}
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"fmt"
+
+	"example.com/test/srv"
+)
+
+func Show(s *srv.Server) {
+	fmt.Println(s.TLS.Certificate)
+	fmt.Println(s.TLS.KeyFile)
+}
+
+func Configure(s *srv.Server, cert string) {
+	s.TLS.Certificate = cert
+}

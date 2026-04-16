@@ -342,6 +342,15 @@ func (c *fieldOwnerCache) lookup(field *types.Var) string {
 	m, ok := c.byScope[scope]
 	if !ok {
 		m = map[fieldKey]string{}
+		var walk func(parent string, st *types.Struct)
+		walk = func(parent string, st *types.Struct) {
+			for f := range st.Fields() {
+				m[fieldKey{pos: f.Pos(), name: f.Name()}] = parent
+				if inner, ok := f.Type().Underlying().(*types.Struct); ok {
+					walk(parent+"."+f.Name(), inner)
+				}
+			}
+		}
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
 			tn, ok := obj.(*types.TypeName)
@@ -352,9 +361,7 @@ func (c *fieldOwnerCache) lookup(field *types.Var) string {
 			if !ok {
 				continue
 			}
-			for f := range st.Fields() {
-				m[fieldKey{pos: f.Pos(), name: f.Name()}] = tn.Name()
-			}
+			walk(tn.Name(), st)
 		}
 		c.byScope[scope] = m
 	}
