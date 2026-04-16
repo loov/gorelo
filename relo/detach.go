@@ -6,8 +6,38 @@ import (
 	"path/filepath"
 	"strings"
 
+	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
+
+// primitivesToEditsOn converts a slice of edit.Primitive values targeting
+// path into the package-local []edit representation. Primitives targeting
+// other paths and Move primitives are dropped — Task 2 uses Plan only as
+// the internal emission API for detach/attach decl edits; whole-Plan
+// application (including Move handling) arrives in a later task.
+func primitivesToEditsOn(prims []ed.Primitive, path string) []edit {
+	var out []edit
+	for _, prim := range prims {
+		switch x := prim.(type) {
+		case ed.Insert:
+			if x.Anchor.Path != path {
+				continue
+			}
+			out = append(out, edit{Start: x.Anchor.Offset, End: x.Anchor.Offset, New: x.Text})
+		case ed.Delete:
+			if x.Span.Path != path {
+				continue
+			}
+			out = append(out, edit{Start: x.Span.Start, End: x.Span.End, New: ""})
+		case ed.Replace:
+			if x.Span.Path != path {
+				continue
+			}
+			out = append(out, edit{Start: x.Span.Start, End: x.Span.End, New: x.Text})
+		}
+	}
+	return out
+}
 
 // computeDetachEdits generates edits for detaching methods (converting to
 // standalone functions) and attaching functions (converting to methods).
@@ -45,7 +75,9 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 	// the receiver insertion through the in-span rename pass.
 	filePath := rr.File.Path
 	if !rr.isCrossFileMove() {
-		renames.byFile[filePath] = append(renames.byFile[filePath], detachDeclEdits(ix, rr, fd)...)
+		recvParam := formatRecvAsParam(fd.Recv, ix.Fset, "", "")
+		renames.byFile[filePath] = append(renames.byFile[filePath],
+			detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName)...)
 	}
 
 	// For cross-package moves, the detached function's parameter references
@@ -128,12 +160,16 @@ func receiverTypeIdent(recv *ast.FieldList) *ast.Ident {
 	return nil
 }
 
-// detachDeclEdits returns edits to convert a method declaration to a function.
-// Edits are in absolute file offsets.
-func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit {
+// detachDeclEdits returns absolute-offset edits that convert a method
+// declaration into a standalone function. recvParam is the receiver
+// text formatted as a function parameter; callers decide whether to
+// qualify it with a package prefix and/or substitute a renamed base
+// type. newName is the function's target identifier name.
+func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvParam, newName string) []edit {
+	p := &ed.Plan{}
 	fset := ix.Fset
 	src := fileContent(rr.File)
-	var edits []edit
+	path := rr.File.Path
 
 	// Remove receiver: from opening paren to closing paren + trailing space.
 	recvOpen := fset.Position(fd.Recv.Opening).Offset
@@ -142,26 +178,49 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit 
 	for recvEnd < len(src) && src[recvEnd] == ' ' {
 		recvEnd++
 	}
-	edits = append(edits, edit{Start: recvOpen, End: recvEnd, New: ""})
+	p.Delete(ed.Span{Path: path, Start: recvOpen, End: recvEnd}, "detach-remove-recv")
 
 	// Rename ident if needed.
-	if rr.TargetName != rr.Group.Name {
+	if newName != fd.Name.Name {
 		nameStart := fset.Position(fd.Name.Pos()).Offset
 		nameEnd := nameStart + len(fd.Name.Name)
-		edits = append(edits, edit{Start: nameStart, End: nameEnd, New: rr.TargetName})
+		p.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd}, newName, "detach-rename")
 	}
 
 	// Insert receiver as first parameter.
-	recvParam := formatRecvAsParam(fd.Recv, fset, "", "")
 	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
 	hasParams := fd.Type.Params != nil && len(fd.Type.Params.List) > 0
 	insertText := recvParam
 	if hasParams {
 		insertText += ", "
 	}
-	edits = append(edits, edit{Start: paramsOpen + 1, End: paramsOpen + 1, New: insertText})
+	p.Insert(ed.Anchor{Path: path, Offset: paramsOpen + 1}, insertText, ed.Before, "detach-insert-param")
 
-	return edits
+	return primitivesToEditsOn(p.Primitives(), path)
+}
+
+// detachRecvParamForTarget returns the receiver text formatted as a
+// parameter for a cross-package detach. When the receiver type is
+// itself being moved or renamed in the same run, the post-operation
+// name and package qualifier are substituted.
+func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) string {
+	fset := ix.Fset
+	tgtDir := finalDir(rr)
+	recvNewName := ""
+	var recvDir string
+	if name, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {
+		recvNewName = name
+		recvDir = filepath.Dir(recvTargetFile)
+	} else {
+		recvDir = filepath.Dir(rr.File.Path)
+	}
+	var pkgQualifier string
+	if recvDir != tgtDir {
+		if recvImportPath := guessImportPath(recvDir); recvImportPath != "" {
+			pkgQualifier = guessImportLocalName(recvImportPath)
+		}
+	}
+	return formatRecvAsParam(fd.Recv, fset, pkgQualifier, recvNewName)
 }
 
 // detachCallSites rewrites call sites from s.Method(args) → Func(s, args)
@@ -297,107 +356,87 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, renames *renameSet, imports 
 
 	// Add declaration edits to renameSet.
 	filePath := rr.File.Path
-	renames.byFile[filePath] = append(renames.byFile[filePath], attachDeclEdits(ix, rr, fd)...)
+	recvText := attachRecvText(rr.File, ix.Fset, fd, "")
+	renames.byFile[filePath] = append(renames.byFile[filePath],
+		attachDeclEdits(ix, rr, fd, recvText, rr.TargetName)...)
 
 	attachCallSites(ix, rr, fd, renames, imports, plan)
 }
 
-// attachDeclEdits returns edits to convert a function declaration to a method.
-// Edits are in absolute file offsets.
-func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit {
+// attachDeclEdits returns absolute-offset edits that convert a function
+// declaration into a method. recvText is the receiver formatted as the
+// field inside the method's receiver parens (typically "(<recvText>)").
+// newName is the target method name.
+func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvText, newName string) []edit {
+	p := &ed.Plan{}
 	fset := ix.Fset
-	src := fileContent(rr.File)
-	var edits []edit
-
+	path := rr.File.Path
 	firstField := fd.Type.Params.List[0]
-	paramStart := fset.Position(firstField.Pos()).Offset
-	paramEnd := fset.Position(firstField.End()).Offset
-	recvText := string(src[paramStart:paramEnd])
 
-	// Replace function name with receiver + name (possibly renamed).
+	// Replace function name with receiver + name.
 	nameStart := fset.Position(fd.Name.Pos()).Offset
 	nameEnd := nameStart + len(fd.Name.Name)
-	edits = append(edits, edit{
-		Start: nameStart, End: nameEnd,
-		New: "(" + recvText + ") " + rr.TargetName,
-	})
+	p.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd},
+		"("+recvText+") "+newName, "attach-rewrite-name")
 
 	// Remove first parameter from parameter list.
 	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
+	paramEnd := fset.Position(firstField.End()).Offset
 	removeEnd := paramEnd
 	if len(fd.Type.Params.List) > 1 {
 		nextStart := fset.Position(fd.Type.Params.List[1].Pos()).Offset
 		removeEnd = nextStart
 	}
-	edits = append(edits, edit{Start: paramsOpen + 1, End: removeEnd, New: ""})
+	p.Delete(ed.Span{Path: path, Start: paramsOpen + 1, End: removeEnd}, "attach-remove-first-param")
 
-	return edits
+	return primitivesToEditsOn(p.Primitives(), path)
 }
 
-// attachDeclEditsTarget is like attachDeclEdits but unqualifies the receiver
-// type when the declaration moves to the receiver type's package (self-import
-// removal). E.g., `s *srv.Server` → `s *Server` when moving into package srv.
-func attachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl) []edit {
-	fset := ix.Fset
-	src := fileContent(rr.File)
-	var edits []edit
-
+// attachRecvText returns the receiver text for an attach declaration.
+// When unqualifyPkgPath is non-empty and matches the first parameter's
+// package qualifier, that qualifier is stripped (self-import removal
+// when moving into the receiver type's package). The default — passing
+// "" — preserves the literal source text.
+func attachRecvText(file *mast.File, fset *token.FileSet, fd *ast.FuncDecl, unqualifyPkgPath string) string {
+	if file == nil {
+		return ""
+	}
 	firstField := fd.Type.Params.List[0]
+	if unqualifyPkgPath != "" {
+		if stripped, ok := strippedRecvText(file, firstField, unqualifyPkgPath); ok {
+			return stripped
+		}
+	}
 	paramStart := fset.Position(firstField.Pos()).Offset
 	paramEnd := fset.Position(firstField.End()).Offset
-	recvText := string(src[paramStart:paramEnd])
+	return string(file.Src[paramStart:paramEnd])
+}
 
-	// When moving to a different package, check if the receiver type's
-	// package qualifier should be removed (self-import).
-	tgtImportPath := finalImportPath(rr)
-	if tgtImportPath != "" {
-		// Check if the first parameter's type references the target package.
-		// Unqualify the type when moving into the receiver's package.
-		if sel, ok := firstField.Type.(*ast.SelectorExpr); ok {
-			if qualIdent, ok := sel.X.(*ast.Ident); ok {
-				if qualImportPath := findImportPathForIdent(rr.File, qualIdent.Name); qualImportPath == tgtImportPath {
-					// Value receiver: "s srv.Server" → "s Server"
-					nameStr := ""
-					if len(firstField.Names) > 0 {
-						nameStr = firstField.Names[0].Name + " "
-					}
-					recvText = nameStr + sel.Sel.Name
-				}
+// strippedRecvText attempts to rewrite a first-parameter field as a
+// receiver with its package qualifier removed, returning the new text
+// and true when the field's type matches unqualifyPkgPath. Handles
+// both value (`s srv.Server`) and pointer (`s *srv.Server`) receivers.
+func strippedRecvText(file *mast.File, firstField *ast.Field, unqualifyPkgPath string) (string, bool) {
+	nameStr := ""
+	if len(firstField.Names) > 0 {
+		nameStr = firstField.Names[0].Name + " "
+	}
+	if sel, ok := firstField.Type.(*ast.SelectorExpr); ok {
+		if qualIdent, ok := sel.X.(*ast.Ident); ok {
+			if findImportPathForIdent(file, qualIdent.Name) == unqualifyPkgPath {
+				return nameStr + sel.Sel.Name, true
 			}
-		} else if star, ok := firstField.Type.(*ast.StarExpr); ok {
-			if sel, ok := star.X.(*ast.SelectorExpr); ok {
-				if qualIdent, ok := sel.X.(*ast.Ident); ok {
-					if qualImportPath := findImportPathForIdent(rr.File, qualIdent.Name); qualImportPath == tgtImportPath {
-						// Pointer receiver: "s *srv.Server" → "s *Server"
-						nameStr := ""
-						if len(firstField.Names) > 0 {
-							nameStr = firstField.Names[0].Name + " "
-						}
-						recvText = nameStr + "*" + sel.Sel.Name
-					}
+		}
+	} else if star, ok := firstField.Type.(*ast.StarExpr); ok {
+		if sel, ok := star.X.(*ast.SelectorExpr); ok {
+			if qualIdent, ok := sel.X.(*ast.Ident); ok {
+				if findImportPathForIdent(file, qualIdent.Name) == unqualifyPkgPath {
+					return nameStr + "*" + sel.Sel.Name, true
 				}
 			}
 		}
 	}
-
-	// Replace function name with receiver + name (possibly renamed).
-	nameStart := fset.Position(fd.Name.Pos()).Offset
-	nameEnd := nameStart + len(fd.Name.Name)
-	edits = append(edits, edit{
-		Start: nameStart, End: nameEnd,
-		New: "(" + recvText + ") " + rr.TargetName,
-	})
-
-	// Remove first parameter from parameter list.
-	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
-	removeEnd := paramEnd
-	if len(fd.Type.Params.List) > 1 {
-		nextStart := fset.Position(fd.Type.Params.List[1].Pos()).Offset
-		removeEnd = nextStart
-	}
-	edits = append(edits, edit{Start: paramsOpen + 1, End: removeEnd, New: ""})
-
-	return edits
+	return "", false
 }
 
 // findImportPathForIdent returns the import path associated with a package
@@ -500,14 +539,20 @@ func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*
 		if fd == nil || fd.Recv == nil {
 			return nil
 		}
-		// For cross-package moves, qualify the receiver type.
-		absEdits = detachDeclEditsTarget(ix, rr, fd, resolved)
+		// For cross-package moves, the receiver type may need a package
+		// qualifier and/or substituted name when the type itself is being
+		// concurrently moved or renamed in this run.
+		recvParam := detachRecvParamForTarget(ix, rr, fd, resolved)
+		absEdits = detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName)
 	} else if rr.Relo.MethodOf != "" {
 		fd := findFuncDecl(rr.File.Syntax, rr.DefIdent.Ident)
 		if fd == nil {
 			return nil
 		}
-		absEdits = attachDeclEditsTarget(ix, rr, fd)
+		// When moving into the receiver type's package, strip its
+		// package qualifier from the receiver (self-import removal).
+		recvText := attachRecvText(rr.File, ix.Fset, fd, finalImportPath(rr))
+		absEdits = attachDeclEdits(ix, rr, fd, recvText, rr.TargetName)
 	}
 
 	// Convert to span-relative offsets.
@@ -520,62 +565,6 @@ func structuralDeclEdits(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*
 		})
 	}
 	return relEdits
-}
-
-// detachDeclEditsTarget is like detachDeclEdits but qualifies the receiver
-// type for cross-package moves. When the receiver type is itself being
-// renamed or moved in the same run, the post-rename name and post-move
-// package qualifier are used.
-func detachDeclEditsTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) []edit {
-	fset := ix.Fset
-	src := fileContent(rr.File)
-	var edits []edit
-
-	// Remove receiver.
-	recvOpen := fset.Position(fd.Recv.Opening).Offset
-	recvClose := fset.Position(fd.Recv.Closing).Offset
-	recvEnd := recvClose + 1
-	for recvEnd < len(src) && src[recvEnd] == ' ' {
-		recvEnd++
-	}
-	edits = append(edits, edit{Start: recvOpen, End: recvEnd, New: ""})
-
-	// Rename func ident if needed.
-	if rr.TargetName != rr.Group.Name {
-		nameStart := fset.Position(fd.Name.Pos()).Offset
-		nameEnd := nameStart + len(fd.Name.Name)
-		edits = append(edits, edit{Start: nameStart, End: nameEnd, New: rr.TargetName})
-	}
-
-	// Determine the receiver type's final name and package qualifier,
-	// taking into account any concurrent rename/move of that type.
-	tgtDir := finalDir(rr)
-	recvNewName := ""
-	var recvDir string
-	if name, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {
-		recvNewName = name
-		recvDir = filepath.Dir(recvTargetFile)
-	} else {
-		recvDir = filepath.Dir(rr.File.Path)
-	}
-	var pkgQualifier string
-	if recvDir != tgtDir {
-		if recvImportPath := guessImportPath(recvDir); recvImportPath != "" {
-			pkgQualifier = guessImportLocalName(recvImportPath)
-		}
-	}
-
-	// Insert receiver as first parameter (possibly qualified and renamed).
-	recvParam := formatRecvAsParam(fd.Recv, fset, pkgQualifier, recvNewName)
-	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
-	hasParams := fd.Type.Params != nil && len(fd.Type.Params.List) > 0
-	insertText := recvParam
-	if hasParams {
-		insertText += ", "
-	}
-	edits = append(edits, edit{Start: paramsOpen + 1, End: paramsOpen + 1, New: insertText})
-
-	return edits
 }
 
 // findFuncDecl returns the FuncDecl whose Name matches ident.
