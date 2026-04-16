@@ -291,13 +291,31 @@ func TestIsPackageScope_GenericFunc(t *testing.T) {
 // a future refactor cannot silently reintroduce the shape-specific
 // bug class behind 4e8fc33.
 
+func TestIsPackageScope_TypeSwitchGuard(t *testing.T) {
+	t.Parallel()
+	ix := loadTestdata(t)
+
+	// The guard ident of `switch tvGuard := v.(type)` is recorded in
+	// info.Implicits rather than info.Defs. After the Implicits pass
+	// in resolveInfo it is registered as a Def and must classify as
+	// function-scope.
+	ids := findIdentsInFunc(ix, "tvGuard", "scope_extras.go", "TypeSwitchGuard")
+	if len(ids) == 0 {
+		t.Fatal("no tvGuard idents in TypeSwitchGuard")
+	}
+	grp := ix.Group(ids[0])
+	if grp == nil {
+		t.Fatal("tvGuard has no group")
+	}
+	if grp.IsPackageScope() {
+		t.Error("type-switch guard 'tvGuard' should NOT be package-scope")
+	}
+}
+
 func TestIsPackageScope_TypeSwitchCaseBody(t *testing.T) {
 	t.Parallel()
 	ix := loadTestdata(t)
 
-	// localInt is declared inside a type-switch case body (not the
-	// guard itself — see the mast limitation note below). It must be
-	// classified as function-scope.
 	ids := findIdentsInFunc(ix, "localInt", "scope_extras.go", "TypeSwitchGuard")
 	if len(ids) == 0 {
 		t.Fatal("no localInt idents in TypeSwitchGuard")

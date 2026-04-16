@@ -89,6 +89,13 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 		addIdent(ix, grp, sel.Sel, qualifiers[sel.Sel], file, Use)
 	}
 
+	// Process type-switch guards. go/types records the implicit
+	// binding for `v := expr.(type)` in info.Implicits keyed by each
+	// case clause, rather than in info.Defs for the guard ident
+	// itself. Register the guard ident as a Def so rewrites that
+	// iterate a group's Def idents see the binding.
+	processTypeSwitchGuards(ix, info, fileMap, qualifiers, byName, fields)
+
 	// Process embedded fields: link the embedded field ident to the
 	// type name's group as well.
 	for ident, obj := range info.Defs {
@@ -110,6 +117,65 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 		grp := findOrCreateGroup(ix, key, typeName)
 		addIdent(ix, grp, ident, qualifiers[ident], file, Use)
 	}
+}
+
+// processTypeSwitchGuards registers the guard ident of every
+// *ast.TypeSwitchStmt as a Def linked to the case-clause implicit
+// object (all case implicits share a position — the guard ident's
+// pos — so they collapse into one group via objectKeyFor's position-
+// based Scope key).
+func processTypeSwitchGuards(ix *Index, info *types.Info, fileMap map[*ast.File]*File, qualifiers map[*ast.Ident]*ast.Ident, byName map[string]*File, fields *fieldOwnerCache) {
+	for astFile := range fileMap {
+		ast.Inspect(astFile, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSwitchStmt)
+			if !ok {
+				return true
+			}
+			guardIdent := typeSwitchGuardIdent(ts)
+			if guardIdent == nil {
+				return true
+			}
+			var obj types.Object
+			if ts.Body != nil {
+				for _, stmt := range ts.Body.List {
+					cc, ok := stmt.(*ast.CaseClause)
+					if !ok {
+						continue
+					}
+					if o := info.Implicits[cc]; o != nil {
+						obj = o
+						break
+					}
+				}
+			}
+			if obj == nil || shouldSkip(obj) {
+				return true
+			}
+			file := fileForIdent(guardIdent, ix.Fset, byName)
+			if file == nil {
+				return true
+			}
+			key := objectKeyFor(obj, fields)
+			grp := findOrCreateGroup(ix, key, obj)
+			addIdent(ix, grp, guardIdent, qualifiers[guardIdent], file, Def)
+			return true
+		})
+	}
+}
+
+// typeSwitchGuardIdent returns the ident on the LHS of a
+// TypeSwitchStmt's assign, or nil when the switch has no bound
+// name (e.g. `switch v.(type) { ... }`).
+func typeSwitchGuardIdent(ts *ast.TypeSwitchStmt) *ast.Ident {
+	assign, ok := ts.Assign.(*ast.AssignStmt)
+	if !ok || len(assign.Lhs) == 0 {
+		return nil
+	}
+	id, ok := assign.Lhs[0].(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	return id
 }
 
 // buildQualifierMap walks the AST to find selector expressions where

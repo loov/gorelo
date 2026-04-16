@@ -277,6 +277,7 @@ func typeCheckFiles(ix *Index, files []parsedFile, fileMap map[*ast.File]*File, 
 			Defs:       map[*ast.Ident]types.Object{},
 			Uses:       map[*ast.Ident]types.Object{},
 			Selections: map[*ast.SelectorExpr]*types.Selection{},
+			Implicits:  map[ast.Node]types.Object{},
 		}
 
 		tpkg := types.NewPackage(pkgPath, pkgName)
