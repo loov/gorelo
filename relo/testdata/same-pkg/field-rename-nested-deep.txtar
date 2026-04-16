@@ -1,0 +1,55 @@
+# Rename a field three levels deep inside nested anonymous structs.
+# Every selector chain through the parent fields must be updated.
+
+Config#Network.Proxy.Host=Hostname
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/config.go --
+package pkg
+
+import "fmt"
+
+type Config struct {
+	Name    string
+	Network struct {
+		Proxy struct {
+			Host string
+			Port int
+		}
+	}
+}
+
+func Configure(c *Config, host string, port int) {
+	c.Network.Proxy.Host = host
+	c.Network.Proxy.Port = port
+}
+
+func Describe(c *Config) string {
+	return fmt.Sprintf("%s:%d", c.Network.Proxy.Host, c.Network.Proxy.Port)
+}
+-- golden/config.go --
+package pkg
+
+import "fmt"
+
+type Config struct {
+	Name    string
+	Network struct {
+		Proxy struct {
+			Hostname string
+			Port int
+		}
+	}
+}
+
+func Configure(c *Config, host string, port int) {
+	c.Network.Proxy.Hostname = host
+	c.Network.Proxy.Port = port
+}
+
+func Describe(c *Config) string {
+	return fmt.Sprintf("%s:%d", c.Network.Proxy.Hostname, c.Network.Proxy.Port)
+}

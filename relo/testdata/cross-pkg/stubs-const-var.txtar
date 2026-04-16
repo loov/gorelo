@@ -1,0 +1,61 @@
+# Const and var moved cross-package with @stubs. Consts get a //go:fix
+# inline stub; vars get a Deprecated forwarding alias.
+
+@stubs
+MaxRetries -> dst/config.go
+DefaultTimeout -> dst/config.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/config.go --
+package src
+
+// MaxRetries is the default retry budget.
+const MaxRetries = 3
+
+// DefaultTimeout is the default timeout in seconds.
+var DefaultTimeout = 30
+
+// Other stays behind.
+func Other() {}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Budget() int {
+	return src.MaxRetries + src.DefaultTimeout
+}
+-- golden/src/config.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// Other stays behind.
+func Other() {}
+
+//go:fix inline
+const MaxRetries = dst.MaxRetries
+
+// Deprecated: Use dst.DefaultTimeout instead.
+var DefaultTimeout = dst.DefaultTimeout
+-- golden/dst/config.go --
+package dst
+
+// MaxRetries is the default retry budget.
+const MaxRetries = 3
+
+// DefaultTimeout is the default timeout in seconds.
+var DefaultTimeout = 30
+-- golden/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Budget() int {
+	return src.MaxRetries + src.DefaultTimeout
+}

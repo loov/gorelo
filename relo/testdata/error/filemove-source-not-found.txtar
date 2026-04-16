@@ -1,0 +1,14 @@
+# Error: file-move source must exist in the loaded packages.
+
+missing.go -> dst/moved.go
+
+@error file-move source
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/a.go --
+package src
+
+func A() {}

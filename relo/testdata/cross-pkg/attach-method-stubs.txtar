@@ -1,0 +1,67 @@
+# Attach a function as a method and move cross-package with @stubs enabled.
+# Attach changes the declaration kind (func→method), so no stub can be
+# emitted; call sites are rewritten directly just like the non-stubs case.
+
+@stubs
+Start=Server#Start -> srv/methods.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/util/funcs.go --
+package util
+
+import "example.com/test/srv"
+
+// Start starts the server.
+func Start(s *srv.Server) error {
+	return nil
+}
+
+// Keep keeps util alive so the file is not deleted.
+func Keep() {}
+-- input/srv/server.go --
+package srv
+
+type Server struct{}
+-- input/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/srv"
+	"example.com/test/util"
+)
+
+func Do() {
+	s := &srv.Server{}
+	util.Start(s)
+}
+-- golden/util/funcs.go --
+package util
+
+
+// Keep keeps util alive so the file is not deleted.
+func Keep() {}
+-- golden/srv/server.go --
+package srv
+
+type Server struct{}
+-- golden/srv/methods.go --
+package srv
+
+// Start starts the server.
+func (s *Server) Start() error {
+	return nil
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import (
+	"example.com/test/srv"
+)
+
+func Do() {
+	s := &srv.Server{}
+	s.Start()
+}

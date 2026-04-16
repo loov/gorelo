@@ -1,0 +1,14 @@
+# Error: file-move source and destination cannot be the same file.
+
+a.go -> a.go
+
+@error source and destination are the same file
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/a.go --
+package test
+
+func A() {}

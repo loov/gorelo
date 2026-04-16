@@ -1,0 +1,15 @@
+# Error: the same source file cannot appear in two file-move rules.
+
+a.go -> dst/one.go
+a.go -> dst/two.go
+
+@error listed more than once
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/a.go --
+package test
+
+func A() {}

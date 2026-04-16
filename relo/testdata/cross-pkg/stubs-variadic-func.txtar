@@ -1,0 +1,63 @@
+# Variadic function moved cross-package with @stubs. The inline forwarder
+# must spread the variadic parameter with "..." to preserve semantics.
+
+@stubs
+Sum -> dst/math.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/math.go --
+package src
+
+// Sum adds base plus every extra value.
+func Sum(base int, extras ...int) int {
+	t := base
+	for _, x := range extras {
+		t += x
+	}
+	return t
+}
+
+// Other stays behind.
+func Other() {}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Total() int {
+	return src.Sum(1, 2, 3, 4)
+}
+-- golden/src/math.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// Other stays behind.
+func Other() {}
+
+//go:fix inline
+func Sum(base int, extras ...int) int { return dst.Sum(base, extras...) }
+-- golden/dst/math.go --
+package dst
+
+// Sum adds base plus every extra value.
+func Sum(base int, extras ...int) int {
+	t := base
+	for _, x := range extras {
+		t += x
+	}
+	return t
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Total() int {
+	return src.Sum(1, 2, 3, 4)
+}

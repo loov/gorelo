@@ -1,0 +1,17 @@
+# Error: two different declarations renamed to the same name at the
+# same target directory.
+
+Foo=Same Bar=Same -> combined.go
+
+@error name collision: multiple declarations named Same
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/main.go --
+package mypkg
+
+func Foo() {}
+
+func Bar() {}

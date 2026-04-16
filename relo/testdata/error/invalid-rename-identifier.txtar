@@ -1,0 +1,14 @@
+# Error: rename target must be a valid Go identifier.
+
+Foo=123Bar
+
+@error rename target "123Bar" is not a valid Go identifier
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/main.go --
+package mypkg
+
+func Foo() {}

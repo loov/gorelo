@@ -1,0 +1,63 @@
+# Generic function moved cross-package with @stubs. The inline forwarder
+# must preserve the type parameter list and forward type arguments.
+
+@stubs
+Map -> dst/maps.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.21
+-- input/src/maps.go --
+package src
+
+// Map applies fn to each element of xs.
+func Map[T any, U any](xs []T, fn func(T) U) []U {
+	out := make([]U, len(xs))
+	for i, x := range xs {
+		out[i] = fn(x)
+	}
+	return out
+}
+
+// Other stays behind.
+func Other() {}
+-- input/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Double() []int {
+	return src.Map([]int{1, 2, 3}, func(x int) int { return x * 2 })
+}
+-- golden/src/maps.go --
+package src
+
+import (
+	"example.com/test/dst"
+)
+
+// Other stays behind.
+func Other() {}
+
+//go:fix inline
+func Map[T any, U any](xs []T, fn func(T) U) []U { return dst.Map[T, U](xs, fn) }
+-- golden/dst/maps.go --
+package dst
+
+// Map applies fn to each element of xs.
+func Map[T any, U any](xs []T, fn func(T) U) []U {
+	out := make([]U, len(xs))
+	for i, x := range xs {
+		out[i] = fn(x)
+	}
+	return out
+}
+-- golden/consumer/consumer.go --
+package consumer
+
+import "example.com/test/src"
+
+func Double() []int {
+	return src.Map([]int{1, 2, 3}, func(x int) int { return x * 2 })
+}
