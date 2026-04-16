@@ -13,7 +13,7 @@ import (
 // expressions and imports. Edits are emitted onto the shared edits Plan;
 // import additions go into the importSet so that the assembly phase
 // applies them uniformly.
-func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, opts *Options, plan *Plan) {
+func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, movedSpans movedSpanIndex, edits *ed.Plan, imports *importSet, opts *Options, plan *Plan) {
 	type moveInfo struct {
 		srcPkgPath string // source package import path
 		tgtPkgPath string // target package import path
@@ -79,9 +79,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	if len(movedGroups) == 0 {
 		return
 	}
-
-	// Build moved span lookup so we can skip idents inside extracted code.
-	movedSpans := buildMovedSpanIndex(resolved, spans)
 
 	// Iterate movedGroups in a stable order so addImportEntry's
 	// first-come-first-served alias collision resolution gives
