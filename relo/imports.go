@@ -145,6 +145,19 @@ func computeImports(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	return is
 }
 
+// addImportEntry registers entry as an import to add to filePath, deduping
+// by Path. Used by emission sites that previously called ensureImport
+// inline; applyImportsPass picks the entries up after assembly.
+func addImportEntry(is *importSet, filePath string, entry importEntry) {
+	ic := is.ensureFile(filePath)
+	for _, existing := range ic.Add {
+		if existing.Path == entry.Path {
+			return
+		}
+	}
+	ic.Add = append(ic.Add, entry)
+}
+
 func (is *importSet) ensureFile(path string) *importChange {
 	ic, ok := is.byFile[path]
 	if !ok {

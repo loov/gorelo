@@ -328,30 +328,16 @@ func (a *assembler) renderMovedFile(info *fileMoveInfo, targetPkgName string, cr
 		content = rewritePackageClause(content, targetPkgName)
 	}
 
-	// Add any imports the pipeline flagged for the new path.
-	if ic != nil {
-		for _, entry := range ic.Add {
-			var w Warning
-			content, w = ensureImport(content, entry)
-			if w.Message != "" {
-				a.plan.Warnings.Add(w)
-			}
-		}
-	}
-
-	// Add cross-target imports collected from computeExtractedEdits
+	// Cross-target imports collected from computeExtractedEdits
 	// (e.g., a reference to a sibling decl that stayed behind in the
-	// source package).
+	// source package) are registered for applyImportsPass.
 	for _, impPath := range sortedKeys(addImports) {
 		if impPath == targetImportPath {
 			continue
 		}
-		entry := importEntry{Path: impPath, Alias: addImports[impPath]}
-		var w Warning
-		content, w = ensureImport(content, entry)
-		if w.Message != "" {
-			a.plan.Warnings.Add(w)
-		}
+		addImportEntry(a.imports, info.move.To, importEntry{
+			Path: impPath, Alias: addImports[impPath],
+		})
 	}
 
 	// If the moved file referenced its own origin package through a

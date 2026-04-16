@@ -61,6 +61,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 	a.assembleTargets()
 	a.assembleSources()
 	a.assembleRenames()
+	a.applyImportsPass()
 
 	// Final pass: remove unused imports from all emitted files.
 	for i, fe := range a.es.Edits() {
@@ -70,6 +71,39 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		a.es.edits[i].Content = removeUnusedImportsText(fe.Content)
 	}
 	plan.Edits = a.es.Edits()
+}
+
+// applyImportsPass adds importSet entries to each affected file's
+// post-Apply content. It runs after the main assembly so it operates
+// on the final layout produced by plan.Apply (and the legacy applier
+// paths that remain), and before removeUnusedImportsText so any
+// imports it adds that are actually unused get pruned in the same
+// run. Each entry goes through ensureImport, which checks for an
+// existing import of the same path (no-op or alias mismatch warning).
+func (a *assembler) applyImportsPass() {
+	for _, filePath := range sortedKeys(a.imports.byFile) {
+		ic := a.imports.byFile[filePath]
+		if ic == nil || len(ic.Add) == 0 {
+			continue
+		}
+		content, ok := a.es.Get(filePath)
+		if !ok {
+			continue
+		}
+		sorted := make([]importEntry, len(ic.Add))
+		copy(sorted, ic.Add)
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i].Path < sorted[j].Path
+		})
+		for _, entry := range sorted {
+			var warn Warning
+			content, warn = ensureImport(content, entry)
+			if warn.Message != "" {
+				a.plan.Warnings.Add(warn)
+			}
+		}
+		a.es.Set(FileEdit{Path: filePath, Content: content})
+	}
 }
 
 func (a *assembler) assembleTargets() {
@@ -289,15 +323,7 @@ func (a *assembler) assembleTargets() {
 				}
 			}
 
-			if ic != nil {
-				for _, entry := range ic.Add {
-					var warn Warning
-					content, warn = ensureImport(content, entry)
-					if warn.Message != "" {
-						a.plan.Warnings.Add(warn)
-					}
-				}
-			}
+			// Imports are added by applyImportsPass after assembly.
 			if !strings.HasSuffix(content, "\n") {
 				content += "\n"
 			}
@@ -305,10 +331,9 @@ func (a *assembler) assembleTargets() {
 			content += newDecls
 			a.es.Set(FileEdit{Path: targetPath, Content: content})
 		} else {
-			// New file.
+			// New file: package + decls only. applyImportsPass adds the
+			// import block.
 			targetPkgName := determineTargetPkgName(a.ix, rrs)
-
-			// Collect build constraint.
 			constraint := collectBuildConstraint(rrs)
 
 			var b strings.Builder
@@ -320,26 +345,6 @@ func (a *assembler) assembleTargets() {
 			b.WriteString("package ")
 			b.WriteString(targetPkgName)
 			b.WriteString("\n")
-
-			if ic != nil && len(ic.Add) > 0 {
-				sortedImports := make([]importEntry, len(ic.Add))
-				copy(sortedImports, ic.Add)
-				sort.Slice(sortedImports, func(i, j int) bool {
-					return sortedImports[i].Path < sortedImports[j].Path
-				})
-				b.WriteString("\nimport (\n")
-				for _, entry := range sortedImports {
-					b.WriteString("\t")
-					if entry.Alias != "" {
-						b.WriteString(entry.Alias)
-						b.WriteString(" ")
-					}
-					b.WriteString(strconv.Quote(entry.Path))
-					b.WriteString("\n")
-				}
-				b.WriteString(")\n")
-			}
-
 			b.WriteString(newDecls)
 			a.es.Set(FileEdit{Path: targetPath, IsNew: true, Content: b.String()})
 		}
@@ -427,24 +432,20 @@ func (a *assembler) assembleSources() {
 				a.plan.Warnings.Add(ar.Warnings...)
 				if len(ar.Stubs) > 0 {
 					newSrc += "\n" + strings.Join(ar.Stubs, "\n\n") + "\n"
-					// Add the import for the target package.
+					// Register the import for applyImportsPass.
 					targetImportPath := guessImportPath(tDir)
 					if targetImportPath != "" {
 						entry := importEntry{Path: targetImportPath}
 						if ar.ImportAlias != "" {
 							entry.Alias = ar.ImportAlias
 						}
-						newSrc, _ = ensureImport(newSrc, entry)
+						addImportEntry(a.imports, sourcePath, entry)
 					}
 				}
 			}
 		}
-
-		// Add imports needed by consumer edits (e.g., source-file references
-		// to declarations that moved to a different package).
-		if ic := a.imports.byFile[sourcePath]; ic != nil {
-			newSrc = applyImportEntries(newSrc, ic.Add)
-		}
+		// Imports needed by consumer edits or for source-stay
+		// references are added by applyImportsPass.
 
 		// Clean up.
 		newSrc = removeEmptyDeclBlocks(newSrc)
@@ -478,13 +479,9 @@ func (a *assembler) assembleRenames() {
 		consumerPaths[filePath] = true
 	}
 
-	for _, filePath := range alreadyEmitted {
-		content, _ := a.es.Get(filePath)
-		if ic, ok := a.imports.byFile[filePath]; ok {
-			content = applyImportEntries(content, ic.Add)
-		}
-		a.es.Set(FileEdit{Path: filePath, Content: content})
-	}
+	// alreadyEmitted files were set by assembleTargets; their imports
+	// are added by applyImportsPass after all assembly steps.
+	_ = alreadyEmitted
 
 	if len(consumerPaths) == 0 {
 		return
@@ -511,11 +508,8 @@ func (a *assembler) assembleRenames() {
 	}
 
 	for _, filePath := range fileOrder {
-		content := string(outputs[filePath])
-		if ic, ok := a.imports.byFile[filePath]; ok {
-			content = applyImportEntries(content, ic.Add)
-		}
-		a.es.Set(FileEdit{Path: filePath, Content: content})
+		// Imports are added by applyImportsPass after assembly.
+		a.es.Set(FileEdit{Path: filePath, Content: string(outputs[filePath])})
 	}
 }
 
@@ -688,19 +682,6 @@ func collectBuildConstraint(rrs []*resolvedRelo) string {
 		return c
 	}
 	return ""
-}
-
-// applyImportEntries adds each import entry to src in sorted order.
-func applyImportEntries(src string, entries []importEntry) string {
-	sorted := make([]importEntry, len(entries))
-	copy(sorted, entries)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Path < sorted[j].Path
-	})
-	for _, entry := range sorted {
-		src, _ = ensureImport(src, entry)
-	}
-	return src
 }
 
 // ensureImport adds an import to the source if not already present.
