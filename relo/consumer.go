@@ -8,26 +8,12 @@ import (
 	"github.com/loov/gorelo/mast"
 )
 
-// emitConsumerEdit translates a consumer-built {Start,End,New} edit into
-// the equivalent Plan primitive on path.
-func emitConsumerEdit(edits *ed.Plan, path string, e edit, origin string) {
-	switch {
-	case e.Start == e.End:
-		edits.Insert(ed.Anchor{Path: path, Offset: e.Start}, e.New, ed.Before, origin)
-	case e.New == "":
-		edits.Delete(ed.Span{Path: path, Start: e.Start, End: e.End}, origin)
-	default:
-		edits.Replace(ed.Span{Path: path, Start: e.Start, End: e.End}, e.New, origin)
-	}
-}
-
 // computeConsumerEdits finds files in the index that reference moved groups
 // from external packages and generates edits to update their qualifier
 // expressions and imports. Edits are emitted onto the shared edits Plan;
 // import additions go into the importSet so that the assembly phase
 // applies them uniformly.
 func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, opts *Options, plan *Plan) {
-	// Build lookup structures.
 	type moveInfo struct {
 		srcPkgPath string // source package import path
 		tgtPkgPath string // target package import path
@@ -94,82 +80,68 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 		return
 	}
 
-	// Scan all Use idents in moved groups looking for consumer references.
-	// A consumer reference is a Use ident in a file that is neither a source
-	// nor a target file.
-
-	// Collect edits per consumer file.
-	type fileEdits struct {
-		qualifierEdits []edit
-		nameEdits      []edit
-		addImports     map[string]string // target import path -> target dir
-	}
-	byFile := make(map[string]*fileEdits)
-
-	ensureFile := func(path string) *fileEdits {
-		fe, ok := byFile[path]
-		if !ok {
-			fe = &fileEdits{
-				addImports: make(map[string]string),
-			}
-			byFile[path] = fe
-		}
-		return fe
-	}
-
 	// Build moved span lookup so we can skip idents inside extracted code.
 	movedSpans := buildMovedSpanIndex(resolved, spans)
 
-	for grp, info := range movedGroups {
+	// Iterate movedGroups in a stable order so addImportEntry's
+	// first-come-first-served alias collision resolution gives
+	// deterministic results across runs.
+	sortedGroups := make([]*mast.Group, 0, len(movedGroups))
+	for grp := range movedGroups {
+		sortedGroups = append(sortedGroups, grp)
+	}
+	sort.Slice(sortedGroups, func(i, j int) bool {
+		if sortedGroups[i].Pkg != sortedGroups[j].Pkg {
+			return sortedGroups[i].Pkg < sortedGroups[j].Pkg
+		}
+		return sortedGroups[i].Name < sortedGroups[j].Name
+	})
+
+	emit := func(filePath string, e edit, origin string) {
+		switch {
+		case e.Start == e.End:
+			edits.Insert(ed.Anchor{Path: filePath, Offset: e.Start}, e.New, ed.Before, origin)
+		case e.New == "":
+			edits.Delete(ed.Span{Path: filePath, Start: e.Start, End: e.End}, origin)
+		default:
+			edits.Replace(ed.Span{Path: filePath, Start: e.Start, End: e.End}, e.New, origin)
+		}
+	}
+
+	for _, grp := range sortedGroups {
 		if detachGroups[grp] {
 			continue
 		}
+		info := movedGroups[grp]
 		for _, id := range grp.Idents {
 			if id.Kind != mast.Use || id.File == nil {
 				continue
 			}
 			filePath := id.File.Path
 			inTargetPkg := groupTargetDirs[grp][filepath.Dir(filePath)]
+			identOff := ix.Fset.Position(id.Ident.Pos()).Offset
+			identEnd := identOff + len(id.Ident.Name)
 
 			// File is in the target package: the declaration is
 			// becoming local. Unqualify qualified references (e.g.,
 			// src.Greet -> Greet) and apply renames if needed.
-			// Unqualified references already work as-is.
 			if inTargetPkg {
 				if id.Qualifier == nil {
-					// Already unqualified; apply rename if needed.
-					if info.tgtName != grp.Name {
-						identOff := ix.Fset.Position(id.Ident.Pos()).Offset
-						identEnd := identOff + len(id.Ident.Name)
-						if movedSpans.Contains(filePath, identOff, identEnd) {
-							continue
-						}
-						fe := ensureFile(filePath)
-						fe.nameEdits = append(fe.nameEdits, edit{
-							Start: identOff,
-							End:   identEnd,
-							New:   info.tgtName,
-						})
+					if info.tgtName == grp.Name {
+						continue
 					}
+					if movedSpans.Contains(filePath, identOff, identEnd) {
+						continue
+					}
+					emit(filePath, edit{Start: identOff, End: identEnd, New: info.tgtName}, "consumer-name")
 					continue
 				}
 				// Qualified reference (e.g., src.Greet): remove qualifier.
 				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
 				selOff := ix.Fset.Position(id.Ident.Pos()).Offset
-				fe := ensureFile(filePath)
-				fe.qualifierEdits = append(fe.qualifierEdits, edit{
-					Start: qualOff,
-					End:   selOff, // removes "src."
-					New:   "",
-				})
-				// Apply rename if needed.
+				emit(filePath, edit{Start: qualOff, End: selOff, New: ""}, "consumer-qualifier")
 				if info.tgtName != grp.Name {
-					identEnd := selOff + len(id.Ident.Name)
-					fe.nameEdits = append(fe.nameEdits, edit{
-						Start: selOff,
-						End:   identEnd,
-						New:   info.tgtName,
-					})
+					emit(filePath, edit{Start: selOff, End: selOff + len(id.Ident.Name), New: info.tgtName}, "consumer-name")
 				}
 				continue
 			}
@@ -180,27 +152,21 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			// When stubs are enabled, the aliases handle backward
 			// compatibility, so qualification is not needed — unless
 			// the group comes from a whole-file move, which leaves no
-			// source file to hold the stubs.
-			//
-			// Methods and fields travel with their parent type and are
-			// accessed through instances, not as bare identifiers.
+			// source file to hold the stubs. Methods and fields travel
+			// with their parent type and are accessed through
+			// instances, not as bare identifiers.
 			stubsApply := opts.stubsEnabled() && !fileMoveGroups[grp]
 			if id.Qualifier == nil && !stubsApply && !grp.Kind.TravelsWithType() {
-				identOff := ix.Fset.Position(id.Ident.Pos()).Offset
-				identEnd := identOff + len(id.Ident.Name)
-
 				if movedSpans.Contains(filePath, identOff, identEnd) {
 					continue // inside extracted code, handled during assembly
 				}
-
-				fe := ensureFile(filePath)
 				tgtLocalName := packageLocalName(ix, info.tgtDir)
-				fe.nameEdits = append(fe.nameEdits, edit{
+				emit(filePath, edit{
 					Start: identOff,
 					End:   identEnd,
 					New:   tgtLocalName + "." + info.tgtName,
-				})
-				fe.addImports[info.tgtPkgPath] = info.tgtDir
+				}, "consumer-name")
+				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 				continue
 			}
 
@@ -212,73 +178,27 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			if id.Qualifier == nil || (opts.stubsEnabled() && !fileMoveGroups[grp]) {
 				continue
 			}
-
-			// Skip references inside extracted code; the qualifier
-			// rewrite there is handled by emitCrossFileExtraction.
-			identOff := ix.Fset.Position(id.Ident.Pos()).Offset
-			identEnd := identOff + len(id.Ident.Name)
 			if movedSpans.Contains(filePath, identOff, identEnd) {
 				continue
 			}
 
-			fe := ensureFile(filePath)
-
-			// Determine what the new qualifier text should be.
-			// Use the actual package name from the index when available.
 			tgtLocalName := packageLocalName(ix, info.tgtDir)
-
-			// Edit the qualifier ident (e.g., "oldpkg" -> "newpkg").
 			qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
 			qualEnd := qualOff + len(id.Qualifier.Name)
 			if id.Qualifier.Name != tgtLocalName {
-				fe.qualifierEdits = append(fe.qualifierEdits, edit{
-					Start: qualOff,
-					End:   qualEnd,
-					New:   tgtLocalName,
-				})
+				emit(filePath, edit{Start: qualOff, End: qualEnd, New: tgtLocalName}, "consumer-qualifier")
 			}
-
-			// Edit the ident name if it was renamed.
 			if info.tgtName != grp.Name {
-				fe.nameEdits = append(fe.nameEdits, edit{
-					Start: identOff,
-					End:   identEnd,
-					New:   info.tgtName,
-				})
+				emit(filePath, edit{Start: identOff, End: identEnd, New: info.tgtName}, "consumer-name")
 			}
-
-			fe.addImports[info.tgtPkgPath] = info.tgtDir
+			addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 		}
 	}
 
-	// Emit consumer edits onto the shared Plan and add target imports.
-	// Process files in sorted order for deterministic output. Note that
-	// computeRenames already skips cross-package-moved groups, so the
-	// qualifier/name edits below have no overlapping rename emissions to
-	// supersede.
-	sortedConsumerFiles := sortedKeys(byFile)
-	for _, filePath := range sortedConsumerFiles {
-		fe := byFile[filePath]
-		for _, e := range fe.qualifierEdits {
-			emitConsumerEdit(edits, filePath, e, "consumer-qualifier")
-		}
-		for _, e := range fe.nameEdits {
-			emitConsumerEdit(edits, filePath, e, "consumer-name")
-		}
-
-		// Register target imports in sorted order. addImportEntry
-		// dedups against the destination's existing+queued imports
-		// and auto-sets aliases when the real pkg name differs from
-		// the path basename.
-		for _, tgtPath := range sortedKeys(fe.addImports) {
-			addImportEntry(imports, ix, filePath, importEntry{Path: tgtPath})
-		}
-
-		// Sort added imports for deterministic output.
-		if ic := imports.byFile[filePath]; ic != nil {
-			sort.Slice(ic.Add, func(i, j int) bool {
-				return ic.Add[i].Path < ic.Add[j].Path
-			})
-		}
+	// Sort each affected file's queued imports for deterministic output.
+	for _, ic := range imports.byFile {
+		sort.Slice(ic.Add, func(i, j int) bool {
+			return ic.Add[i].Path < ic.Add[j].Path
+		})
 	}
 }
