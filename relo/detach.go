@@ -355,18 +355,16 @@ func strippedRecvText(file *mast.File, firstField *ast.Field, unqualifyPkgPath s
 	if len(firstField.Names) > 0 {
 		nameStr = firstField.Names[0].Name + " "
 	}
-	if sel, ok := firstField.Type.(*ast.SelectorExpr); ok {
+	typ := firstField.Type
+	prefix := ""
+	if star, ok := typ.(*ast.StarExpr); ok {
+		typ = star.X
+		prefix = "*"
+	}
+	if sel, ok := typ.(*ast.SelectorExpr); ok {
 		if qualIdent, ok := sel.X.(*ast.Ident); ok {
 			if findImportPathForIdent(file, qualIdent.Name) == unqualifyPkgPath {
-				return nameStr + sel.Sel.Name, true
-			}
-		}
-	} else if star, ok := firstField.Type.(*ast.StarExpr); ok {
-		if sel, ok := star.X.(*ast.SelectorExpr); ok {
-			if qualIdent, ok := sel.X.(*ast.Ident); ok {
-				if findImportPathForIdent(file, qualIdent.Name) == unqualifyPkgPath {
-					return nameStr + "*" + sel.Sel.Name, true
-				}
+				return nameStr + prefix + sel.Sel.Name, true
 			}
 		}
 	}
