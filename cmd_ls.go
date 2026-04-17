@@ -7,7 +7,9 @@ import (
 	"go/ast"
 	"go/token"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/zeebo/clingy"
 
@@ -20,12 +22,24 @@ import (
 
 type cmdLs struct {
 	jsonOutput bool
+	showRefs   bool
+	showDeps   bool
 	args       []string
 }
 
 func (c *cmdLs) Setup(params clingy.Parameters) {
 	c.jsonOutput = params.Flag("json", "emit JSON output", false,
 		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	c.showRefs = params.Flag("refs", "include reference counts", false,
+		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	c.showDeps = params.Flag("deps", "include dependency names", false,
+		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	detail := params.Flag("detail", "include both refs and deps", false,
+		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	if detail {
+		c.showRefs = true
+		c.showDeps = true
+	}
 	c.args = params.Arg("specifier", "declaration specifier (e.g. Server, ./pkg.Name, file.go:Name)",
 		clingy.Repeated, clingy.Optional).([]string)
 }
@@ -50,6 +64,10 @@ func (c *cmdLs) Execute(ctx context.Context) error {
 			return err
 		}
 		files = collectDecls(ix, absDir, filter)
+	}
+
+	if c.showRefs || c.showDeps {
+		enrichDecls(ix, files, c.showRefs, c.showDeps)
 	}
 
 	w := clingy.Stdout(ctx)
@@ -79,8 +97,15 @@ func (c *cmdLs) Execute(ctx context.Context) error {
 			if d.Lines == 1 {
 				lines = "line"
 			}
-			fmt.Fprintf(w, "  %-7s %-30s %d:%d\t%d %s\n",
-				d.Kind, name, d.Line, d.EndLine, d.Lines, lines)
+			extra := ""
+			if d.Refs != nil {
+				extra += fmt.Sprintf("  %d refs", *d.Refs)
+			}
+			if len(d.Deps) > 0 {
+				extra += "  deps: " + strings.Join(d.Deps, ", ")
+			}
+			fmt.Fprintf(w, "  %-7s %-30s %d:%d\t%d %s%s\n",
+				d.Kind, name, d.Line, d.EndLine, d.Lines, lines, extra)
 		}
 	}
 	return nil
@@ -132,12 +157,16 @@ type lsFile struct {
 }
 
 type lsEntry struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	Receiver string `json:"receiver,omitempty"`
-	Line     int    `json:"line"`
-	EndLine  int    `json:"end"`
-	Lines    int    `json:"lines"`
+	Name     string   `json:"name"`
+	Kind     string   `json:"kind"`
+	Receiver string   `json:"receiver,omitempty"`
+	Line     int      `json:"line"`
+	EndLine  int      `json:"end"`
+	Lines    int      `json:"lines"`
+	Refs     *int     `json:"refs,omitempty"`
+	Deps     []string `json:"deps,omitempty"`
+
+	ident *ast.Ident // defining ident, not serialized
 }
 
 func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
@@ -155,8 +184,9 @@ func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
 				switch d := decl.(type) {
 				case *ast.FuncDecl:
 					entry := lsEntry{
-						Name: d.Name.Name,
-						Kind: "func",
+						Name:  d.Name.Name,
+						Kind:  "func",
+						ident: d.Name,
 					}
 					if d.Recv != nil {
 						entry.Kind = "method"
@@ -181,7 +211,7 @@ func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
 							if !filter.match(s.Name.Name, kind, "") {
 								continue
 							}
-							entry := lsEntry{Name: s.Name.Name, Kind: kind}
+							entry := lsEntry{Name: s.Name.Name, Kind: kind, ident: s.Name}
 							if singleSpec {
 								entry.Line, entry.EndLine = declLines(ix.Fset, d, d.Doc)
 							} else {
@@ -194,7 +224,7 @@ func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
 								if !filter.match(name.Name, kind, "") {
 									continue
 								}
-								entry := lsEntry{Name: name.Name, Kind: kind}
+								entry := lsEntry{Name: name.Name, Kind: kind, ident: name}
 								if singleSpec {
 									entry.Line, entry.EndLine = declLines(ix.Fset, d, d.Doc)
 								} else {
@@ -223,6 +253,77 @@ func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
 		}
 	}
 	return files
+}
+
+// enrichDecls populates Refs and Deps on each entry by looking up the
+// declaration in the index.
+func enrichDecls(ix *mast.Index, files []lsFile, refs, deps bool) {
+	for fi := range files {
+		for di := range files[fi].Decls {
+			d := &files[fi].Decls[di]
+			if d.ident == nil {
+				continue
+			}
+
+			grp := ix.Group(d.ident)
+			if grp == nil {
+				continue
+			}
+
+			if refs {
+				n := countRefs(grp)
+				d.Refs = &n
+			}
+
+			if deps {
+				defIdent := grp.DefIdent()
+				if defIdent == nil || defIdent.File == nil {
+					continue
+				}
+				node := findDeclNode(defIdent.File.Syntax, d.ident)
+				if node == nil {
+					continue
+				}
+				d.Deps = collectDeclDeps(ix, node, grp)
+			}
+		}
+	}
+}
+
+func countRefs(grp *mast.Group) int {
+	n := 0
+	for _, id := range grp.Idents {
+		if id.Kind == mast.Use {
+			n++
+		}
+	}
+	return n
+}
+
+func collectDeclDeps(ix *mast.Index, node ast.Node, self *mast.Group) []string {
+	seen := map[*mast.Group]bool{self: true}
+	var names []string
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		ref := ix.Group(ident)
+		if ref == nil || seen[ref] || !ref.IsPackageScope() {
+			return true
+		}
+		// Only include types, funcs, vars, consts — skip fields and methods.
+		switch ref.Kind {
+		case mast.TypeName, mast.Func, mast.Var, mast.Const:
+			seen[ref] = true
+			names = append(names, ref.Name)
+		}
+		return true
+	})
+
+	sort.Strings(names)
+	return names
 }
 
 func declLines(fset *token.FileSet, node ast.Node, doc *ast.CommentGroup) (start, end int) {

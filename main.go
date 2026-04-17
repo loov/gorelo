@@ -60,6 +60,7 @@ Examples:
   gorelo check refactor.rules                     # preview specific file
   gorelo ls                                       # list all declarations
   gorelo ls --json                                # JSON output for tooling
+  gorelo ls --detail Server                       # include refs and deps for a type
   gorelo ls Server                                # list a type and its methods
   gorelo ls ./pkg.Server                          # qualified by package
   gorelo ls server.go:Server                      # qualified by file
