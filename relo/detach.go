@@ -20,7 +20,7 @@ func computeDetachEdits(ctx *compileCtx) {
 	for _, rr := range ctx.resolved {
 		switch {
 		case rr.Relo.Detach:
-			detachMethod(ctx.ix, rr, ctx.resolved, ctx.edits, ctx.imports, ctx.plan)
+			detachMethod(ctx.ix, rr, ctx.reloByGroup, ctx.edits, ctx.imports, ctx.plan)
 		case rr.Relo.MethodOf != "":
 			attachMethod(ctx.ix, rr, ctx.edits, ctx.plan)
 		}
@@ -28,7 +28,7 @@ func computeDetachEdits(ctx *compileCtx) {
 }
 
 // detachMethod converts a method to a standalone function.
-func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
+func detachMethod(ix *mast.Index, rr *resolvedRelo, reloByGroup map[*mast.Group]*resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
 	if rr.File == nil {
 		return
 	}
@@ -39,27 +39,16 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, ed
 		return
 	}
 
-	// Emit declaration edits unconditionally. The cross-file path uses
-	// a package-qualified recvParam so the receiver type compiles in
-	// the target package; the decl edits sit inside the moved span and
-	// ride along with the enclosing Move at apply time.
-	//
-	// The declaration rename (Method → TargetName) is NOT emitted here;
-	// the rename pass handles it uniformly for all groups.
 	var recvParam string
 	if rr.isCrossFileMove() {
-		recvParam = detachRecvParamForTarget(ix, rr, fd, resolved)
+		recvParam = detachRecvParamForTarget(ix, rr, fd, reloByGroup)
 	} else {
 		recvParam = formatRecvAsParam(fd.Recv, ix.Fset, "", "")
 	}
 	detachDeclEdits(ix, rr, fd, recvParam, edits)
 
-	// For cross-package moves, the detached function's parameter references
-	// the receiver type. Add the import for the receiver type's final
-	// location — which may differ from the source package when the type
-	// itself is being moved in the same run.
 	if rr.isCrossFileMove() {
-		recvImportPath := detachedReceiverImportPath(ix, rr, fd, resolved)
+		recvImportPath := detachedReceiverImportPath(ix, rr, fd, reloByGroup)
 		if recvImportPath != "" {
 			addImportEntry(imports, ix, rr.TargetFile, importEntry{Path: recvImportPath})
 		}
@@ -72,8 +61,8 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, ed
 // function's target file needs to import in order to reference the
 // receiver type. Returns "" when no import is needed (receiver type
 // resolves to the same package as the detach target).
-func detachedReceiverImportPath(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) string {
-	recvDir, _ := resolvedReceiverLocation(ix, rr, fd, resolved)
+func detachedReceiverImportPath(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, reloByGroup map[*mast.Group]*resolvedRelo) string {
+	recvDir, _ := resolvedReceiverLocation(ix, rr, fd, reloByGroup)
 	if recvDir == finalDir(rr) {
 		return ""
 	}
@@ -83,14 +72,12 @@ func detachedReceiverImportPath(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDe
 // resolvedReceiverLocation returns the directory and post-rename name
 // of the receiver type, accounting for concurrent moves/renames of
 // the type in the same run.
-func resolvedReceiverLocation(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) (dir, newName string) {
+func resolvedReceiverLocation(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, reloByGroup map[*mast.Group]*resolvedRelo) (dir, newName string) {
 	id := receiverTypeIdent(fd.Recv)
 	if id != nil {
 		if grp := ix.Group(id); grp != nil {
-			for _, r := range resolved {
-				if r.Group == grp {
-					return filepath.Dir(r.TargetFile), r.TargetName
-				}
+			if r, ok := reloByGroup[grp]; ok {
+				return filepath.Dir(r.TargetFile), r.TargetName
 			}
 		}
 	}
@@ -156,8 +143,8 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvPar
 // parameter for a cross-package detach. When the receiver type is
 // itself being moved or renamed in the same run, the post-operation
 // name and package qualifier are substituted.
-func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) string {
-	recvDir, recvNewName := resolvedReceiverLocation(ix, rr, fd, resolved)
+func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, reloByGroup map[*mast.Group]*resolvedRelo) string {
+	recvDir, recvNewName := resolvedReceiverLocation(ix, rr, fd, reloByGroup)
 	var pkgQualifier string
 	if recvDir != finalDir(rr) {
 		if recvImportPath := guessImportPath(recvDir); recvImportPath != "" {

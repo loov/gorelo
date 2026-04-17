@@ -414,6 +414,17 @@ func buildResolvedGroups(resolved []*resolvedRelo) map[*mast.Group]bool {
 	return m
 }
 
+// buildReloByGroup maps each group to its first resolvedRelo.
+func buildReloByGroup(resolved []*resolvedRelo) map[*mast.Group]*resolvedRelo {
+	m := make(map[*mast.Group]*resolvedRelo, len(resolved))
+	for _, rr := range resolved {
+		if _, ok := m[rr.Group]; !ok {
+			m[rr.Group] = rr
+		}
+	}
+	return m
+}
+
 // groupByTarget groups resolved relos by target file path.
 func groupByTarget(resolved []*resolvedRelo) map[string][]*resolvedRelo {
 	m := make(map[string][]*resolvedRelo)

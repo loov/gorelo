@@ -61,6 +61,7 @@ type compileCtx struct {
 	imports        *importSet
 	resolvedGroups map[*mast.Group]bool
 	movedSpans     movedSpanIndex
+	reloByGroup    map[*mast.Group]*resolvedRelo
 }
 
 // Compile builds a Plan from a set of Relo and FileMove instructions against
@@ -115,6 +116,7 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	// Phase 4-5: check build constraints and detect conflicts.
 	checkConstraints(ctx)
 	ctx.resolvedGroups = buildResolvedGroups(ctx.resolved)
+	ctx.reloByGroup = buildReloByGroup(ctx.resolved)
 	if err := detectConflicts(ctx); err != nil {
 		return nil, err
 	}
