@@ -1,0 +1,35 @@
+# List all declarations.
+exec gorelo ls
+stdout 'server\.go'
+stdout 'type.*Server'
+stdout 'func.*NewServer'
+stdout 'method.*Server\.Start'
+
+# JSON output.
+exec gorelo ls --json
+stdout '"kind": "type"'
+stdout '"name": "Server"'
+
+# Filter by specifier.
+exec gorelo ls Server
+stdout 'type.*Server'
+stdout 'method.*Server\.Start'
+! stdout 'NewServer'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- server.go --
+package main
+
+// Server handles requests.
+type Server struct {
+	Name string
+}
+
+// Start begins serving.
+func (s *Server) Start() {}
+
+// NewServer creates a Server.
+func NewServer() *Server { return &Server{} }

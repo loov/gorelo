@@ -1,0 +1,5 @@
+exec gorelo help
+stdout 'gorelo is a tool'
+stdout 'Rule syntax'
+stdout 'gorelo apply'
+stdout 'gorelo ls'

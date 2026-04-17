@@ -8,7 +8,9 @@ import (
 	"github.com/zeebo/clingy"
 )
 
-func main() {
+func main() { os.Exit(run()) }
+
+func run() int {
 	ctx := context.Background()
 	ok, err := (clingy.Environment{
 		Name: "gorelo",
@@ -24,8 +26,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "gorelo: %v\n", err)
 	}
 	if !ok || err != nil {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 type cmdHelp struct{}

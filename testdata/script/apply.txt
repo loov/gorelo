@@ -1,0 +1,16 @@
+# Apply moves a declaration to a new file.
+exec gorelo apply 'Server -> target.go'
+exists target.go
+exec grep 'type Server' target.go
+! exec grep 'type Server' server.go
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- server.go --
+package main
+
+type Server struct{}
+
+func NewServer() *Server { return &Server{} }

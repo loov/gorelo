@@ -1,0 +1,23 @@
+# Show references to a type.
+exec gorelo refs Server
+stdout 'Server.*type.*server\.go'
+stdout 'main\.go'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- server.go --
+package main
+
+type Server struct{}
+
+func NewServer() *Server { return &Server{} }
+-- main.go --
+package main
+
+var s Server
+
+func main() {
+	_ = s
+}

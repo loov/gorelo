@@ -1,0 +1,16 @@
+# Check prints declaration-level and file-level summaries.
+exec gorelo check 'Server -> target.go'
+stdout 'move.*type.*Server'
+stdout 'create.*target\.go'
+stdout 'modify.*server\.go'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- server.go --
+package main
+
+type Server struct{}
+
+func NewServer() *Server { return &Server{} }

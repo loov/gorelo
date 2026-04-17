@@ -1,0 +1,28 @@
+# Show dependencies of a function.
+exec gorelo deps NewServer
+stdout 'Server'
+
+# Show dependencies of a type (includes method deps).
+exec gorelo deps Server
+stdout 'Config'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- server.go --
+package main
+
+type Config struct {
+	Port int
+}
+
+type Server struct {
+	Cfg Config
+}
+
+func (s *Server) Start() {
+	_ = s.Cfg
+}
+
+func NewServer() *Server { return &Server{} }
