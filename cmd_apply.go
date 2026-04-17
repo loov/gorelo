@@ -152,12 +152,14 @@ func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, def
 
 	// Dry run or verbose: print plan summary.
 	if dryRun || verbose {
+		w := os.Stdout
+		if verbose {
+			w = os.Stderr
+		}
+		printDeclSummary(w, ix, relos, fileMoves, absDir)
+		fmt.Fprintln(w)
 		for _, edit := range plan.Edits {
-			w := os.Stdout
-			if verbose {
-				w = os.Stderr
-			}
-			fmt.Fprintf(w, "%s %s\n", editAction(edit), edit.Path)
+			fmt.Fprintf(w, "  %-7s %s\n", editAction(edit), relPath(absDir, edit.Path))
 		}
 		if dryRun {
 			return nil
@@ -210,5 +212,58 @@ func editAction(edit relo.FileEdit) string {
 		return "delete"
 	default:
 		return "modify"
+	}
+}
+
+func printDeclSummary(w *os.File, ix *mast.Index, relos []relo.Relo, fileMoves []relo.FileMove, absDir string) {
+	for _, fm := range fileMoves {
+		from := relPath(absDir, fm.From)
+		to := relPath(absDir, fm.To)
+		fmt.Fprintf(w, "  move    %s -> %s\n", from, to)
+	}
+
+	for _, r := range relos {
+		grp := ix.Group(r.Ident)
+		if grp == nil {
+			continue
+		}
+
+		name := grp.Name
+		kind := objectKindString(grp.Kind)
+
+		// Source file.
+		var srcFile string
+		if def := grp.DefIdent(); def != nil && def.File != nil {
+			srcFile = relPath(absDir, def.File.Path)
+		}
+
+		// Describe the action.
+		switch {
+		case r.Detach && r.MoveTo != "" && r.Rename != "":
+			fmt.Fprintf(w, "  detach  %-7s %s -> %s=%s\n",
+				kind, name, relPath(absDir, r.MoveTo), r.Rename)
+		case r.Detach && r.MoveTo != "":
+			fmt.Fprintf(w, "  detach  %-7s %s -> %s\n",
+				kind, name, relPath(absDir, r.MoveTo))
+		case r.Detach:
+			fmt.Fprintf(w, "  detach  %-7s %s\n", kind, name)
+
+		case r.MethodOf != "" && r.MoveTo != "":
+			fmt.Fprintf(w, "  attach  %-7s %s -> %s#%s in %s\n",
+				kind, name, r.MethodOf, r.Rename, relPath(absDir, r.MoveTo))
+		case r.MethodOf != "":
+			fmt.Fprintf(w, "  attach  %-7s %s -> %s#%s\n",
+				kind, name, r.MethodOf, r.Rename)
+
+		case r.MoveTo != "" && r.Rename != "":
+			fmt.Fprintf(w, "  move    %-7s %s=%s  %s -> %s\n",
+				kind, name, r.Rename, srcFile, relPath(absDir, r.MoveTo))
+		case r.MoveTo != "":
+			fmt.Fprintf(w, "  move    %-7s %-20s %s -> %s\n",
+				kind, name, srcFile, relPath(absDir, r.MoveTo))
+		case r.Rename != "":
+			fmt.Fprintf(w, "  rename  %-7s %s -> %s  in %s\n",
+				kind, name, r.Rename, srcFile)
+		}
 	}
 }
