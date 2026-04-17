@@ -15,33 +15,34 @@ go install github.com/loov/gorelo@latest
 ## Usage
 
 ```
-gorelo <command> [flags]
+gorelo <command> [flags] [rule-or-file ...]
 ```
 
 | Command | Description                                            |
 |---------|--------------------------------------------------------|
-| `apply` | Apply rules from a file and/or `--rule` flags          |
+| `apply` | Apply rules from files and/or inline arguments         |
 | `check` | Print the plan without writing (dry-run of `apply`)    |
-| `do`    | Apply inline rule arguments directly (no file)         |
+
+Each positional argument is either a path to a `.rules` file or an
+inline rule string. Arguments containing rule syntax (`->`, `<-`, `=`,
+`#`) or starting with `@` are treated as inline rules; everything else
+is loaded as a file. With no arguments, `gorelo.rules` is loaded by
+default.
 
 `apply` and `check` share these flags:
 
-| Flag              | Default        | Description                                      |
-|-------------------|----------------|--------------------------------------------------|
-| `-f`, `--file`    | `gorelo.rules` | Path to a rules file                             |
-| `-r`, `--rule`    | (repeatable)   | Inline rule, same syntax as a rules file line    |
-| `-v`, `--verbose` | `false`        | Print each file edit to stderr                   |
-| `--stubs`         | `false`        | Generate `//go:fix` inline backward-compat stubs |
-
-`do` takes rule arguments positionally and accepts `-v` / `--stubs`.
+| Flag              | Default | Description                    |
+|-------------------|---------|--------------------------------|
+| `-v`, `--verbose` | `false` | Print each file edit to stderr |
 
 ```bash
 gorelo apply                                       # apply gorelo.rules
-gorelo apply -f refactor.rules                     # different rules file
-gorelo apply -r "Server -> server.go"              # file plus inline rule
-gorelo check -f gorelo.rules                       # preview without writing
-gorelo do "Server -> server.go"                    # inline, no file
-gorelo do -v "server.go <- Server Client"          # inline, verbose
+gorelo apply refactor.rules                        # different rules file
+gorelo apply "Server -> server.go"                 # inline rule
+gorelo apply refactor.rules "X=Y -> target.go"     # file plus inline rule
+gorelo apply "@stubs" "Server -> server.go"        # with stubs directive
+gorelo check                                       # preview without writing
+gorelo check refactor.rules                        # preview specific file
 ```
 
 See [EXAMPLE.md](EXAMPLE.md) for a walkthrough of splitting a flat package
@@ -51,7 +52,7 @@ into subpackages (`server/`, `db/`, `service/`) with private-to-public renames.
 
 ### Moving declarations
 
-Forward notation is compact and works well for inline `-r` flags:
+Forward notation is compact and works well for inline rules:
 
 ```
 Server ServerOption -> server.go

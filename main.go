@@ -58,6 +58,7 @@ Examples:
   gorelo apply refactor.rules                     # different rules file
   gorelo apply "Server -> server.go"              # inline rule
   gorelo apply refactor.rules "X=Y -> target.go"  # file plus inline rule
+  gorelo apply "@stubs" "Server -> server.go"     # with stubs directive
   gorelo check                                    # preview without writing
   gorelo check refactor.rules                     # preview specific file
 
@@ -95,7 +96,6 @@ Directives (in rules files):
 type cmdApply struct {
 	args       []string
 	verbose    bool
-	stubs      bool
 	cpuprofile string
 	dryRun     bool
 }
@@ -103,8 +103,6 @@ type cmdApply struct {
 func (c *cmdApply) Setup(params clingy.Parameters) {
 	c.verbose = params.Flag("verbose", "print each file edit to stderr", false,
 		clingy.Short('v'), clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
-	c.stubs = params.Flag("stubs", "generate //go:fix inline backward-compatibility stubs", false,
-		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
 	c.cpuprofile = params.Flag("cpuprofile", "write CPU profile to file", "").(string)
 	c.args = params.Arg("rule-or-file", "rule string or path to a .rules file",
 		clingy.Repeated, clingy.Optional).([]string)
@@ -117,7 +115,7 @@ func (c *cmdApply) Execute(ctx context.Context) error {
 		ruleFiles = []string{"gorelo.rules"}
 	}
 	return withProfile(c.cpuprofile, func() error {
-		return runRelo(c.verbose, c.dryRun, ruleFiles, c.stubs, inlineRules, defaultFile)
+		return runRelo(c.verbose, c.dryRun, ruleFiles, inlineRules, defaultFile)
 	})
 }
 
@@ -156,7 +154,7 @@ func withProfile(path string, fn func() error) error {
 	return fn()
 }
 
-func runRelo(verbose, dryRun bool, ruleFiles []string, stubsFlag bool, inlineRules []string, defaultFiles bool) error {
+func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, defaultFiles bool) error {
 	var merged rules.File
 
 	for _, rulesPath := range ruleFiles {
@@ -189,14 +187,12 @@ func runRelo(verbose, dryRun bool, ruleFiles []string, stubsFlag bool, inlineRul
 	}
 
 	// Process directives.
-	opts := &relo.Options{Stubs: stubsFlag}
+	opts := &relo.Options{}
 	var fmtCmd string
 	for _, d := range merged.Directives {
 		switch d.Key {
 		case "stubs":
-			if !stubsFlag {
-				opts.Stubs = d.Value == "" || d.Value == "true"
-			}
+			opts.Stubs = d.Value == "" || d.Value == "true"
 		case "fmt":
 			fmtCmd = d.Value
 		}

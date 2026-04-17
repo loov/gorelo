@@ -143,13 +143,13 @@ service/service.go <-
 Preview the changes first:
 
 ```bash
-gorelo check -f gorelo.rules
+gorelo check gorelo.rules
 ```
 
 Then apply:
 
 ```bash
-gorelo apply -f gorelo.rules
+gorelo apply gorelo.rules
 ```
 
 ## After
