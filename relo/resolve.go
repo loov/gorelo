@@ -396,6 +396,15 @@ func enclosingFuncDecl(file *ast.File, pos token.Pos) *ast.FuncDecl {
 	return nil
 }
 
+// buildResolvedGroups returns the set of all groups in the resolved set.
+func buildResolvedGroups(resolved []*resolvedRelo) map[*mast.Group]bool {
+	m := make(map[*mast.Group]bool, len(resolved))
+	for _, rr := range resolved {
+		m[rr.Group] = true
+	}
+	return m
+}
+
 // buildDetachGroups returns the set of groups that have a detach or
 // attach operation, so other phases can skip them.
 func buildDetachGroups(resolved []*resolvedRelo) map[*mast.Group]bool {

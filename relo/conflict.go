@@ -36,7 +36,7 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 }
 
 // detectConflicts checks for naming and movement conflicts (phase 5).
-func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, opts *Options, plan *Plan) error {
+func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, resolvedGroups map[*mast.Group]bool, opts *Options, plan *Plan) error {
 	// Check movement conflicts: same group moved to two different targets.
 	// Use a composite key of (group, source file path) so that declarations
 	// from non-overlapping build constraints can target different files.
@@ -215,7 +215,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 
 	// Warn about cross-package moves referencing unexported symbols or
 	// symbols in package main that stay behind.
-	checkCrossPkgRefs(ix, resolved, spans, plan)
+	checkCrossPkgRefs(ix, resolved, spans, resolvedGroups, plan)
 
 	// Warn when a source file has build constraints.
 	checkSourceBuildConstraints(ix, resolved, plan)
@@ -226,13 +226,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 // checkCrossPkgRefs warns when a declaration being moved cross-package
 // references unexported package-scope symbols or symbols in package main
 // that are not part of the move set.
-func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, plan *Plan) {
-	// Build set of groups being moved.
-	movedGroups := make(map[*mast.Group]bool)
-	for _, rr := range resolved {
-		movedGroups[rr.Group] = true
-	}
-
+func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, resolvedGroups map[*mast.Group]bool, plan *Plan) {
 	for _, rr := range resolved {
 		if !rr.isCrossPackageMove() {
 			continue
@@ -257,7 +251,7 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 				return
 			}
 			grp := ix.Group(ident)
-			if grp == nil || warned[grp] || movedGroups[grp] {
+			if grp == nil || warned[grp] || resolvedGroups[grp] {
 				return
 			}
 			// Only check package-scope symbols in the source package.

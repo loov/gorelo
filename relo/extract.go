@@ -20,7 +20,7 @@ import (
 //
 // File-move-synthesized rrs are skipped — assembleFileMoves owns
 // their rendering via a sub-Plan.
-func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
+func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
 	type spanKey struct {
 		path       string
 		start, end int
@@ -51,7 +51,7 @@ func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, spans map
 		// edits (moved-group renames + cross-target qualifies +
 		// self-import unqualifies + alias rewrites + cross-pkg-stay
 		// qualifies) and registers destination imports inline.
-		rewriteSpanQualifiers(edits, ix, rr, s, resolved, imports, "extract")
+		rewriteSpanQualifiers(edits, ix, rr, s, resolved, resolvedGroups, imports, "extract")
 
 		// Emit the Move once per unique source span (multi-name decls
 		// like `const A, B = 1, 2` yield multiple rrs sharing one span).

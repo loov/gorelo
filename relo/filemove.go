@@ -242,7 +242,7 @@ func isFileMoveSource(rrs []*resolvedRelo) bool {
 // Plan) to render each file-move target. The rendered content is
 // pre-loaded as the target's input so per-decl Moves from other
 // sources append after it via plan.Apply.
-func emitFileMoveEdits(ix *mast.Index, infos []*fileMoveInfo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
+func emitFileMoveEdits(ix *mast.Index, infos []*fileMoveInfo, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
 	for _, info := range infos {
 		src := info.srcFile
 		if src == nil || src.Src == nil {
@@ -255,7 +255,7 @@ func emitFileMoveEdits(ix *mast.Index, infos []*fileMoveInfo, resolved []*resolv
 			if s == nil {
 				continue
 			}
-			rewriteSpanQualifiers(edits, ix, rr, s, resolved, imports, "filemove")
+			rewriteSpanQualifiers(edits, ix, rr, s, resolved, resolvedGroups, imports, "filemove")
 		}
 
 		targetDir := filepath.Dir(info.move.To)

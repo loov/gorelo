@@ -316,7 +316,7 @@ func TestDetectConflicts_InterReloCollision(t *testing.T) {
 		testResolvedRelo(grpB, "/tmp/target/other.go", "Foo", fileB),
 	}
 
-	err := detectConflicts(ix, resolved, nil, nil, plan)
+	err := detectConflicts(ix, resolved, nil, buildResolvedGroups(resolved), nil, plan)
 	if !errContains(err, "name collision") {
 		t.Fatalf("expected 'name collision' error for inter-relo collision, got: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestDetectConflicts_InterReloCollision_NonOverlappingConstraints(t *testing
 		testResolvedRelo(grpB, "/tmp/target/other.go", "Foo", fileB),
 	}
 
-	err := detectConflicts(ix, resolved, nil, nil, plan)
+	err := detectConflicts(ix, resolved, nil, buildResolvedGroups(resolved), nil, plan)
 	if err != nil {
 		t.Fatalf("expected no error for non-overlapping constraints, got: %v", err)
 	}

@@ -89,7 +89,8 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 
 	// Phase 4-5: check build constraints and detect conflicts.
 	checkConstraints(resolved, plan)
-	if err := detectConflicts(ix, resolved, spans, opts, plan); err != nil {
+	resolvedGroups := buildResolvedGroups(resolved)
+	if err := detectConflicts(ix, resolved, spans, resolvedGroups, opts, plan); err != nil {
 		return nil, err
 	}
 
@@ -116,11 +117,11 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	// Phase 7c: emit cross-file extraction (Move primitives + carried
 	// qualification edits) so plan.Apply produces both source-side
 	// deletions and target-side appended content.
-	emitCrossFileExtraction(ix, resolved, spans, edits, importChanges)
+	emitCrossFileExtraction(ix, resolved, resolvedGroups, spans, edits, importChanges)
 
 	// Phase 7d: emit whole-file moves (Move + qualification edits +
 	// package-clause Replace) onto the shared Plan.
-	emitFileMoveEdits(ix, fmInfos, resolved, spans, edits, importChanges)
+	emitFileMoveEdits(ix, fmInfos, resolved, resolvedGroups, spans, edits, importChanges)
 
 	// Phase 8: assemble file edits.
 	assemble(ix, resolved, spans, edits, importChanges, fmInfos, opts, plan)

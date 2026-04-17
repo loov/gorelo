@@ -129,7 +129,7 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 //
 // Subsumes computeImports + the trio computeExtractedEdits +
 // collectSelfImportEdits + computeImportAliasEdits with one walk.
-func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, imports *importSet, origin string) {
+func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet, origin string) {
 	if rr.File == nil || s == nil {
 		return
 	}
@@ -151,10 +151,8 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 		crossTarget bool
 	}
 	actions := make(map[*mast.Group]*groupAction)
-	resolvedGroups := make(map[*mast.Group]bool)
 
 	for _, r := range resolved {
-		resolvedGroups[r.Group] = true
 		if r.Relo.Detach || r.Relo.MethodOf != "" {
 			continue
 		}
