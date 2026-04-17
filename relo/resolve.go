@@ -23,6 +23,8 @@ type resolvedRelo struct {
 
 	SourceDir string // filepath.Dir(File.Path), empty when File is nil
 	TargetDir string // filepath.Dir(TargetFile)
+
+	Decl ast.Decl // enclosing declaration, populated by computeSpans
 }
 
 // initResolvedDirs computes and caches SourceDir and TargetDir.
@@ -33,6 +35,18 @@ func initResolvedDirs(rr *resolvedRelo) {
 	if rr.TargetFile != "" {
 		rr.TargetDir = filepath.Dir(rr.TargetFile)
 	}
+}
+
+// enclosingDecl returns the cached Decl, falling back to a lookup when
+// Decl has not been populated (e.g. in unit tests that skip computeSpans).
+func (rr *resolvedRelo) enclosingDecl() ast.Decl {
+	if rr.Decl != nil {
+		return rr.Decl
+	}
+	if rr.File != nil && rr.DefIdent != nil {
+		rr.Decl = findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
+	}
+	return rr.Decl
 }
 
 func (rr *resolvedRelo) isCrossFileMove() bool {

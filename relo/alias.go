@@ -60,8 +60,7 @@ func funcParamShadows(rrs []*resolvedRelo, targetPkgName string) bool {
 		if rr.Group.Kind != mast.Func || rr.File == nil {
 			continue
 		}
-		decl := findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
-		fd, ok := decl.(*ast.FuncDecl)
+		fd, ok := rr.enclosingDecl().(*ast.FuncDecl)
 		if !ok || fd.Type.Params == nil {
 			continue
 		}
@@ -78,8 +77,7 @@ func funcParamShadows(rrs []*resolvedRelo, targetPkgName string) bool {
 
 func generateTypeAlias(rr *resolvedRelo, targetPkgName string, fset *token.FileSet) string {
 	// Check for type parameters.
-	decl := findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
-	if gd, ok := decl.(*ast.GenDecl); ok {
+	if gd, ok := rr.enclosingDecl().(*ast.GenDecl); ok {
 		for _, spec := range gd.Specs {
 			ts, ok := spec.(*ast.TypeSpec)
 			if !ok || ts.Name != rr.DefIdent.Ident {
@@ -104,8 +102,7 @@ func generateTypeAlias(rr *resolvedRelo, targetPkgName string, fset *token.FileS
 }
 
 func generateFuncAlias(rr *resolvedRelo, targetPkgName string, fset *token.FileSet) string {
-	decl := findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
-	fd, ok := decl.(*ast.FuncDecl)
+	fd, ok := rr.enclosingDecl().(*ast.FuncDecl)
 	if !ok {
 		return fmt.Sprintf("// TODO: alias for %s", rr.Group.Name)
 	}

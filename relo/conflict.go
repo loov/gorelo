@@ -196,18 +196,14 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 
 	// Warn about go:embed / go:generate directives.
 	for _, rr := range resolved {
-		if rr.File == nil {
+		if rr.File == nil || rr.enclosingDecl() == nil {
 			continue
 		}
-		decl := findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
-		if decl == nil {
-			continue
-		}
-		if hasDirective(decl, rr.File.Syntax, ix.Fset, "go:embed") {
+		if hasDirective(rr.Decl, rr.File.Syntax, ix.Fset, "go:embed") {
 			plan.Warnings.AddAtf(rr, ix,
 				"moved decl %s has a //go:embed directive", rr.Group.Name)
 		}
-		if hasDirective(decl, rr.File.Syntax, ix.Fset, "go:generate") {
+		if hasDirective(rr.Decl, rr.File.Syntax, ix.Fset, "go:generate") {
 			plan.Warnings.AddAtf(rr, ix,
 				"moved decl %s has a //go:generate directive", rr.Group.Name)
 		}

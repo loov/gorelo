@@ -52,45 +52,42 @@ func (m movedSpanIndex) Contains(filePath string, off, endOff int) bool {
 
 // computeSpans computes byte ranges for each resolved relo (phases 2-3).
 func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*resolvedRelo]*span, error) {
-	spans := make(map[*resolvedRelo]*span)
+	// First pass: cache enclosing decl on every resolvedRelo so that
+	// checkIotaBlock and downstream phases can use rr.Decl directly.
+	for _, rr := range resolved {
+		if rr.File == nil || rr.Group.Kind == mast.Field {
+			continue
+		}
+		rr.Decl = findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
+	}
 
-	// Track const block iota warnings.
+	spans := make(map[*resolvedRelo]*span)
 	warnedBlocks := make(map[ast.Decl]bool)
 
 	for _, rr := range resolved {
-		file := rr.File
-		if file == nil {
+		if rr.File == nil || rr.Group.Kind == mast.Field {
 			continue
 		}
 
-		// Fields can only be renamed, not moved; they have no
-		// top-level declaration span to compute.
-		if rr.Group.Kind == mast.Field {
-			continue
-		}
-
-		// Find the enclosing declaration.
-		decl := findEnclosingDecl(file.Syntax, rr.DefIdent.Ident)
+		decl := rr.Decl
 		if decl == nil {
 			plan.Warnings.AddAtf(rr, ix,
-				"cannot find declaration for %s in %s", rr.Group.Name, file.Path)
+				"cannot find declaration for %s in %s", rr.Group.Name, rr.File.Path)
 			continue
 		}
 
 		s := &span{
-			File: file,
+			File: rr.File,
 			Decl: decl,
 		}
 
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
-			s.Start, s.End = declByteRange(ix.Fset, d, d.Doc, file)
+			s.Start, s.End = declByteRange(ix.Fset, d, d.Doc, rr.File)
 
 		case *ast.GenDecl:
-			// Find which spec contains this ident.
 			spec := findSpecForIdent(d, rr.DefIdent.Ident)
 
-			// Warn about multi-name ValueSpec partial moves.
 			if vs, ok := spec.(*ast.ValueSpec); ok && len(vs.Names) > 1 {
 				plan.Warnings.AddAtf(rr, ix,
 					"%s is part of a multi-name declaration; all names in the spec will be moved together",
@@ -98,13 +95,11 @@ func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*re
 			}
 
 			if spec != nil && len(d.Specs) > 1 {
-				// Grouped spec: extract individual spec.
 				s.Spec = spec
 				s.IsGrouped = true
 				s.Keyword = d.Tok.String()
-				s.Start, s.End = specByteRange(ix.Fset, spec, file)
+				s.Start, s.End = specByteRange(ix.Fset, spec, rr.File)
 
-				// Phase 3: iota detection for const blocks.
 				if d.Tok == token.CONST && !warnedBlocks[d] {
 					if err := checkIotaBlock(ix, d, rr, resolved, plan); err != nil {
 						return nil, err
@@ -112,8 +107,7 @@ func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*re
 					warnedBlocks[d] = true
 				}
 			} else {
-				// Single spec or whole GenDecl.
-				s.Start, s.End = declByteRange(ix.Fset, d, d.Doc, file)
+				s.Start, s.End = declByteRange(ix.Fset, d, d.Doc, rr.File)
 				if spec != nil {
 					s.Spec = spec
 				}
@@ -261,13 +255,10 @@ func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved 
 	// Check if all specs in the block are being moved.
 	movedSpecs := make(map[ast.Spec]bool)
 	for _, r := range resolved {
-		if r.File == rr.File {
-			decl := findEnclosingDecl(r.File.Syntax, r.DefIdent.Ident)
-			if decl == gd {
-				spec := findSpecForIdent(gd, r.DefIdent.Ident)
-				if spec != nil {
-					movedSpecs[spec] = true
-				}
+		if r.File == rr.File && r.Decl == gd {
+			spec := findSpecForIdent(gd, r.DefIdent.Ident)
+			if spec != nil {
+				movedSpecs[spec] = true
 			}
 		}
 	}
@@ -290,11 +281,8 @@ func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved 
 	// All specs are being moved — verify they all go to the same target file.
 	targets := make(map[string]bool)
 	for _, r := range resolved {
-		if r.File == rr.File {
-			decl := findEnclosingDecl(r.File.Syntax, r.DefIdent.Ident)
-			if decl == gd {
-				targets[r.TargetFile] = true
-			}
+		if r.File == rr.File && r.Decl == gd {
+			targets[r.TargetFile] = true
 		}
 	}
 	if len(targets) > 1 {
