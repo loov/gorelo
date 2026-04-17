@@ -26,6 +26,7 @@ func run() int {
 		cmds.New("refs", "show where declarations are referenced", new(cmdRefs))
 		cmds.New("coverage", "show which methods of a type each entry transitively reaches", new(cmdCoverage))
 		cmds.New("grep", "find functions and methods whose source matches a glob", new(cmdGrep))
+		cmds.New("cluster", "suggest declaration groupings", new(cmdCluster))
 		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
 		cmds.New("skill", "print an LLM-oriented guide to using gorelo", new(cmdSkill))
 	})

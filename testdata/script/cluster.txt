@@ -1,0 +1,44 @@
+# Cluster declarations in a small package with obvious grouping.
+exec gorelo cluster
+stdout 'package'
+stdout 'Cluster'
+stdout 'Modularity'
+stdout 'Server'
+stdout 'Config'
+
+# JSON output includes modularity and clusters.
+exec gorelo cluster --json
+stdout '"modularity"'
+stdout '"clusters"'
+stdout '"package"'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- server.go --
+package main
+
+type Server struct {
+	cfg Config
+}
+
+func NewServer(c Config) *Server { return &Server{cfg: c} }
+
+func (s *Server) Start() {
+	_ = s.cfg
+}
+-- config.go --
+package main
+
+type Config struct {
+	Port int
+	Host string
+}
+
+func DefaultConfig() Config { return Config{Port: 8080, Host: "localhost"} }
+
+func LoadConfig(path string) Config {
+	_ = path
+	return DefaultConfig()
+}
