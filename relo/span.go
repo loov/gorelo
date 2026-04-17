@@ -194,28 +194,12 @@ func specByteRange(fset *token.FileSet, spec ast.Spec, file *mast.File) (int, in
 	specStart := spec.Pos()
 	specEnd := spec.End()
 
-	// Include spec doc comment.
-	switch s := spec.(type) {
-	case *ast.TypeSpec:
-		if s.Doc != nil {
-			specStart = s.Doc.Pos()
-		}
-	case *ast.ValueSpec:
-		if s.Doc != nil {
-			specStart = s.Doc.Pos()
-		}
+	doc, comment := specComments(spec)
+	if doc != nil {
+		specStart = doc.Pos()
 	}
-
-	// Include trailing line comment.
-	switch s := spec.(type) {
-	case *ast.ValueSpec:
-		if s.Comment != nil {
-			specEnd = s.Comment.End()
-		}
-	case *ast.TypeSpec:
-		if s.Comment != nil {
-			specEnd = s.Comment.End()
-		}
+	if comment != nil {
+		specEnd = comment.End()
 	}
 
 	src := fileContent(file)
@@ -237,6 +221,17 @@ func specByteRange(fset *token.FileSet, spec ast.Spec, file *mast.File) (int, in
 	}
 
 	return startOff, endOff
+}
+
+// specComments returns the doc and trailing comment groups for a spec.
+func specComments(spec ast.Spec) (doc, comment *ast.CommentGroup) {
+	switch s := spec.(type) {
+	case *ast.TypeSpec:
+		return s.Doc, s.Comment
+	case *ast.ValueSpec:
+		return s.Doc, s.Comment
+	}
+	return nil, nil
 }
 
 // checkIotaBlock returns an error if a const block using iota is being
