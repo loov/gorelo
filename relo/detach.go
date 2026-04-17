@@ -67,42 +67,31 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 
 // detachedReceiverImportPath returns the import path the detached
 // function's target file needs to import in order to reference the
-// receiver type. It takes into account concurrent renames/moves of
-// the receiver type. Returns "" when no import is needed (receiver
-// type resolves to the same package as the detach target).
+// receiver type. Returns "" when no import is needed (receiver type
+// resolves to the same package as the detach target).
 func detachedReceiverImportPath(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) string {
-	tgtDir := finalDir(rr)
-	var recvDir string
-	if _, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {
-		recvDir = filepath.Dir(recvTargetFile)
-	} else {
-		recvDir = filepath.Dir(rr.File.Path)
-	}
-	if recvDir == tgtDir {
+	recvDir, _ := resolvedReceiverLocation(ix, rr, fd, resolved)
+	if recvDir == finalDir(rr) {
 		return ""
 	}
 	return guessImportPath(recvDir)
 }
 
-// receiverTypeResolved returns the post-rename name and target file of
-// the method receiver's type when that type is itself being moved or
-// renamed in the same run. Returns (_, _, false) when the receiver
-// type is not in the resolved set.
-func receiverTypeResolved(ix *mast.Index, fd *ast.FuncDecl, resolved []*resolvedRelo) (name string, targetFile string, ok bool) {
+// resolvedReceiverLocation returns the directory and post-rename name
+// of the receiver type, accounting for concurrent moves/renames of
+// the type in the same run.
+func resolvedReceiverLocation(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) (dir, newName string) {
 	id := receiverTypeIdent(fd.Recv)
-	if id == nil {
-		return "", "", false
-	}
-	grp := ix.Group(id)
-	if grp == nil {
-		return "", "", false
-	}
-	for _, r := range resolved {
-		if r.Group == grp {
-			return r.TargetName, r.TargetFile, true
+	if id != nil {
+		if grp := ix.Group(id); grp != nil {
+			for _, r := range resolved {
+				if r.Group == grp {
+					return filepath.Dir(r.TargetFile), r.TargetName
+				}
+			}
 		}
 	}
-	return "", "", false
+	return filepath.Dir(rr.File.Path), ""
 }
 
 // receiverTypeIdent returns the *ast.Ident naming the receiver type
@@ -172,23 +161,14 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvPar
 // itself being moved or renamed in the same run, the post-operation
 // name and package qualifier are substituted.
 func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo) string {
-	fset := ix.Fset
-	tgtDir := finalDir(rr)
-	recvNewName := ""
-	var recvDir string
-	if name, recvTargetFile, ok := receiverTypeResolved(ix, fd, resolved); ok {
-		recvNewName = name
-		recvDir = filepath.Dir(recvTargetFile)
-	} else {
-		recvDir = filepath.Dir(rr.File.Path)
-	}
+	recvDir, recvNewName := resolvedReceiverLocation(ix, rr, fd, resolved)
 	var pkgQualifier string
-	if recvDir != tgtDir {
+	if recvDir != finalDir(rr) {
 		if recvImportPath := guessImportPath(recvDir); recvImportPath != "" {
 			pkgQualifier = packageNameForImport(ix, recvImportPath)
 		}
 	}
-	return formatRecvAsParam(fd.Recv, fset, pkgQualifier, recvNewName)
+	return formatRecvAsParam(fd.Recv, ix.Fset, pkgQualifier, recvNewName)
 }
 
 // detachCallSites rewrites call sites from s.Method(args) → Func(s, args)
