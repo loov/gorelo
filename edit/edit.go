@@ -66,6 +66,11 @@ type MoveOptions struct {
 	// and an inline single-item form). When nil, the built-in fallback
 	// emits `keyword (\n…)\n` with no per-line indentation.
 	GroupRender GroupRenderer
+
+	// Order controls the position of this Move's content relative to
+	// other Moves at the same destination anchor. Lower values sort
+	// first; ties are broken by source span. Default is 0.
+	Order int
 }
 
 // GroupRenderer formats a same-anchor + same-GroupKeyword run of Move

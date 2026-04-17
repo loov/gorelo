@@ -10,8 +10,8 @@ import (
 	"github.com/loov/gorelo/mast"
 )
 
-// assembler holds the state shared by the file-move, plan.Apply, and
-// import-application passes that compose Plan.Edits.
+// assembler holds the state shared by plan.Apply and the
+// import-application pass that compose Plan.Edits.
 type assembler struct {
 	ix       *mast.Index
 	resolved []*resolvedRelo
@@ -21,17 +21,13 @@ type assembler struct {
 	opts     *Options
 	plan     *Plan
 
-	// out collects per-path FileEdits as the assembly passes run. The
-	// final plan.Edits slice is built from out at the end of assemble.
 	out map[string]FileEdit
 
 	byTarget map[string][]*resolvedRelo
 	bySource map[string][]*resolvedRelo
 
-	// fileMovePaths names every source and target path written by the
-	// file-move pass; gatherInputs and postProcess special-case these
-	// so the pre-rendered file-move content is preserved.
-	fileMovePaths map[string]bool
+	fileMoveSourcePaths map[string]bool
+	fileMoveTargetPaths map[string]bool
 }
 
 // assemble builds the final FileEdit list (phase 8).
@@ -49,20 +45,33 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 		bySource: groupBySource(resolved),
 	}
 
-	// Step 1: render file moves and gather inputs for plan.Apply.
-	a.fileMovePaths = a.assembleFileMoves(fileMoves)
+	a.fileMoveSourcePaths = collectFileMoveSourcePaths(fileMoves)
+	a.fileMoveTargetPaths = collectFileMoveTargetPaths(fileMoves)
 	inputs, existedBefore := a.gatherInputs()
 
-	// Step 2: apply all edit primitives at once.
 	outputs, err := a.edits.Apply(inputs)
 	if err != nil {
 		a.plan.Warnings.Addf("plan.Apply failed: %v", err)
 		return
 	}
 
-	// Step 3: post-process each output into FileEdits and materialize
-	// plan.Edits in path-sorted order.
 	a.postProcess(outputs, existedBefore)
+}
+
+func collectFileMoveSourcePaths(infos []*fileMoveInfo) map[string]bool {
+	m := make(map[string]bool, len(infos))
+	for _, info := range infos {
+		m[info.move.From] = true
+	}
+	return m
+}
+
+func collectFileMoveTargetPaths(infos []*fileMoveInfo) map[string]bool {
+	m := make(map[string]bool, len(infos))
+	for _, info := range infos {
+		m[info.move.To] = true
+	}
+	return m
 }
 
 // applyImportsPass adds importSet entries to each affected file's
@@ -96,10 +105,11 @@ func (a *assembler) applyImportsPass() {
 
 // gatherInputs collects the byte contents for every file that
 // plan.Apply must see: source files, target files (existing or new),
-// consumer files, and file-move source/target paths. New target files
-// are pre-seeded with the package preamble so Move at offset -1 lands
-// after it. existedBefore tracks which paths had content before the
-// run (used to set FileEdit.IsNew in post-processing).
+// and consumer files. New target files are pre-seeded with the
+// package preamble so Move at offset -1 lands after it. File-move
+// targets start empty (the whole-file Move populates them).
+// existedBefore tracks which paths had content before the run (used
+// to set FileEdit.IsNew in post-processing).
 func (a *assembler) gatherInputs() (inputs map[string][]byte, existedBefore map[string]bool) {
 	inputPaths := make(map[string]bool)
 	for path := range a.bySource {
@@ -115,23 +125,6 @@ func (a *assembler) gatherInputs() (inputs map[string][]byte, existedBefore map[
 	inputs = make(map[string][]byte, len(inputPaths))
 	existedBefore = make(map[string]bool, len(inputPaths))
 	for path := range inputPaths {
-		// File-move targets: pre-load the rendered content so per-decl
-		// Moves at offset -1 append to it.
-		if a.fileMovePaths[path] {
-			if fe, ok := a.out[path]; ok && !fe.IsDelete {
-				inputs[path] = []byte(fe.Content)
-				existedBefore[path] = true
-				continue
-			}
-			// File-move source whose entry is IsDelete: still feed the
-			// original bytes in so primitives don't run out of bounds.
-			if f := a.ix.FilesByPath[path]; f != nil {
-				dup := make([]byte, len(f.Src))
-				copy(dup, f.Src)
-				inputs[path] = dup
-			}
-			continue
-		}
 		if f := a.ix.FilesByPath[path]; f != nil {
 			dup := make([]byte, len(f.Src))
 			copy(dup, f.Src)
@@ -145,7 +138,12 @@ func (a *assembler) gatherInputs() (inputs map[string][]byte, existedBefore map[
 			continue
 		}
 		// New target file — pre-seed with preamble so Move at offset -1
-		// lands after it.
+		// lands after it. File-move targets start empty because the
+		// whole-file Move carries the complete content including the
+		// package clause.
+		if a.fileMoveTargetPaths[path] {
+			continue
+		}
 		if rrs, ok := a.byTarget[path]; ok {
 			inputs[path] = []byte(buildTargetPreamble(a.ix, rrs))
 		}
@@ -167,20 +165,13 @@ func (a *assembler) postProcess(outputs map[string][]byte, existedBefore map[str
 	}
 	sort.Strings(sortedPaths)
 	for _, path := range sortedPaths {
-		// File-move sources whose entry is IsDelete keep that state;
-		// discard plan.Apply's modified output.
-		if a.fileMovePaths[path] {
-			if fe, ok := a.out[path]; !ok || fe.IsDelete || fe.Content == "" {
-				continue
-			}
-		}
 		text := string(outputs[path])
 		if stub, has := stubs[path]; has {
 			text += stub
 		}
 		text = removeEmptyDeclBlocks(text)
 		text = cleanBlankLines(text)
-		if _, isSource := a.bySource[path]; isSource && !a.fileMovePaths[path] {
+		if _, isSource := a.bySource[path]; isSource {
 			if sourceFileIsEmpty(text) {
 				a.out[path] = FileEdit{Path: path, IsDelete: true}
 				continue
@@ -235,7 +226,7 @@ func (a *assembler) generateAllStubs() map[string]string {
 	}
 	sortedSources := sortedKeys(a.bySource)
 	for _, sourcePath := range sortedSources {
-		if isFileMoveSource(a.bySource[sourcePath]) {
+		if a.fileMoveSourcePaths[sourcePath] {
 			continue
 		}
 		rrs := a.bySource[sourcePath]

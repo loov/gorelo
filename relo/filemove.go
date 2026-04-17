@@ -223,25 +223,12 @@ func lookupFile(ix *mast.Index, path string) *mast.File {
 	return nil
 }
 
-// isFileMoveSource reports whether every relo in rrs originated from
-// a whole-file move, meaning the source file is being entirely
-// relocated and should not generate stubs.
-func isFileMoveSource(rrs []*resolvedRelo) bool {
-	for _, rr := range rrs {
-		if rr.FromFileMove == nil {
-			return false
-		}
-	}
-	return len(rrs) > 0
-}
-
-// emitFileMoveEdits emits qualification edits and package-clause
-// Replaces for every file move onto the shared Plan. These primitives
-// target the source file path; assembleFileMoves builds a sub-Plan by
-// filtering them (along with detach/attach edits already on the shared
-// Plan) to render each file-move target. The rendered content is
-// pre-loaded as the target's input so per-decl Moves from other
-// sources append after it via plan.Apply.
+// emitFileMoveEdits emits a single ed.Move per file-move onto the
+// shared Plan. Qualification edits (per-decl qualifier rewrites,
+// package-clause renames) are carried inside the whole-file Move span.
+// The Move uses Order -1 so that at the destination anchor, the
+// file-move content sorts before any per-decl extraction Moves (which
+// use the default Order 0).
 func emitFileMoveEdits(ix *mast.Index, infos []*fileMoveInfo, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
 	for _, info := range infos {
 		src := info.srcFile
@@ -266,73 +253,24 @@ func emitFileMoveEdits(ix *mast.Index, infos []*fileMoveInfo, resolved []*resolv
 			pkgEnd := pkgOff + len(pkgName.Name)
 			edits.Replace(ed.Span{Path: srcPath, Start: pkgOff, End: pkgEnd}, targetPkgName, "filemove-pkg")
 		}
+
+		edits.Move(
+			ed.Span{Path: srcPath, Start: 0, End: len(src.Src)},
+			ed.Anchor{Path: info.move.To, Offset: -1},
+			ed.MoveOptions{
+				Order:        -1,
+				GroupKeyword: "\x00filemove",
+				GroupRender: func(items [][]byte) []byte {
+					var b []byte
+					for _, item := range items {
+						b = append(b, item...)
+					}
+					return b
+				},
+			},
+			"filemove",
+		)
 	}
-}
-
-// assembleFileMoves renders each file-move target by extracting all
-// non-Move primitives targeting the source file from the shared Plan
-// and applying them to the source bytes. The rendered content is
-// stored in a.out so gatherInputs can pre-load it as the target's
-// input (allowing per-decl Moves to append via the main plan.Apply).
-func (a *assembler) assembleFileMoves(infos []*fileMoveInfo) map[string]bool {
-	handled := make(map[string]bool)
-	if len(infos) == 0 {
-		return handled
-	}
-
-	for _, info := range infos {
-		src := info.srcFile
-		if src == nil || src.Src == nil {
-			continue
-		}
-		srcPath := src.Path
-
-		sub := filterPlanForFile(a.edits, srcPath)
-
-		dup := make([]byte, len(src.Src))
-		copy(dup, src.Src)
-		outputs, err := sub.Apply(map[string][]byte{srcPath: dup})
-		if err != nil {
-			a.plan.Warnings.Addf("filemove sub-plan failed for %s: %v", srcPath, err)
-			a.out[info.move.To] = FileEdit{Path: info.move.To, IsNew: true, Content: string(src.Src)}
-		} else {
-			content := string(outputs[srcPath])
-			if !strings.HasSuffix(content, "\n") {
-				content += "\n"
-			}
-			a.out[info.move.To] = FileEdit{Path: info.move.To, IsNew: true, Content: content}
-		}
-		a.out[srcPath] = FileEdit{Path: srcPath, IsDelete: true}
-
-		handled[info.move.To] = true
-		handled[srcPath] = true
-	}
-	return handled
-}
-
-// filterPlanForFile builds a sub-Plan containing only the non-Move
-// primitives from shared that target path. Move primitives are
-// skipped: per-decl extraction Moves are handled by the main
-// plan.Apply pass, not by the file-move rendering.
-func filterPlanForFile(shared *ed.Plan, path string) *ed.Plan {
-	sub := &ed.Plan{}
-	for _, prim := range shared.Primitives() {
-		switch x := prim.(type) {
-		case ed.Insert:
-			if x.Anchor.Path == path {
-				sub.Insert(x.Anchor, x.Text, x.Side, x.Origin())
-			}
-		case ed.Delete:
-			if x.Span.Path == path {
-				sub.Delete(x.Span, x.Origin())
-			}
-		case ed.Replace:
-			if x.Span.Path == path {
-				sub.Replace(x.Span, x.Text, x.Origin())
-			}
-		}
-	}
-	return sub
 }
 
 // fileMovePackageName determines the package name for a file-move

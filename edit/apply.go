@@ -352,6 +352,7 @@ func lowerMoves(prims []Primitive, parent []int, realized map[int][]byte) ([]Pri
 				origin:     mv.origin,
 				sourceSpan: mv.Span,
 				render:     mv.Options.GroupRender,
+				order:      mv.Options.Order,
 			})
 			if parent[i] == -1 {
 				topLevel = append(topLevel, Delete{Span: mv.Span, origin: mv.origin})
@@ -403,9 +404,12 @@ func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
 	var out []Primitive
 	for _, ak := range aks {
 		items := byAnchor[ak]
-		// Within an anchor, order by source span so output is independent
-		// of Plan insertion order.
+		// Within an anchor, sort by explicit Order first, then by source
+		// span for deterministic output independent of Plan insertion order.
 		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].order != items[j].order {
+				return items[i].order < items[j].order
+			}
 			return sourceLess(items[i].sourceSpan, items[j].sourceSpan)
 		})
 
@@ -525,6 +529,7 @@ type pendingInsert struct {
 	origin     string
 	sourceSpan Span
 	render     GroupRenderer
+	order      int
 }
 
 // applyToFile applies a batch of Insert/Delete/Replace primitives targeting
