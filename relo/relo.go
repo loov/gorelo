@@ -109,12 +109,11 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	importChanges := &importSet{byFile: make(map[string]*importChange)}
 	warnNontransferableImports(ix, resolved, plan)
 
-	// Phase 7a: compute detach/attach structural + qualifier edits.
-	detachGroups := buildDetachGroups(resolved)
-	computeDetachEdits(ix, resolved, spans, edits, importChanges, plan)
+	// Phase 7a: compute detach/attach structural edits.
+	computeDetachEdits(ix, resolved, edits, importChanges, plan)
 
 	// Phase 7b: compute consumer qualifier edits (rewrite files that import moved symbols).
-	computeConsumerEdits(ix, resolved, movedSpans, detachGroups, edits, importChanges, opts)
+	computeConsumerEdits(ix, resolved, movedSpans, edits, importChanges, opts)
 
 	// Phase 7c: emit cross-file extraction (Move primitives + carried
 	// qualification edits) so plan.Apply produces both source-side

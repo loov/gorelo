@@ -8,29 +8,26 @@ import (
 	"github.com/loov/gorelo/mast"
 )
 
-// computeConsumerEdits finds files in the index that reference moved groups
-// from external packages and generates edits to update their qualifier
-// expressions and imports. Edits are emitted onto the shared edits Plan;
-// import additions go into the importSet so that the assembly phase
-// applies them uniformly.
 // computeConsumerEdits emits qualifier-region edits for files that
 // reference cross-package-moved groups. It only touches the qualifier
 // region [qualStart, identStart); ident renames are handled by
-// computeRenames on the non-overlapping ident region.
-func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, movedSpans movedSpanIndex, detachGroups map[*mast.Group]bool, edits *ed.Plan, imports *importSet, opts *Options) {
+// computeRenames on the non-overlapping ident region. Groups whose
+// kind TravelsWithType (methods, fields) are skipped in external
+// packages — they are accessed via receivers, not package qualifiers.
+func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, movedSpans movedSpanIndex, edits *ed.Plan, imports *importSet, opts *Options) {
 	type moveInfo struct {
 		srcPkgPath string // source package import path
 		tgtPkgPath string // target package import path
 		tgtDir     string // target directory (absolute path)
 	}
 
-	// Groups originating from a whole-file move cannot rely on stub
-	// aliases because the source file is deleted — consumers must always
-	// be rewritten even when @stubs is enabled.
-	fileMoveGroups := make(map[*mast.Group]bool)
+	// Groups that cannot rely on stubs: file-move groups (source file
+	// is deleted) and detach/attach groups (calling convention changes,
+	// so stubs don't provide the old access pattern).
+	noStubGroups := make(map[*mast.Group]bool)
 	for _, rr := range resolved {
-		if rr.FromFileMove != nil {
-			fileMoveGroups[rr.Group] = true
+		if rr.FromFileMove != nil || rr.Relo.Detach || rr.Relo.MethodOf != "" {
+			noStubGroups[rr.Group] = true
 		}
 	}
 
@@ -87,14 +84,11 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, movedSpans m
 	})
 
 	for _, grp := range sortedGroups {
-		if detachGroups[grp] {
-			continue
-		}
 		info := movedGroups[grp]
 		// When stubs are enabled and a source file exists to hold them,
 		// consumers keep using the source package's names. File-move
 		// groups always need rewriting because the source file is deleted.
-		stubsHandled := opts.stubsEnabled() && !fileMoveGroups[grp]
+		stubsHandled := opts.stubsEnabled() && !noStubGroups[grp]
 
 		for _, id := range grp.Idents {
 			if id.Kind != mast.Use || id.File == nil {
@@ -132,7 +126,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, movedSpans m
 
 			case !inTargetPkg && qualified:
 				// Qualified cross-package reference — requalify.
-				if stubsHandled {
+				if stubsHandled || grp.Kind.TravelsWithType() {
 					continue
 				}
 				tgtLocalName := packageLocalName(ix, info.tgtDir)

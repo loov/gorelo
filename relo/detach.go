@@ -16,11 +16,11 @@ import (
 // edits are emitted onto the same Plan. For cross-file moves, the decl
 // edits sit inside the moved span and ride along with the enclosing
 // Move (or carryPlanInSpans for file-move targets).
-func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
+func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
 	for _, rr := range resolved {
 		switch {
 		case rr.Relo.Detach:
-			detachMethod(ix, rr, resolved, spans, edits, imports, plan)
+			detachMethod(ix, rr, resolved, edits, imports, plan)
 		case rr.Relo.MethodOf != "":
 			attachMethod(ix, rr, edits, plan)
 		}
@@ -28,7 +28,7 @@ func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*res
 }
 
 // detachMethod converts a method to a standalone function.
-func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
+func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
 	if rr.File == nil {
 		return
 	}
@@ -65,7 +65,7 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 		}
 	}
 
-	detachCallSites(ix, rr, resolved, spans, edits, imports, plan)
+	detachCallSites(ix, rr, edits, imports, plan)
 }
 
 // detachedReceiverImportPath returns the import path the detached
@@ -174,15 +174,25 @@ func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl
 // qualifier is needed.
 // detachCallSites rewrites call sites from s.Method(args) so that the
 // receiver expression is removed from the selector and inserted as the
-// first argument. The qualifier region [xStart, selStart) is edited to
-// replace "recv." with the appropriate package qualifier (or deleted
-// for same-package detach). The ident region [selStart, selEnd) is NOT
-// touched — the rename pass handles it. The receiver text is inserted
-// as the first argument.
-func detachCallSites(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
-	var detachTgtDir string
-	if rr.TargetFile != "" {
-		detachTgtDir = finalDir(rr)
+// first argument. It only performs structural edits: Delete "recv." in
+// the qualifier region and Insert "recv, " as the first argument.
+// Package qualification (adding "pkg." for cross-package moves) is
+// handled independently by computeConsumerEdits. The ident region
+// rename is handled by computeRenames.
+func detachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
+	// For same-package detaches, callers in other packages need the
+	// source package qualifier because the receiver expression that
+	// provided implicit package scoping is being removed. For
+	// cross-package detaches, computeConsumerEdits handles the target
+	// qualifier independently.
+	var srcQualifier string
+	var srcImportPath string
+	if !rr.isCrossPackageMove() && rr.File != nil {
+		srcDir := filepath.Dir(rr.File.Path)
+		srcImportPath = guessImportPath(srcDir)
+		if srcImportPath != "" {
+			srcQualifier = packageLocalName(ix, srcDir)
+		}
 	}
 
 	for _, id := range rr.Group.Idents {
@@ -204,38 +214,14 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo,
 
 		selStart := fset.Position(sel.Sel.Pos()).Offset
 
-		// Determine the caller's final dir + file, accounting for any
-		// enclosing decl that is itself being moved in this run.
-		callerFinalDir := filepath.Dir(filePath)
-		callerFinalFile := filePath
-		identOff := fset.Position(id.Ident.Pos()).Offset
-		for _, r := range resolved {
-			if r.File == nil || r.File.Path != filePath || !r.isCrossFileMove() {
-				continue
-			}
-			s := spans[r]
-			if s == nil {
-				continue
-			}
-			if identOff >= s.Start && identOff < s.End {
-				callerFinalDir = filepath.Dir(r.TargetFile)
-				callerFinalFile = r.TargetFile
-				break
-			}
-		}
+		// Delete the qualifier region [xStart, selStart) — removes "recv.".
+		emitEdit(edits, filePath, xStart, selStart, "", "detach-callsite-qualifier")
 
-		// Edit the qualifier region [xStart, selStart): replace "recv."
-		// with the target package qualifier, or delete it for same-package.
-		if detachTgtDir != "" && callerFinalDir != detachTgtDir {
-			if tgtImportPath := guessImportPath(detachTgtDir); tgtImportPath != "" {
-				pkgName := packageNameForImport(ix, tgtImportPath)
-				emitEdit(edits, filePath, xStart, selStart, pkgName+".", "detach-callsite-qualifier")
-				addImportEntry(imports, ix, callerFinalFile, importEntry{Path: tgtImportPath})
-			} else {
-				emitEdit(edits, filePath, xStart, selStart, "", "detach-callsite-qualifier")
-			}
-		} else {
-			emitEdit(edits, filePath, xStart, selStart, "", "detach-callsite-qualifier")
+		// For same-package detaches, add the source package qualifier
+		// at cross-package call sites.
+		if srcQualifier != "" && id.File.Pkg != rr.File.Pkg {
+			emitEdit(edits, filePath, selStart, selStart, srcQualifier+".", "detach-callsite-pkg-qualifier")
+			addImportEntry(imports, ix, filePath, importEntry{Path: srcImportPath})
 		}
 
 		if call != nil {

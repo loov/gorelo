@@ -387,18 +387,6 @@ func buildResolvedGroups(resolved []*resolvedRelo) map[*mast.Group]bool {
 	return m
 }
 
-// buildDetachGroups returns the set of groups that have a detach or
-// attach operation, so other phases can skip them.
-func buildDetachGroups(resolved []*resolvedRelo) map[*mast.Group]bool {
-	m := make(map[*mast.Group]bool)
-	for _, rr := range resolved {
-		if rr.Relo.Detach || rr.Relo.MethodOf != "" {
-			m[rr.Group] = true
-		}
-	}
-	return m
-}
-
 // groupByTarget groups resolved relos by target file path.
 func groupByTarget(resolved []*resolvedRelo) map[string][]*resolvedRelo {
 	m := make(map[string][]*resolvedRelo)
