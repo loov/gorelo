@@ -22,9 +22,8 @@ func main() {
 	ok, err := (clingy.Environment{
 		Name: "gorelo",
 	}).Run(ctx, func(cmds clingy.Commands) {
-		cmds.New("apply", "apply rules from file and/or --rule flags", new(cmdApply))
+		cmds.New("apply", "apply rules from files and/or inline arguments", new(cmdApply))
 		cmds.New("check", "dry-run: print plan without writing", &cmdApply{dryRun: true})
-		cmds.New("do", "apply inline rule arguments directly", new(cmdDo))
 		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
 	})
 	if err != nil {
@@ -49,13 +48,18 @@ It applies moves, renames and rewrites to every file that
 references the affected declarations. It tries to do the refactoring
 across taking into account build tags.
 
+Each positional argument is either a path to a .rules file or an
+inline rule string. Arguments containing rule syntax (arrows, =, #)
+are treated as inline rules; everything else is loaded as a file.
+With no arguments, gorelo.rules is loaded by default.
+
 Examples:
   gorelo apply                                    # apply gorelo.rules
-  gorelo apply -f refactor.rules                  # different rules file
-  gorelo apply -r "Server -> server.go"           # file plus inline rule
-  gorelo check -f gorelo.rules                    # preview without writing
-  gorelo do "Server -> server.go"                 # inline, no file
-  gorelo do -v "server.go <- Server Client"       # inline, verbose
+  gorelo apply refactor.rules                     # different rules file
+  gorelo apply "Server -> server.go"              # inline rule
+  gorelo apply refactor.rules "X=Y -> target.go"  # file plus inline rule
+  gorelo check                                    # preview without writing
+  gorelo check refactor.rules                     # preview specific file
 
 Rule syntax:
   Server -> server.go                  # move declaration to file (forward)
@@ -89,52 +93,51 @@ Directives (in rules files):
 `
 
 type cmdApply struct {
-	rulesFile   string
-	inlineRules []string
-	verbose     bool
-	stubs       bool
-	cpuprofile  string
-	dryRun      bool
-}
-
-func (c *cmdApply) Setup(params clingy.Parameters) {
-	c.rulesFile = params.Flag("file", "path to a .rules file", "gorelo.rules",
-		clingy.Short('f')).(string)
-	c.inlineRules = params.Flag("rule", "inline rule (repeatable, same syntax as rules file lines)",
-		[]string(nil), clingy.Short('r'), clingy.Repeated).([]string)
-	c.verbose = params.Flag("verbose", "print each file edit to stderr", false,
-		clingy.Short('v'), clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
-	c.stubs = params.Flag("stubs", "generate //go:fix inline backward-compatibility stubs", false,
-		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
-	c.cpuprofile = params.Flag("cpuprofile", "write CPU profile to file", "").(string)
-}
-
-func (c *cmdApply) Execute(ctx context.Context) error {
-	return withProfile(c.cpuprofile, func() error {
-		return runRelo(c.verbose, c.dryRun, c.rulesFile, c.stubs, c.inlineRules)
-	})
-}
-
-type cmdDo struct {
-	rules      []string
+	args       []string
 	verbose    bool
 	stubs      bool
 	cpuprofile string
+	dryRun     bool
 }
 
-func (c *cmdDo) Setup(params clingy.Parameters) {
+func (c *cmdApply) Setup(params clingy.Parameters) {
 	c.verbose = params.Flag("verbose", "print each file edit to stderr", false,
 		clingy.Short('v'), clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
 	c.stubs = params.Flag("stubs", "generate //go:fix inline backward-compatibility stubs", false,
 		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
 	c.cpuprofile = params.Flag("cpuprofile", "write CPU profile to file", "").(string)
-	c.rules = params.Arg("rule", "inline rule (repeatable)", clingy.Repeated).([]string)
+	c.args = params.Arg("rule-or-file", "rule string or path to a .rules file",
+		clingy.Repeated, clingy.Optional).([]string)
 }
 
-func (c *cmdDo) Execute(ctx context.Context) error {
+func (c *cmdApply) Execute(ctx context.Context) error {
+	ruleFiles, inlineRules := classifyArgs(c.args)
+	defaultFile := len(c.args) == 0
+	if defaultFile {
+		ruleFiles = []string{"gorelo.rules"}
+	}
 	return withProfile(c.cpuprofile, func() error {
-		return runRelo(c.verbose, false, "", c.stubs, c.rules)
+		return runRelo(c.verbose, c.dryRun, ruleFiles, c.stubs, inlineRules, defaultFile)
 	})
+}
+
+func classifyArgs(args []string) (files, rules []string) {
+	for _, arg := range args {
+		if isRuleSyntax(arg) {
+			rules = append(rules, arg)
+		} else {
+			files = append(files, arg)
+		}
+	}
+	return files, rules
+}
+
+func isRuleSyntax(s string) bool {
+	return strings.Contains(s, "->") ||
+		strings.Contains(s, "<-") ||
+		strings.Contains(s, "=") ||
+		strings.Contains(s, "#") ||
+		strings.HasPrefix(s, "@")
 }
 
 func withProfile(path string, fn func() error) error {
@@ -153,28 +156,29 @@ func withProfile(path string, fn func() error) error {
 	return fn()
 }
 
-func runRelo(verbose, dryRun bool, rulesPath string, stubsFlag bool, inlineRules []string) error {
-	// Collect rules from file and -r flags.
+func runRelo(verbose, dryRun bool, ruleFiles []string, stubsFlag bool, inlineRules []string, defaultFiles bool) error {
 	var merged rules.File
 
-	if rulesPath != "" {
+	for _, rulesPath := range ruleFiles {
 		data, err := os.ReadFile(rulesPath)
-		if err == nil {
-			f, err := rules.Parse(rulesPath, data)
-			if err != nil {
-				return fmt.Errorf("parsing %s: %w", rulesPath, err)
+		if err != nil {
+			if defaultFiles && os.IsNotExist(err) {
+				continue
 			}
-			merged.Directives = append(merged.Directives, f.Directives...)
-			merged.Rules = append(merged.Rules, f.Rules...)
-		} else if !os.IsNotExist(err) {
 			return err
 		}
+		f, err := rules.Parse(rulesPath, data)
+		if err != nil {
+			return fmt.Errorf("parsing %s: %w", rulesPath, err)
+		}
+		merged.Directives = append(merged.Directives, f.Directives...)
+		merged.Rules = append(merged.Rules, f.Rules...)
 	}
 
 	for i, r := range inlineRules {
-		f, err := rules.Parse(fmt.Sprintf("-r[%d]", i), []byte(r))
+		f, err := rules.Parse(fmt.Sprintf("arg[%d]", i), []byte(r))
 		if err != nil {
-			return fmt.Errorf("parsing -r %q: %w", r, err)
+			return fmt.Errorf("parsing rule %q: %w", r, err)
 		}
 		merged.Directives = append(merged.Directives, f.Directives...)
 		merged.Rules = append(merged.Rules, f.Rules...)
