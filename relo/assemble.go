@@ -288,23 +288,10 @@ func determineTargetPkgName(ix *mast.Index, rrs []*resolvedRelo) string {
 			}
 		}
 	}
-	// Check if there are existing files in the target directory whose
-	// package name we should match (handles package name != dir name).
 	if len(rrs) > 0 {
 		targetDir := filepath.Dir(rrs[0].TargetFile)
-		for _, pkg := range ix.Pkgs {
-			if len(pkg.Files) == 0 {
-				continue
-			}
-			// Skip external test packages (package foo_test) — they
-			// share the directory but shouldn't determine the package
-			// name for new production files.
-			if strings.HasSuffix(pkg.Name, "_test") {
-				continue
-			}
-			if filepath.Dir(pkg.Files[0].Path) == targetDir {
-				return pkg.Name
-			}
+		if pkg := findPkgForDir(ix, targetDir); pkg != nil {
+			return pkg.Name
 		}
 		return guessPackageName(targetDir)
 	}

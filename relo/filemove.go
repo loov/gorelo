@@ -341,20 +341,11 @@ func filterPlanForFile(shared *ed.Plan, path string) *ed.Plan {
 // packages in the target directory take precedence; the directory
 // basename is the final fallback.
 func fileMovePackageName(ix *mast.Index, targetDir string, srcFile *mast.File) string {
-	srcDir := filepath.Dir(srcFile.Path)
-	if targetDir == srcDir {
+	if targetDir == filepath.Dir(srcFile.Path) {
 		return srcFile.Syntax.Name.Name
 	}
-	for _, pkg := range ix.Pkgs {
-		if len(pkg.Files) == 0 {
-			continue
-		}
-		if strings.HasSuffix(pkg.Name, "_test") {
-			continue
-		}
-		if filepath.Dir(pkg.Files[0].Path) == targetDir {
-			return pkg.Name
-		}
+	if pkg := findPkgForDir(ix, targetDir); pkg != nil {
+		return pkg.Name
 	}
 	return guessPackageName(targetDir)
 }
