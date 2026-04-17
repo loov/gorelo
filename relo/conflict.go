@@ -173,15 +173,10 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 	// which happens only when a sibling file in the source package still
 	// references the moved declaration.
 	for _, rr := range resolved {
-		if rr.File == nil {
+		if !rr.isCrossPackageMove() {
 			continue
 		}
-		targetDir := filepath.Dir(rr.TargetFile)
-		srcDir := filepath.Dir(rr.File.Path)
-		if targetDir == srcDir {
-			continue
-		}
-		srcImportPath := guessImportPath(srcDir)
+		srcImportPath := guessImportPath(filepath.Dir(rr.File.Path))
 		if srcImportPath == "" {
 			continue
 		}
@@ -191,7 +186,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 		if !stubForces && !sourceNeedsTargetImport(rr, resolved) {
 			continue
 		}
-		if !targetImportsSource(ix, rr.TargetFile, targetDir, srcImportPath) {
+		if !targetImportsSource(ix, rr.TargetFile, finalDir(rr), srcImportPath) {
 			continue
 		}
 		plan.Warnings.AddAtf(rr, ix,
@@ -239,13 +234,7 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 	}
 
 	for _, rr := range resolved {
-		if rr.File == nil {
-			continue
-		}
-		// Only check cross-package moves.
-		srcDir := filepath.Dir(rr.File.Path)
-		targetDir := filepath.Dir(rr.TargetFile)
-		if srcDir == targetDir {
+		if !rr.isCrossPackageMove() {
 			continue
 		}
 
@@ -323,10 +312,7 @@ func checkSourceBuildConstraints(ix *mast.Index, resolved []*resolvedRelo, plan 
 		if rr.File == nil || rr.File.BuildTag == "" {
 			continue
 		}
-		// Only warn for cross-package moves.
-		srcDir := filepath.Dir(rr.File.Path)
-		targetDir := filepath.Dir(rr.TargetFile)
-		if srcDir == targetDir {
+		if !rr.isCrossPackageMove() {
 			continue
 		}
 		if warnedFiles[rr.File.Path] {

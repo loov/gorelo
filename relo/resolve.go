@@ -27,6 +27,11 @@ func (rr *resolvedRelo) isCrossFileMove() bool {
 	return rr.File != nil && rr.TargetFile != rr.File.Path
 }
 
+// isCrossPackageMove reports whether this relo moves a declaration to a different package directory.
+func (rr *resolvedRelo) isCrossPackageMove() bool {
+	return rr.File != nil && filepath.Dir(rr.File.Path) != filepath.Dir(rr.TargetFile)
+}
+
 // resolve validates, deduplicates, and synthesizes relos (phases 0-1).
 //
 // Phase 0 runs PRE-RESOLUTION validation per relo: kind compatibility,

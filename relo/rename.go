@@ -36,20 +36,12 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			renamedGroups[rr.Group] = rr.TargetName
 		}
 
-		if rr.File != nil && !rr.Relo.Detach && rr.Relo.MethodOf == "" {
-			srcDir := filepath.Dir(rr.File.Path)
-			tgtDir := filepath.Dir(rr.TargetFile)
-			if srcDir != tgtDir {
-				crossPkgMovedGroups[rr.Group] = true
-			}
+		if rr.isCrossPackageMove() && !rr.Relo.Detach && rr.Relo.MethodOf == "" {
+			crossPkgMovedGroups[rr.Group] = true
 		}
 
-		if opts.stubsEnabled() && rr.isCrossFileMove() {
-			srcDir := filepath.Dir(rr.File.Path)
-			tgtDir := filepath.Dir(rr.TargetFile)
-			if srcDir != tgtDir && rr.Group.Kind.HasStub() {
-				stubGroups[rr.Group] = true
-			}
+		if opts.stubsEnabled() && rr.isCrossPackageMove() && rr.Group.Kind.HasStub() {
+			stubGroups[rr.Group] = true
 		}
 	}
 
@@ -145,8 +137,7 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 	targetPath := rr.TargetFile
 	targetDir := filepath.Dir(targetPath)
 	targetImportPath := guessImportPath(targetDir)
-	srcDir := filepath.Dir(rr.File.Path)
-	isCrossPkg := srcDir != targetDir
+	isCrossPkg := rr.isCrossPackageMove()
 
 	// Per-group action lookup.
 	type groupAction struct {
@@ -199,7 +190,7 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 
 	var srcImportPath string
 	if isCrossPkg {
-		srcImportPath = guessImportPath(srcDir)
+		srcImportPath = guessImportPath(filepath.Dir(rr.File.Path))
 	}
 
 	// registerImport queues impPath in destination's importChange.

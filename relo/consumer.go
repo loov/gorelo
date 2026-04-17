@@ -42,22 +42,17 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 	groupTargetDirs := make(map[*mast.Group]map[string]bool)
 
 	for _, rr := range resolved {
-		dir := filepath.Dir(rr.TargetFile)
+		tgtDir := finalDir(rr)
 		if groupTargetDirs[rr.Group] == nil {
 			groupTargetDirs[rr.Group] = make(map[string]bool)
 		}
-		groupTargetDirs[rr.Group][dir] = true
+		groupTargetDirs[rr.Group][tgtDir] = true
 
-		if rr.File == nil {
+		if !rr.isCrossPackageMove() {
 			continue
 		}
-		srcDir := filepath.Dir(rr.File.Path)
-		tgtDir := filepath.Dir(rr.TargetFile)
-		if srcDir == tgtDir {
-			continue // same-package move, no consumer rewriting needed
-		}
 
-		srcPkgPath := guessImportPath(srcDir)
+		srcPkgPath := guessImportPath(filepath.Dir(rr.File.Path))
 		tgtPkgPath := guessImportPath(tgtDir)
 		if srcPkgPath == "" || tgtPkgPath == "" {
 			continue

@@ -247,10 +247,9 @@ func (a *assembler) generateAllStubs() map[string]string {
 			if rr.Relo.Detach || rr.Relo.MethodOf != "" {
 				continue
 			}
-			targetDir := finalDir(rr)
-			srcDir := filepath.Dir(rr.File.Path)
-			if targetDir != srcDir {
-				crossByDir[targetDir] = append(crossByDir[targetDir], rr)
+			if rr.isCrossPackageMove() {
+				tgtDir := finalDir(rr)
+				crossByDir[tgtDir] = append(crossByDir[tgtDir], rr)
 			}
 		}
 		var b strings.Builder
