@@ -15,6 +15,7 @@ func main() {
 	}).Run(ctx, func(cmds clingy.Commands) {
 		cmds.New("apply", "apply rules from files and/or inline arguments", new(cmdApply))
 		cmds.New("check", "dry-run: print plan without writing", &cmdApply{dryRun: true})
+		cmds.New("deps", "show what a declaration depends on", new(cmdDeps))
 		cmds.New("ls", "list declarations in the codebase", new(cmdLs))
 		cmds.New("refs", "show where declarations are referenced", new(cmdRefs))
 		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
@@ -59,6 +60,8 @@ Examples:
   gorelo ls Server                                # list a type and its methods
   gorelo ls ./pkg.Server                          # qualified by package
   gorelo ls server.go:Server                      # qualified by file
+  gorelo deps Server                              # show what Server depends on
+  gorelo deps ./pkg.Server                        # qualified by package
   gorelo refs Server                              # show references to Server
   gorelo refs ./pkg.Server                        # qualified by package
   gorelo refs Server#Start                        # references to a method
