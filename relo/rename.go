@@ -169,7 +169,7 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 	}
 
 	if sw.isCrossPkg {
-		sw.srcImportPath = guessImportPath(filepath.Dir(rr.File.Path))
+		sw.srcImportPath = guessImportPath(rr.SourceDir)
 	}
 
 	// Pre-register cross-target imports in path-sorted order so

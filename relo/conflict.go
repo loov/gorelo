@@ -71,7 +71,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 		if rr.Group.Kind.TravelsWithType() {
 			continue
 		}
-		dir := filepath.Dir(rr.TargetFile)
+		dir := rr.TargetDir
 		tag := ""
 		if rr.File != nil {
 			tag = rr.File.BuildTag
@@ -120,7 +120,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 				movedFromGroups[rr.Group] = true
 				// Only mark the name as vacated when moving to a different
 				// package. Same-package moves keep the name in the package.
-				if filepath.Dir(rr.TargetFile) != dir {
+				if rr.TargetDir != dir {
 					movedFromNames[rr.Group.Name] = true
 				}
 			}
@@ -130,7 +130,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 		// (cross-package moves). These vacate their names.
 		leavingGroups := make(map[*mast.Group]bool)
 		for _, rr := range resolved {
-			if rr.File != nil && rr.File.Pkg == targetPkg && filepath.Dir(rr.TargetFile) != dir {
+			if rr.File != nil && rr.File.Pkg == targetPkg && rr.TargetDir != dir {
 				leavingGroups[rr.Group] = true
 			}
 		}
@@ -176,7 +176,7 @@ func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolv
 		if !rr.isCrossPackageMove() {
 			continue
 		}
-		srcImportPath := guessImportPath(filepath.Dir(rr.File.Path))
+		srcImportPath := guessImportPath(rr.SourceDir)
 		if srcImportPath == "" {
 			continue
 		}
@@ -538,7 +538,7 @@ func sourceNeedsTargetImport(rr *resolvedRelo, resolved []*resolvedRelo) bool {
 		return false
 	}
 	srcPkg := rr.File.Pkg
-	targetDir := filepath.Dir(rr.TargetFile)
+	targetDir := rr.TargetDir
 
 	// Build a set of source files that travel to the same target
 	// directory; their references don't induce a new import.

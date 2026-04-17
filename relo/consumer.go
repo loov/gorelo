@@ -52,7 +52,7 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, movedSpans m
 			continue
 		}
 
-		srcPkgPath := guessImportPath(filepath.Dir(rr.File.Path))
+		srcPkgPath := guessImportPath(rr.SourceDir)
 		tgtPkgPath := guessImportPath(tgtDir)
 		if srcPkgPath == "" || tgtPkgPath == "" {
 			continue

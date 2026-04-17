@@ -20,16 +20,27 @@ type resolvedRelo struct {
 	TargetName   string
 	Synthesized  bool
 	FromFileMove *fileMoveInfo // non-nil when this relo was synthesised from a whole-file move
+
+	SourceDir string // filepath.Dir(File.Path), empty when File is nil
+	TargetDir string // filepath.Dir(TargetFile)
 }
 
-// isCrossFileMove reports whether this relo moves a declaration to a different file.
+// initResolvedDirs computes and caches SourceDir and TargetDir.
+func initResolvedDirs(rr *resolvedRelo) {
+	if rr.File != nil {
+		rr.SourceDir = filepath.Dir(rr.File.Path)
+	}
+	if rr.TargetFile != "" {
+		rr.TargetDir = filepath.Dir(rr.TargetFile)
+	}
+}
+
 func (rr *resolvedRelo) isCrossFileMove() bool {
 	return rr.File != nil && rr.TargetFile != rr.File.Path
 }
 
-// isCrossPackageMove reports whether this relo moves a declaration to a different package directory.
 func (rr *resolvedRelo) isCrossPackageMove() bool {
-	return rr.File != nil && filepath.Dir(rr.File.Path) != filepath.Dir(rr.TargetFile)
+	return rr.File != nil && rr.SourceDir != rr.TargetDir
 }
 
 // resolve validates, deduplicates, and synthesizes relos (phases 0-1).
@@ -173,6 +184,7 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 				rr.TargetFile = abs
 			}
 		}
+		initResolvedDirs(rr)
 
 		seen[sk] = rr
 		resolved = append(resolved, rr)
@@ -285,6 +297,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 					TargetName:  targetName,
 					Synthesized: true,
 				}
+				initResolvedDirs(rr)
 				seen[seenKey{Group: grp}] = rr
 				resolved = append(resolved, rr)
 			}

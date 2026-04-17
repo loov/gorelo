@@ -94,7 +94,7 @@ func resolvedReceiverLocation(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl
 			}
 		}
 	}
-	return filepath.Dir(rr.File.Path), ""
+	return rr.SourceDir, ""
 }
 
 // receiverTypeIdent returns the *ast.Ident naming the receiver type
@@ -188,7 +188,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *
 	var srcQualifier string
 	var srcImportPath string
 	if !rr.isCrossPackageMove() && rr.File != nil {
-		srcDir := filepath.Dir(rr.File.Path)
+		srcDir := rr.SourceDir
 		srcImportPath = guessImportPath(srcDir)
 		if srcImportPath != "" {
 			srcQualifier = packageLocalName(ix, srcDir)

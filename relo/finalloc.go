@@ -1,7 +1,5 @@
 package relo
 
-import "path/filepath"
-
 // finalloc.go is the single source of truth for "post-operation identity"
 // of a resolvedRelo or a mast.Group caught up in a Compile run. Every
 // rewrite-phase caller (detach, assemble, consumer, rename edits, imports)
@@ -18,11 +16,11 @@ import "path/filepath"
 // finalDir returns the directory the relo's declaration will live in
 // after the run.
 func finalDir(rr *resolvedRelo) string {
-	return filepath.Dir(rr.TargetFile)
+	return rr.TargetDir
 }
 
 // finalImportPath returns the import path of the package the relo's
 // declaration will live in after the run, or "" if it cannot be resolved.
 func finalImportPath(rr *resolvedRelo) string {
-	return guessImportPath(finalDir(rr))
+	return guessImportPath(rr.TargetDir)
 }
