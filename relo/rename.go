@@ -3,7 +3,6 @@ package relo
 import (
 	"go/ast"
 	"go/token"
-	"path"
 	"path/filepath"
 	"sort"
 
@@ -98,9 +97,8 @@ type spanRewriter struct {
 	// importByLocal maps source-file import local names to import paths.
 	importByLocal map[string]string
 
-	// handledQualifier marks qualifier idents whose SelectorExpr is
-	// handled by the Ident handler (extends left to replace pkg.Name).
-	handledQualifier map[*ast.Ident]bool
+	// specByPath maps import path to import spec for the source file.
+	specByPath map[string]*ast.ImportSpec
 
 	// registered tracks imports already queued to avoid duplicates.
 	registered map[string]bool
@@ -114,10 +112,9 @@ type groupAction struct {
 	crossTarget bool
 }
 
-// newSpanRewriter builds the action table, registers destination
-// imports, and runs the pre-pass that identifies handled qualifiers
-// and used external imports. The returned spanRewriter is ready for
-// the rewrite walk.
+// newSpanRewriter builds the action table and registers cross-target
+// destination imports. The returned spanRewriter is ready for the
+// single-pass rewrite walk in rewriteSpanQualifiers.
 func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet) *spanRewriter {
 	targetPath := rr.TargetFile
 	targetDir := filepath.Dir(targetPath)
@@ -133,7 +130,7 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 		isCrossPkg:       rr.isCrossPackageMove(),
 		actions:          make(map[*mast.Group]*groupAction),
 		importByLocal:    make(map[string]string),
-		handledQualifier: make(map[*ast.Ident]bool),
+		specByPath:       make(map[string]*ast.ImportSpec),
 		registered:       make(map[string]bool),
 	}
 
@@ -190,55 +187,10 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 	}
 
 	// Build source-file import maps.
-	specByPath := make(map[string]*ast.ImportSpec)
 	for _, imp := range rr.File.Syntax.Imports {
 		impPath := importPath(imp)
 		sw.importByLocal[importLocalName(imp, impPath)] = impPath
-		specByPath[impPath] = imp
-	}
-
-	// Pre-pass: find handled qualifiers and used external imports.
-	usedExternalImpPaths := make(map[string]bool)
-	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		qid, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		qOff := ix.Fset.Position(qid.Pos()).Offset
-		sOff := ix.Fset.Position(sel.Sel.Pos()).Offset
-		if qOff < s.Start || sOff > s.End {
-			return true
-		}
-		if grp := ix.Group(sel.Sel); grp != nil && sw.actions[grp] != nil {
-			sw.handledQualifier[qid] = true
-		}
-		if impPath, isImport := sw.importByLocal[qid.Name]; isImport && impPath != sw.targetImportPath {
-			usedExternalImpPaths[impPath] = true
-		}
-		return true
-	})
-
-	// Register used external imports (path-sorted for determinism).
-	sortedExternal := make([]string, 0, len(usedExternalImpPaths))
-	for p := range usedExternalImpPaths {
-		sortedExternal = append(sortedExternal, p)
-	}
-	sort.Strings(sortedExternal)
-	for _, impPath := range sortedExternal {
-		spec := specByPath[impPath]
-		localName := importLocalName(spec, impPath)
-		if localName == "." || localName == "_" {
-			continue
-		}
-		entry := importEntry{Path: impPath}
-		if spec.Name != nil && spec.Name.Name != path.Base(impPath) {
-			entry.Alias = spec.Name.Name
-		}
-		addImportEntry(imports, ix, targetPath, entry)
+		sw.specByPath[impPath] = imp
 	}
 
 	return sw
@@ -250,6 +202,24 @@ func (sw *spanRewriter) registerImport(impPath string) {
 	}
 	sw.registered[impPath] = true
 	addImportEntry(sw.imports, sw.ix, sw.targetPath, importEntry{Path: impPath})
+}
+
+// registerExternalImport registers an import discovered in the span
+// at the destination file, preserving any alias from the source file.
+func (sw *spanRewriter) registerExternalImport(impPath string) {
+	spec := sw.specByPath[impPath]
+	if spec == nil {
+		return
+	}
+	localName := importLocalName(spec, impPath)
+	if localName == "." || localName == "_" {
+		return
+	}
+	entry := importEntry{Path: impPath}
+	if spec.Name != nil && spec.Name.Name != guessImportLocalName(impPath) {
+		entry.Alias = spec.Name.Name
+	}
+	addImportEntry(sw.imports, sw.ix, sw.targetPath, entry)
 }
 
 // destLocal returns the local name the destination uses for impPath.
@@ -274,10 +244,16 @@ func (sw *spanRewriter) destLocal(impPath string) string {
 	return guessImportLocalName(impPath)
 }
 
-// rewriteSpanQualifiers walks the moved span and emits edit primitives
-// that transform package qualifiers and ident references to their
-// destination representation. It also registers destination imports on
-// the importSet.
+// rewriteSpanQualifiers walks the moved span in a single pass and
+// emits edit primitives that transform package qualifiers and ident
+// references to their destination representation. It also registers
+// destination imports on the importSet.
+//
+// SelectorExpr nodes are handled first (parent before children in
+// ast.Inspect). When sel.Sel has a group action and sel.X is its
+// mast qualifier, the SelectorExpr handler emits the full rewrite
+// and returns false to skip children. Otherwise, import-qualifier
+// rewrites are handled here and children are visited normally.
 func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet, origin string) {
 	if rr.File == nil || s == nil {
 		return
@@ -288,37 +264,58 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 	fset := ix.Fset
 
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
-		// SelectorExpr handler: rewrite import-qualifier idents that
-		// resolve to destination's package (strip) or to a destination
-		// import with a different local name (rewrite).
+		// SelectorExpr handler: handles qualified references (pkg.Name).
 		if sel, ok := n.(*ast.SelectorExpr); ok {
 			qid, ok := sel.X.(*ast.Ident)
-			if !ok || sw.handledQualifier[qid] {
+			if !ok {
 				return true
 			}
 			qOff := fset.Position(qid.Pos()).Offset
-			sOff := fset.Position(sel.Sel.Pos()).Offset
-			if qOff < s.Start || sOff > s.End {
+			selOff := fset.Position(sel.Sel.Pos()).Offset
+			selEnd := selOff + len(sel.Sel.Name)
+			if qOff < s.Start || selEnd > s.End {
 				return true
 			}
+
+			// When Sel has a group action and X is its mast qualifier,
+			// emit the full rewrite and skip children.
+			if grp := ix.Group(sel.Sel); grp != nil {
+				if act, ok := sw.actions[grp]; ok {
+					for _, gid := range grp.Idents {
+						if gid.Ident == sel.Sel && gid.Qualifier == qid {
+							newText := act.targetName
+							if act.crossTarget {
+								newText = sw.destLocal(act.impPath) + "." + act.targetName
+							}
+							emitEdit(plan, srcPath, qOff, selEnd, newText, origin)
+							return false
+						}
+					}
+				}
+			}
+
+			// Import-qualifier handling: strip self-imports, rewrite
+			// aliases, and register used external imports.
 			impPath, isImport := sw.importByLocal[qid.Name]
 			if !isImport {
 				return true
 			}
+			if impPath != sw.targetImportPath {
+				sw.registerExternalImport(impPath)
+			}
 			if sw.targetImportPath != "" && impPath == sw.targetImportPath {
-				emitEdit(plan, srcPath, qOff, sOff, "", origin)
+				emitEdit(plan, srcPath, qOff, selOff, "", origin)
 				return true
 			}
 			destName := sw.destLocal(impPath)
-			if destName == qid.Name {
-				return true
+			if destName != qid.Name {
+				emitEdit(plan, srcPath, qOff, qOff+len(qid.Name), destName, origin)
 			}
-			emitEdit(plan, srcPath, qOff, qOff+len(qid.Name), destName, origin)
 			return true
 		}
 
-		// Ident handler: moved-group rewrites + cross-pkg-stay
-		// qualification of references to non-moved source-pkg symbols.
+		// Ident handler: bare (unqualified) group rewrites +
+		// cross-pkg-stay qualification.
 		ident, ok := n.(*ast.Ident)
 		if !ok {
 			return true
@@ -338,20 +335,10 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 			if act.crossTarget {
 				newText = sw.destLocal(act.impPath) + "." + act.targetName
 			}
-			editStart := off
-			for _, gid := range grp.Idents {
-				if gid.Ident == ident && gid.Qualifier != nil {
-					qOff := fset.Position(gid.Qualifier.Pos()).Offset
-					if qOff >= s.Start {
-						editStart = qOff
-					}
-					break
-				}
-			}
-			if editStart == off && newText == ident.Name {
+			if newText == ident.Name {
 				return true
 			}
-			emitEdit(plan, srcPath, editStart, endOff, newText, origin)
+			emitEdit(plan, srcPath, off, endOff, newText, origin)
 			return true
 		}
 
