@@ -89,6 +89,11 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			continue
 		}
 		info := movedGroups[grp]
+		// When stubs are enabled and a source file exists to hold them,
+		// consumers keep using the source package's names. File-move
+		// groups always need rewriting because the source file is deleted.
+		stubsHandled := opts.stubsEnabled() && !fileMoveGroups[grp]
+
 		for _, id := range grp.Idents {
 			if id.Kind != mast.Use || id.File == nil {
 				continue
@@ -97,73 +102,54 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			inTargetPkg := groupTargetDirs[grp][filepath.Dir(filePath)]
 			identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 			identEnd := identOff + len(id.Ident.Name)
+			qualified := id.Qualifier != nil
+			renamed := info.tgtName != grp.Name
 
-			// File is in the target package: the declaration is
-			// becoming local. Unqualify qualified references (e.g.,
-			// src.Greet -> Greet) and apply renames if needed.
-			if inTargetPkg {
-				if id.Qualifier == nil {
-					if info.tgtName == grp.Name {
-						continue
-					}
-					if movedSpans.Contains(filePath, identOff, identEnd) {
-						continue
-					}
-					emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
-					continue
-				}
-				// Qualified reference (e.g., src.Greet): remove qualifier.
-				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
-				selOff := ix.Fset.Position(id.Ident.Pos()).Offset
-				emitEdit(edits, filePath, qualOff, selOff, "", "consumer-qualifier")
-				if info.tgtName != grp.Name {
-					emitEdit(edits, filePath, selOff, selOff+len(id.Ident.Name), info.tgtName, "consumer-name")
-				}
-				continue
-			}
-
-			// Unqualified same-package reference: the declaration is
-			// moving to a different package, so we need to add a
-			// package qualifier (e.g., Validate -> dst.Validate).
-			// When stubs are enabled, the aliases handle backward
-			// compatibility, so qualification is not needed — unless
-			// the group comes from a whole-file move, which leaves no
-			// source file to hold the stubs. Methods and fields travel
-			// with their parent type and are accessed through
-			// instances, not as bare identifiers.
-			stubsApply := opts.stubsEnabled() && !fileMoveGroups[grp]
-			if id.Qualifier == nil && !stubsApply && !grp.Kind.TravelsWithType() {
-				if movedSpans.Contains(filePath, identOff, identEnd) {
-					continue // inside extracted code, handled during assembly
-				}
-				tgtLocalName := packageLocalName(ix, info.tgtDir)
-				emitEdit(edits, filePath, identOff, identEnd, tgtLocalName+"."+info.tgtName, "consumer-name")
-				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
-				continue
-			}
-
-			// Qualified cross-package consumer reference (pkg.Name).
-			// When stubs are enabled, consumers keep using the source
-			// package's names — the stubs redirect to the target.
-			// File-move groups still need rewriting because the source
-			// file (and any stubs that would have lived in it) is gone.
-			if id.Qualifier == nil || (opts.stubsEnabled() && !fileMoveGroups[grp]) {
-				continue
-			}
 			if movedSpans.Contains(filePath, identOff, identEnd) {
 				continue
 			}
 
-			tgtLocalName := packageLocalName(ix, info.tgtDir)
-			qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
-			qualEnd := qualOff + len(id.Qualifier.Name)
-			if id.Qualifier.Name != tgtLocalName {
-				emitEdit(edits, filePath, qualOff, qualEnd, tgtLocalName, "consumer-qualifier")
+			switch {
+			case inTargetPkg && !qualified:
+				// Bare reference becoming local — rename if needed.
+				if renamed {
+					emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
+				}
+
+			case inTargetPkg && qualified:
+				// Qualified reference becoming local — strip qualifier.
+				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
+				selOff := ix.Fset.Position(id.Ident.Pos()).Offset
+				emitEdit(edits, filePath, qualOff, selOff, "", "consumer-qualifier")
+				if renamed {
+					emitEdit(edits, filePath, selOff, selOff+len(id.Ident.Name), info.tgtName, "consumer-name")
+				}
+
+			case !inTargetPkg && !qualified:
+				// Bare reference to declaration leaving the package.
+				if stubsHandled || grp.Kind.TravelsWithType() {
+					continue
+				}
+				tgtLocalName := packageLocalName(ix, info.tgtDir)
+				emitEdit(edits, filePath, identOff, identEnd, tgtLocalName+"."+info.tgtName, "consumer-name")
+				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
+
+			case !inTargetPkg && qualified:
+				// Qualified cross-package reference — requalify.
+				if stubsHandled {
+					continue
+				}
+				tgtLocalName := packageLocalName(ix, info.tgtDir)
+				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
+				qualEnd := qualOff + len(id.Qualifier.Name)
+				if id.Qualifier.Name != tgtLocalName {
+					emitEdit(edits, filePath, qualOff, qualEnd, tgtLocalName, "consumer-qualifier")
+				}
+				if renamed {
+					emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
+				}
+				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 			}
-			if info.tgtName != grp.Name {
-				emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
-			}
-			addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 		}
 	}
 
