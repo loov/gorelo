@@ -355,17 +355,6 @@ func exprListUsesIota(exprs []ast.Expr) bool {
 	return false
 }
 
-// dedentBlock removes one level of tab indentation from each line.
-func dedentBlock(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		if strings.HasPrefix(line, "\t") {
-			lines[i] = line[1:]
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
 // prependKeyword inserts a keyword before the first non-comment line.
 func prependKeyword(text, keyword string) string {
 	lines := strings.Split(text, "\n")

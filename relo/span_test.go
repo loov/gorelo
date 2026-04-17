@@ -402,52 +402,6 @@ func TestSpecByteRange_BlankLineBetweenSpecs(t *testing.T) {
 	}
 }
 
-func TestDedentBlock(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{
-			name:  "single level",
-			input: "\tA = 1\n\tB = 2",
-			want:  "A = 1\nB = 2",
-		},
-		{
-			name:  "two levels removes one",
-			input: "\t\tdeep\n\t\tindent",
-			want:  "\tdeep\n\tindent",
-		},
-		{
-			name:  "no tabs",
-			input: "no indent",
-			want:  "no indent",
-		},
-		{
-			name:  "mixed",
-			input: "\tindented\nnot indented",
-			want:  "indented\nnot indented",
-		},
-		{
-			name:  "empty",
-			input: "",
-			want:  "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := dedentBlock(tt.input)
-			if got != tt.want {
-				t.Errorf("dedentBlock(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestPrependKeyword(t *testing.T) {
 	t.Parallel()
 
