@@ -152,9 +152,16 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 		// Deduplicate by group (+ optional file).
 		if existing, ok := seen[sk]; ok {
 			// Two explicit relos for the same key: error if they conflict.
+			// Normalize newTarget the same way TargetFile is set below
+			// (filepath.Abs) so the comparison works on all platforms.
 			newTarget := r.MoveTo
 			if newTarget == "" && defIdent.File != nil {
 				newTarget = defIdent.File.Path
+			}
+			if newTarget != "" {
+				if abs, err := filepath.Abs(newTarget); err == nil {
+					newTarget = abs
+				}
 			}
 			newName := r.Rename
 			if newName == "" {
