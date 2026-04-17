@@ -15,11 +15,6 @@ import "path/filepath"
 // lint in internal_test.go enforces that detach.go and assemble.go do not
 // reintroduce the bug-prone patterns.
 
-// finalName returns the identifier name this relo will have after the run.
-func finalName(rr *resolvedRelo) string {
-	return rr.TargetName
-}
-
 // finalDir returns the directory the relo's declaration will live in
 // after the run.
 func finalDir(rr *resolvedRelo) string {

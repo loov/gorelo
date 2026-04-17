@@ -22,7 +22,7 @@ func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*res
 		case rr.Relo.Detach:
 			detachMethod(ix, rr, resolved, spans, edits, imports, plan)
 		case rr.Relo.MethodOf != "":
-			attachMethod(ix, rr, edits, imports, plan)
+			attachMethod(ix, rr, edits, plan)
 		}
 	}
 }
@@ -43,13 +43,16 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 	// a package-qualified recvParam so the receiver type compiles in
 	// the target package; the decl edits sit inside the moved span and
 	// ride along with the enclosing Move at apply time.
+	//
+	// The declaration rename (Method → TargetName) is NOT emitted here;
+	// the rename pass handles it uniformly for all groups.
 	var recvParam string
 	if rr.isCrossFileMove() {
 		recvParam = detachRecvParamForTarget(ix, rr, fd, resolved)
 	} else {
 		recvParam = formatRecvAsParam(fd.Recv, ix.Fset, "", "")
 	}
-	detachDeclEdits(ix, rr, fd, recvParam, rr.TargetName, edits)
+	detachDeclEdits(ix, rr, fd, recvParam, edits)
 
 	// For cross-package moves, the detached function's parameter references
 	// the receiver type. Add the import for the receiver type's final
@@ -62,7 +65,7 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, sp
 		}
 	}
 
-	detachCallSites(ix, rr, fd, resolved, spans, edits, imports, plan)
+	detachCallSites(ix, rr, resolved, spans, edits, imports, plan)
 }
 
 // detachedReceiverImportPath returns the import path the detached
@@ -124,8 +127,8 @@ func receiverTypeIdent(recv *ast.FieldList) *ast.Ident {
 // declaration into a standalone function. recvParam is the receiver
 // text formatted as a function parameter; callers decide whether to
 // qualify it with a package prefix and/or substitute a renamed base
-// type. newName is the function's target identifier name.
-func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvParam, newName string, edits *ed.Plan) {
+// type. The declaration rename (if any) is handled by the rename pass.
+func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvParam string, edits *ed.Plan) {
 	fset := ix.Fset
 	src := fileContent(rr.File)
 	path := rr.File.Path
@@ -138,13 +141,6 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvPar
 		recvEnd++
 	}
 	edits.Delete(ed.Span{Path: path, Start: recvOpen, End: recvEnd}, "detach-remove-recv")
-
-	// Rename ident if needed.
-	if newName != fd.Name.Name {
-		nameStart := fset.Position(fd.Name.Pos()).Offset
-		nameEnd := nameStart + len(fd.Name.Name)
-		edits.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd}, newName, "detach-rename")
-	}
 
 	// Insert receiver as first parameter.
 	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
@@ -176,9 +172,14 @@ func detachRecvParamForTarget(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl
 // based on the caller's FINAL location — if the caller is itself being
 // moved to the same target package as the detached function, no
 // qualifier is needed.
-func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
-	newName := finalName(rr)
-
+// detachCallSites rewrites call sites from s.Method(args) so that the
+// receiver expression is removed from the selector and inserted as the
+// first argument. The qualifier region [xStart, selStart) is edited to
+// replace "recv." with the appropriate package qualifier (or deleted
+// for same-package detach). The ident region [selStart, selEnd) is NOT
+// touched — the rename pass handles it. The receiver text is inserted
+// as the first argument.
+func detachCallSites(ix *mast.Index, rr *resolvedRelo, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, plan *Plan) {
 	var detachTgtDir string
 	if rr.TargetFile != "" {
 		detachTgtDir = finalDir(rr)
@@ -201,6 +202,8 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 		xEnd := fset.Position(sel.X.End()).Offset
 		recvText := string(src[xStart:xEnd])
 
+		selStart := fset.Position(sel.Sel.Pos()).Offset
+
 		// Determine the caller's final dir + file, accounting for any
 		// enclosing decl that is itself being moved in this run.
 		callerFinalDir := filepath.Dir(filePath)
@@ -221,20 +224,19 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 			}
 		}
 
-		// Determine the qualified function name for this call site.
-		qualName := newName
+		// Edit the qualifier region [xStart, selStart): replace "recv."
+		// with the target package qualifier, or delete it for same-package.
 		if detachTgtDir != "" && callerFinalDir != detachTgtDir {
 			if tgtImportPath := guessImportPath(detachTgtDir); tgtImportPath != "" {
-				qualName = packageNameForImport(ix, tgtImportPath) + "." + newName
-				// Add import to the caller's FINAL file.
+				pkgName := packageNameForImport(ix, tgtImportPath)
+				emitEdit(edits, filePath, xStart, selStart, pkgName+".", "detach-callsite-qualifier")
 				addImportEntry(imports, ix, callerFinalFile, importEntry{Path: tgtImportPath})
+			} else {
+				emitEdit(edits, filePath, xStart, selStart, "", "detach-callsite-qualifier")
 			}
+		} else {
+			emitEdit(edits, filePath, xStart, selStart, "", "detach-callsite-qualifier")
 		}
-
-		// Replace "recv.Method" with the (possibly qualified) function name.
-		selStart := fset.Position(sel.Sel.Pos()).Offset
-		selEnd := selStart + len(sel.Sel.Name)
-		edits.Replace(ed.Span{Path: filePath, Start: xStart, End: selEnd}, qualName, "detach-callsite-rename")
 
 		if call != nil {
 			lparen := fset.Position(call.Lparen).Offset
@@ -253,7 +255,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, resolve
 }
 
 // attachMethod converts a standalone function to a method.
-func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
+func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, plan *Plan) {
 	if rr.File == nil {
 		return
 	}
@@ -308,25 +310,24 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *imp
 		unqualifyPkgPath = finalImportPath(rr)
 	}
 	recvText := attachRecvText(rr.File, ix.Fset, fd, unqualifyPkgPath)
-	attachDeclEdits(ix, rr, fd, recvText, rr.TargetName, edits)
+	attachDeclEdits(ix, rr, fd, recvText, edits)
 
-	attachCallSites(ix, rr, fd, edits, imports, plan)
+	attachCallSites(ix, rr, edits)
 }
 
 // attachDeclEdits emits primitives onto edits that convert a function
 // declaration into a method. recvText is the receiver formatted as the
-// field inside the method's receiver parens (typically "(<recvText>)").
-// newName is the target method name.
-func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvText, newName string, edits *ed.Plan) {
+// field inside the method's receiver parens. The declaration rename
+// (if any) is handled by the rename pass on the ident region.
+func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvText string, edits *ed.Plan) {
 	fset := ix.Fset
 	path := rr.File.Path
 	firstField := fd.Type.Params.List[0]
 
-	// Replace function name with receiver + name.
+	// Insert receiver before the function name.
 	nameStart := fset.Position(fd.Name.Pos()).Offset
-	nameEnd := nameStart + len(fd.Name.Name)
-	edits.Replace(ed.Span{Path: path, Start: nameStart, End: nameEnd},
-		"("+recvText+") "+newName, "attach-rewrite-name")
+	edits.Insert(ed.Anchor{Path: path, Offset: nameStart},
+		"("+recvText+") ", ed.Before, "attach-insert-recv")
 
 	// Remove first parameter from parameter list.
 	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
@@ -402,9 +403,10 @@ func findImportPathForIdent(f *mast.File, name string) string {
 }
 
 // attachCallSites rewrites call sites from Func(s, args) → s.Method(args).
-func attachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, edits *ed.Plan, imports *importSet, plan *Plan) {
-	newName := rr.TargetName
-
+// It edits the qualifier region [editStart, identStart) to replace `pkg.`
+// or bare with `recv.`, and emits structural edits to remove the first arg.
+// The ident region rename is handled by the rename pass.
+func attachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan) {
 	for _, id := range rr.Group.Idents {
 		if id.Kind != mast.Use || id.File == nil {
 			continue
@@ -430,9 +432,8 @@ func attachCallSites(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, edits *
 			editStart = fset.Position(id.Qualifier.Pos()).Offset
 		}
 
-		edits.Replace(ed.Span{
-			Path: filePath, Start: editStart, End: identStart + len(id.Ident.Name),
-		}, recvText+"."+newName, "attach-callsite-rename")
+		// Edit qualifier region: replace `pkg.` or bare prefix with `recv.`
+		emitEdit(edits, filePath, editStart, identStart, recvText+".", "attach-callsite-qualifier")
 
 		lparen := fset.Position(call.Lparen).Offset
 		if len(call.Args) > 1 {

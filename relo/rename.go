@@ -13,31 +13,21 @@ import (
 
 // computeRenames uses mast groups to find all occurrences needing rename
 // (phase 6) and emits the corresponding Replace primitives onto edits.
-func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, movedSpans movedSpanIndex, detachGroups map[*mast.Group]bool, opts *Options, plan *Plan, edits *ed.Plan) {
-	// Build the set of groups being renamed and their new names.
+// computeRenames emits Replace primitives for every use-site ident of
+// renamed groups. It only touches the ident region [identStart, identEnd);
+// qualifier changes and structural edits (detach, consumer) are handled
+// by their own passes on non-overlapping byte regions.
+func computeRenames(ix *mast.Index, resolved []*resolvedRelo, movedSpans movedSpanIndex, opts *Options, plan *Plan, edits *ed.Plan) {
 	renamedGroups := make(map[*mast.Group]string)
 
 	// When stubs are enabled, track groups with cross-package moves.
 	// The stubs provide backward-compatible aliases using the old name,
-	// so all references (source files, same-package files, and consumer
-	// packages) must keep the old name. Methods are excluded because
-	// they don't get their own stubs — they follow the type alias and
-	// callers need the new name.
+	// so all references must keep the old name.
 	stubGroups := make(map[*mast.Group]bool)
-
-	// Cross-package-moved groups: their use-sites are emitted by
-	// computeConsumerEdits with full package qualification. computeRenames
-	// must skip them to avoid emitting overlapping plain-rename Replace
-	// primitives that would conflict with the consumer's qualified ones.
-	crossPkgMovedGroups := make(map[*mast.Group]bool)
 
 	for _, rr := range resolved {
 		if rr.TargetName != rr.Group.Name {
 			renamedGroups[rr.Group] = rr.TargetName
-		}
-
-		if rr.isCrossPackageMove() && !rr.Relo.Detach && rr.Relo.MethodOf == "" {
-			crossPkgMovedGroups[rr.Group] = true
 		}
 
 		if opts.stubsEnabled() && rr.isCrossPackageMove() && rr.Group.Kind.HasStub() {
@@ -60,13 +50,8 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			plan.Warnings.AddAtf(rr, ix,
 				"renaming type %s to %s will also change embedded field names, which may affect serialization and reflection",
 				rr.Group.Name, rr.TargetName)
-			// Find embedded field groups with the same name and package.
-			// These contain composite literal keys and selector idents
-			// that must be renamed alongside the type.
 			for _, fgrp := range ix.EmbeddedFieldGroups(rr.Group.Name, rr.Group.Pkg) {
 				renamedGroups[fgrp] = rr.TargetName
-				// Propagate stub status: with stubs the alias preserves
-				// the old embedded field name.
 				if stubGroups[rr.Group] {
 					stubGroups[fgrp] = true
 				}
@@ -74,17 +59,8 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 		}
 	}
 
-	// For each renamed group, iterate through all its idents and create edits.
-	// Skip groups handled by the detach/attach phase. Non-method/field
-	// cross-package-moved groups have their use-sites handled exclusively
-	// by computeConsumerEdits (whose qualified Replace overlaps the plain
-	// rename); method/field groups still need this loop because consumer
-	// only handles the in-target-package case for them.
 	for grp, newName := range renamedGroups {
-		if detachGroups[grp] {
-			continue
-		}
-		if crossPkgMovedGroups[grp] && !grp.Kind.TravelsWithType() {
+		if stubGroups[grp] {
 			continue
 		}
 		for _, id := range grp.Idents {
@@ -95,22 +71,10 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 			off := ix.Fset.Position(id.Ident.Pos()).Offset
 			endOff := off + len(id.Ident.Name)
 
-			// Inside a moved span — will be handled during assembly.
 			if movedSpans.Contains(id.File.Path, off, endOff) {
 				continue
 			}
 
-			// When stubs are enabled, the source package gets an alias
-			// using the old name.  All references (source files, same-
-			// package files, and consumer packages) must keep the old
-			// name so they resolve through the alias.
-			if stubGroups[grp] {
-				continue
-			}
-
-			// This is a use-site in non-moved code that needs renaming.
-			// For qualified references (pkg.Name), the qualifier might
-			// need changing too, but that's handled by the imports phase.
 			edits.Replace(ed.Span{Path: id.File.Path, Start: off, End: endOff}, newName, "rename-use")
 		}
 	}
@@ -175,9 +139,6 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 
 	// Build per-group action lookup.
 	for _, r := range resolved {
-		if r.Relo.Detach || r.Relo.MethodOf != "" {
-			continue
-		}
 		rDir := filepath.Dir(r.TargetFile)
 		if rDir == targetDir || r.Group.Kind.TravelsWithType() {
 			sw.actions[r.Group] = &groupAction{targetName: r.TargetName}

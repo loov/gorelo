@@ -661,6 +661,91 @@ func TestApply_UnknownFileTreatedAsEmpty(t *testing.T) {
 	checkApply(t, &p, files, map[string]string{"new.go": "hello"})
 }
 
+func TestApply_DecomposedDetachRenameAtCallSite(t *testing.T) {
+	// Decomposed detach+rename at a call site: three independent edits
+	// targeting non-overlapping regions compose without coordination.
+	//
+	//   Input:  "recv.Method(arg)"
+	//   Want:   "Func(recv, arg)"
+	//
+	// The three regions:
+	//   [0,5)  qualifier  "recv." → deleted
+	//   [5,11) ident      "Method" → "Func" (rename)
+	//   [12,12) structural insert "recv, " after '('
+	src := "recv.Method(arg)"
+	files := map[string][]byte{"a.go": []byte(src)}
+
+	var p Plan
+	p.Delete(Span{Path: "a.go", Start: 0, End: 5}, "detach-strip-recv")
+	p.Replace(Span{Path: "a.go", Start: 5, End: 11}, "Func", "rename")
+	p.Insert(Anchor{Path: "a.go", Offset: 12}, "recv, ", Before, "detach-insert-recv-arg")
+
+	checkApply(t, &p, files, map[string]string{"a.go": "Func(recv, arg)"})
+}
+
+func TestApply_DecomposedDetachCrossPkgRenameAtCallSite(t *testing.T) {
+	// Decomposed detach + cross-package qualifier + rename at a call site.
+	// The qualifier region changes from "recv." to "pkg.", the ident region
+	// is renamed, and the receiver is inserted as an argument.
+	//
+	//   Input:  "recv.Method(arg)"
+	//   Want:   "pkg.Func(recv, arg)"
+	//
+	// Three non-overlapping regions:
+	//   [0,5)    qualifier  "recv." → "pkg." (replace)
+	//   [5,11)   ident      "Method" → "Func" (rename)
+	//   (12,12)  structural insert "recv, " after '('
+	src := "recv.Method(arg)"
+	files := map[string][]byte{"a.go": []byte(src)}
+
+	var p Plan
+	p.Replace(Span{Path: "a.go", Start: 0, End: 5}, "pkg.", "qualifier-change")
+	p.Replace(Span{Path: "a.go", Start: 5, End: 11}, "Func", "rename")
+	p.Insert(Anchor{Path: "a.go", Offset: 12}, "recv, ", Before, "detach-insert-recv-arg")
+
+	checkApply(t, &p, files, map[string]string{"a.go": "pkg.Func(recv, arg)"})
+}
+
+func TestApply_DecomposedQualifierInsertAndRename(t *testing.T) {
+	// Decomposed cross-package qualifier addition + rename for a bare
+	// (unqualified) reference. The qualifier insert lands just before the
+	// ident's Replace, so both must compose at the same offset.
+	//
+	//   Input:  "Foo(x)"
+	//   Want:   "newpkg.Bar(x)"
+	//
+	// Two edits at the ident boundary:
+	//   (0,0) insert "newpkg." before ident
+	//   [0,3) replace "Foo" → "Bar"
+	src := "Foo(x)"
+	files := map[string][]byte{"a.go": []byte(src)}
+
+	var p Plan
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "newpkg.", Before, "qualifier-add")
+	p.Replace(Span{Path: "a.go", Start: 0, End: 3}, "Bar", "rename")
+
+	checkApply(t, &p, files, map[string]string{"a.go": "newpkg.Bar(x)"})
+}
+
+func TestApply_DecomposedQualifierStripAndRename(t *testing.T) {
+	// Decomposed qualifier removal + rename: a qualified reference
+	// becoming local in the target package.
+	//
+	//   Input:  "pkg.Foo(x)"
+	//   Want:   "Bar(x)"
+	//
+	//   [0,4) qualifier "pkg." → deleted
+	//   [4,7) ident     "Foo" → "Bar"
+	src := "pkg.Foo(x)"
+	files := map[string][]byte{"a.go": []byte(src)}
+
+	var p Plan
+	p.Delete(Span{Path: "a.go", Start: 0, End: 4}, "qualifier-strip")
+	p.Replace(Span{Path: "a.go", Start: 4, End: 7}, "Bar", "rename")
+
+	checkApply(t, &p, files, map[string]string{"a.go": "Bar(x)"})
+}
+
 func TestApply_DoesNotMutateInput(t *testing.T) {
 	orig := []byte("hello")
 	files := map[string][]byte{"a.go": orig}

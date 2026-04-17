@@ -95,10 +95,11 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	}
 
 	// Phase 6: compute rename edits into the shared edit.Plan.
+	// Rename only touches the ident region; qualifier and structural
+	// edits from detach/consumer target non-overlapping regions.
 	edits := &ed.Plan{}
 	movedSpans := buildMovedSpanIndex(resolved, spans)
-	detachGroups := buildDetachGroups(resolved)
-	computeRenames(ix, resolved, spans, movedSpans, detachGroups, opts, plan, edits)
+	computeRenames(ix, resolved, movedSpans, opts, plan, edits)
 
 	// Phase 7: import changes accumulate into importChanges.
 	// rewriteSpanQualifiers (called from emitCrossFileExtraction and
@@ -108,11 +109,12 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	importChanges := &importSet{byFile: make(map[string]*importChange)}
 	warnNontransferableImports(ix, resolved, plan)
 
-	// Phase 7a: compute detach/attach edits.
+	// Phase 7a: compute detach/attach structural + qualifier edits.
+	detachGroups := buildDetachGroups(resolved)
 	computeDetachEdits(ix, resolved, spans, edits, importChanges, plan)
 
-	// Phase 7b: compute consumer edits (rewrite files that import moved symbols).
-	computeConsumerEdits(ix, resolved, spans, movedSpans, detachGroups, edits, importChanges, opts, plan)
+	// Phase 7b: compute consumer qualifier edits (rewrite files that import moved symbols).
+	computeConsumerEdits(ix, resolved, movedSpans, detachGroups, edits, importChanges, opts)
 
 	// Phase 7c: emit cross-file extraction (Move primitives + carried
 	// qualification edits) so plan.Apply produces both source-side

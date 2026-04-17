@@ -13,12 +13,15 @@ import (
 // expressions and imports. Edits are emitted onto the shared edits Plan;
 // import additions go into the importSet so that the assembly phase
 // applies them uniformly.
-func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, movedSpans movedSpanIndex, detachGroups map[*mast.Group]bool, edits *ed.Plan, imports *importSet, opts *Options, plan *Plan) {
+// computeConsumerEdits emits qualifier-region edits for files that
+// reference cross-package-moved groups. It only touches the qualifier
+// region [qualStart, identStart); ident renames are handled by
+// computeRenames on the non-overlapping ident region.
+func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, movedSpans movedSpanIndex, detachGroups map[*mast.Group]bool, edits *ed.Plan, imports *importSet, opts *Options) {
 	type moveInfo struct {
 		srcPkgPath string // source package import path
 		tgtPkgPath string // target package import path
 		tgtDir     string // target directory (absolute path)
-		tgtName    string // name at the target (may differ if renamed)
 	}
 
 	// Groups originating from a whole-file move cannot rely on stub
@@ -62,7 +65,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			srcPkgPath: srcPkgPath,
 			tgtPkgPath: tgtPkgPath,
 			tgtDir:     tgtDir,
-			tgtName:    rr.TargetName,
 		}
 	}
 
@@ -103,7 +105,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 			identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 			identEnd := identOff + len(id.Ident.Name)
 			qualified := id.Qualifier != nil
-			renamed := info.tgtName != grp.Name
 
 			if movedSpans.Contains(filePath, identOff, identEnd) {
 				continue
@@ -111,27 +112,22 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 
 			switch {
 			case inTargetPkg && !qualified:
-				// Bare reference becoming local — rename if needed.
-				if renamed {
-					emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
-				}
+				// Bare reference becoming local — no qualifier to edit.
 
 			case inTargetPkg && qualified:
 				// Qualified reference becoming local — strip qualifier.
 				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
 				selOff := ix.Fset.Position(id.Ident.Pos()).Offset
 				emitEdit(edits, filePath, qualOff, selOff, "", "consumer-qualifier")
-				if renamed {
-					emitEdit(edits, filePath, selOff, selOff+len(id.Ident.Name), info.tgtName, "consumer-name")
-				}
 
 			case !inTargetPkg && !qualified:
-				// Bare reference to declaration leaving the package.
+				// Bare reference to declaration leaving the package —
+				// insert package qualifier before the ident.
 				if stubsHandled || grp.Kind.TravelsWithType() {
 					continue
 				}
 				tgtLocalName := packageLocalName(ix, info.tgtDir)
-				emitEdit(edits, filePath, identOff, identEnd, tgtLocalName+"."+info.tgtName, "consumer-name")
+				emitEdit(edits, filePath, identOff, identOff, tgtLocalName+".", "consumer-qualifier")
 				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 
 			case !inTargetPkg && qualified:
@@ -144,9 +140,6 @@ func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, spans map[*r
 				qualEnd := qualOff + len(id.Qualifier.Name)
 				if id.Qualifier.Name != tgtLocalName {
 					emitEdit(edits, filePath, qualOff, qualEnd, tgtLocalName, "consumer-qualifier")
-				}
-				if renamed {
-					emitEdit(edits, filePath, identOff, identEnd, info.tgtName, "consumer-name")
 				}
 				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
 			}
