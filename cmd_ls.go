@@ -12,17 +12,22 @@ import (
 	"github.com/zeebo/clingy"
 
 	"github.com/loov/gorelo/mast"
+	"github.com/loov/gorelo/relo"
+	"github.com/loov/gorelo/rules"
 )
 
 // cmdLs lists package-level declarations in the codebase.
 
 type cmdLs struct {
 	jsonOutput bool
+	args       []string
 }
 
 func (c *cmdLs) Setup(params clingy.Parameters) {
 	c.jsonOutput = params.Flag("json", "emit JSON output", false,
 		clingy.Transform(strconv.ParseBool), clingy.Boolean).(bool)
+	c.args = params.Arg("specifier", "declaration specifier (e.g. Server, ./pkg.Name, file.go:Name)",
+		clingy.Repeated, clingy.Optional).([]string)
 }
 
 func (c *cmdLs) Execute(ctx context.Context) error {
@@ -36,7 +41,16 @@ func (c *cmdLs) Execute(ctx context.Context) error {
 		return fmt.Errorf("resolving working directory: %w", err)
 	}
 
-	files := collectDecls(ix, absDir)
+	var files []lsFile
+	if len(c.args) == 0 {
+		files = collectDecls(ix, absDir, nil)
+	} else {
+		filter, err := buildFilter(ix, absDir, c.args)
+		if err != nil {
+			return err
+		}
+		files = collectDecls(ix, absDir, filter)
+	}
 
 	w := clingy.Stdout(ctx)
 	if c.jsonOutput {
@@ -72,6 +86,44 @@ func (c *cmdLs) Execute(ctx context.Context) error {
 	return nil
 }
 
+// lsFilter tracks which declarations to include based on specifier arguments.
+type lsFilter struct {
+	names map[string]bool // declaration names to show (including their methods)
+}
+
+func (f *lsFilter) match(name, kind, receiver string) bool {
+	if f == nil {
+		return true
+	}
+	if kind == "method" {
+		return f.names[receiver]
+	}
+	return f.names[name]
+}
+
+// buildFilter parses specifier arguments and resolves them against the index
+// to find matching declaration names.
+func buildFilter(ix *mast.Index, absDir string, args []string) (*lsFilter, error) {
+	f := &lsFilter{names: make(map[string]bool)}
+	for _, arg := range args {
+		item, err := rules.ParseItem(arg)
+		if err != nil {
+			return nil, fmt.Errorf("parsing %q: %w", arg, err)
+		}
+		source := relo.ResolveSource(ix, item.Source, absDir)
+		id := ix.FindDef(item.Name, source)
+		if id == nil {
+			src := ""
+			if item.Source != "" {
+				src = " in " + item.Source
+			}
+			return nil, fmt.Errorf("could not find %q%s", item.Name, src)
+		}
+		f.names[item.Name] = true
+	}
+	return f, nil
+}
+
 type lsFile struct {
 	File     string    `json:"file"`
 	Package  string    `json:"package"`
@@ -88,7 +140,7 @@ type lsEntry struct {
 	Lines    int    `json:"lines"`
 }
 
-func collectDecls(ix *mast.Index, absDir string) []lsFile {
+func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
 	var files []lsFile
 	for _, pkg := range ix.Pkgs {
 		for _, file := range pkg.Files {
@@ -110,6 +162,9 @@ func collectDecls(ix *mast.Index, absDir string) []lsFile {
 						entry.Kind = "method"
 						entry.Receiver = mast.ReceiverTypeName(d.Recv)
 					}
+					if !filter.match(entry.Name, entry.Kind, entry.Receiver) {
+						continue
+					}
 					entry.Line, entry.EndLine = declLines(ix.Fset, d, d.Doc)
 					entry.Lines = entry.EndLine - entry.Line + 1
 					decls = append(decls, entry)
@@ -123,6 +178,9 @@ func collectDecls(ix *mast.Index, absDir string) []lsFile {
 					for _, spec := range d.Specs {
 						switch s := spec.(type) {
 						case *ast.TypeSpec:
+							if !filter.match(s.Name.Name, kind, "") {
+								continue
+							}
 							entry := lsEntry{Name: s.Name.Name, Kind: kind}
 							if singleSpec {
 								entry.Line, entry.EndLine = declLines(ix.Fset, d, d.Doc)
@@ -133,6 +191,9 @@ func collectDecls(ix *mast.Index, absDir string) []lsFile {
 							decls = append(decls, entry)
 						case *ast.ValueSpec:
 							for _, name := range s.Names {
+								if !filter.match(name.Name, kind, "") {
+									continue
+								}
 								entry := lsEntry{Name: name.Name, Kind: kind}
 								if singleSpec {
 									entry.Line, entry.EndLine = declLines(ix.Fset, d, d.Doc)

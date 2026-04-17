@@ -136,7 +136,7 @@ func parseItems(s string) ([]Item, error) {
 	tokens := strings.Fields(s)
 	items := make([]Item, 0, len(tokens))
 	for _, tok := range tokens {
-		item, err := parseItem(tok)
+		item, err := ParseItem(tok)
 		if err != nil {
 			return nil, err
 		}
@@ -145,7 +145,7 @@ func parseItems(s string) ([]Item, error) {
 	return items, nil
 }
 
-// parseItem parses a single item token.
+// ParseItem parses a single item token.
 //
 // Grammar:
 //
@@ -158,7 +158,7 @@ func parseItems(s string) ([]Item, error) {
 //	[source:]Type#method=!               detach method (keep name)
 //	[source:]Type#method=!new            detach method and rename
 //	package.name[...]                    package-qualified form of any above
-func parseItem(tok string) (Item, error) {
+func ParseItem(tok string) (Item, error) {
 	var item Item
 
 	// Whole-file move: a token that looks like a .go file path with no

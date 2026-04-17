@@ -31,7 +31,7 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 				continue
 			}
 
-			source := resolveSource(ix, item.Source, dir)
+			source := ResolveSource(ix, item.Source, dir)
 
 			var r Relo
 
@@ -97,11 +97,11 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 	return relos, fileMoves, nil
 }
 
-// resolveSource rewrites a user-supplied source qualifier into a form the
+// ResolveSource rewrites a user-supplied source qualifier into a form the
 // mast.Index lookups accept. A source like "./pkg" or an absolute directory
 // is translated to the matching package's import path; a file-like source
 // (ending in .go) or an import-path-like source passes through unchanged.
-func resolveSource(ix *mast.Index, source, dir string) string {
+func ResolveSource(ix *mast.Index, source, dir string) string {
 	if source == "" {
 		return ""
 	}
