@@ -21,6 +21,10 @@ type importChange struct {
 	Existing       []importEntry
 	existingLoaded bool
 	Add            []importEntry
+
+	// used maps local name → import path for all entries in Existing and Add.
+	// Maintained incrementally by loadExistingImports and addImportEntry.
+	used map[string]string
 }
 
 // importEntry is a single import to add.
@@ -80,19 +84,8 @@ func addImportEntry(is *importSet, ix *mast.Index, filePath string, entry import
 		}
 	}
 
-	used := make(map[string]string, len(ic.Existing)+len(ic.Add))
-	addToUsed := func(e importEntry) {
-		used[importEntryLocalName(e)] = e.Path
-	}
-	for _, e := range ic.Existing {
-		addToUsed(e)
-	}
-	for _, e := range ic.Add {
-		addToUsed(e)
-	}
-
 	desired := importEntryLocalName(entry)
-	if owner, exists := used[desired]; exists {
+	if owner, exists := ic.used[desired]; exists {
 		if owner == entry.Path {
 			return // already imported (existing or queued)
 		}
@@ -100,11 +93,11 @@ func addImportEntry(is *importSet, ix *mast.Index, filePath string, entry import
 		if alias == "" || alias == desired {
 			alias = desired
 		}
-		if _, taken := used[alias]; taken {
+		if _, taken := ic.used[alias]; taken {
 			base := alias
 			for i := 2; ; i++ {
 				alias = base + strconv.Itoa(i)
-				if _, taken := used[alias]; !taken {
+				if _, taken := ic.used[alias]; !taken {
 					break
 				}
 			}
@@ -112,6 +105,7 @@ func addImportEntry(is *importSet, ix *mast.Index, filePath string, entry import
 		entry.Alias = alias
 	}
 	ic.Add = append(ic.Add, entry)
+	ic.used[importEntryLocalName(entry)] = entry.Path
 }
 
 // packageNameForImport returns the actual package name for impPath if
@@ -134,6 +128,9 @@ func loadExistingImports(ic *importChange, ix *mast.Index, filePath string) {
 		return
 	}
 	ic.existingLoaded = true
+	if ic.used == nil {
+		ic.used = make(map[string]string)
+	}
 	if ix == nil {
 		return
 	}
@@ -148,6 +145,7 @@ func loadExistingImports(ic *importChange, ix *mast.Index, filePath string) {
 			ie.Alias = imp.Name.Name
 		}
 		ic.Existing = append(ic.Existing, ie)
+		ic.used[importEntryLocalName(ie)] = impPath
 	}
 }
 
