@@ -70,7 +70,7 @@ func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]
 // on the final layout produced by plan.Apply, and before
 // removeUnusedImportsText so any imports it adds that turn out to be
 // unused get pruned in the same run. Entries are pre-deduped and
-// alias-resolved at addition time (see addImportEntry); ensureImport
+// alias-resolved at addition time (see addImportEntry); addImports
 // handles the actual insertion.
 func (a *assembler) applyImportsPass() {
 	for _, filePath := range sortedKeys(a.imports.byFile) {
@@ -82,19 +82,13 @@ func (a *assembler) applyImportsPass() {
 		if !ok || fe.IsDelete {
 			continue
 		}
-		content := fe.Content
 		sorted := make([]importEntry, len(ic.Add))
 		copy(sorted, ic.Add)
 		sort.Slice(sorted, func(i, j int) bool {
 			return sorted[i].Path < sorted[j].Path
 		})
-		for _, entry := range sorted {
-			var warn Warning
-			content, warn = ensureImport(content, entry)
-			if warn.Message != "" {
-				a.plan.Warnings.Add(warn)
-			}
-		}
+		content, warnings := addImports(fe.Content, sorted)
+		a.plan.Warnings.Add(warnings...)
 		fe.Content = content
 		a.out[filePath] = fe
 	}

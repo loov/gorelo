@@ -20,7 +20,7 @@ import (
 
 func Foo() { fmt.Println() }
 `
-	got, _ := ensureImport(src, importEntry{Path: "strings"})
+	got, _ := addImports(src, []importEntry{{Path: "strings"}})
 	if !strings.Contains(got, `"strings"`) {
 		t.Errorf("expected import to be added, got:\n%s", got)
 	}
@@ -39,7 +39,7 @@ import "fmt"
 
 func Foo() { fmt.Println() }
 `
-	got, _ := ensureImport(src, importEntry{Path: "strings"})
+	got, _ := addImports(src, []importEntry{{Path: "strings"}})
 	if !strings.Contains(got, `"strings"`) {
 		t.Errorf("expected strings import to be added, got:\n%s", got)
 	}
@@ -56,7 +56,7 @@ func TestEnsureImport_NoExistingImport(t *testing.T) {
 
 func Foo() {}
 `
-	got, _ := ensureImport(src, importEntry{Path: "fmt"})
+	got, _ := addImports(src, []importEntry{{Path: "fmt"}})
 	if !strings.Contains(got, `"fmt"`) {
 		t.Errorf("expected fmt import to be added, got:\n%s", got)
 	}
@@ -76,7 +76,7 @@ import (
 
 func Foo() { fmt.Println() }
 `
-	got, _ := ensureImport(src, importEntry{Path: "math/rand", Alias: "mathrand"})
+	got, _ := addImports(src, []importEntry{{Path: "math/rand", Alias: "mathrand"}})
 	if !strings.Contains(got, `mathrand "math/rand"`) {
 		t.Errorf("expected aliased import, got:\n%s", got)
 	}
@@ -93,7 +93,7 @@ import (
 
 func Foo() { fmt.Println() }
 `
-	got, _ := ensureImport(src, importEntry{Path: "fmt"})
+	got, _ := addImports(src, []importEntry{{Path: "fmt"}})
 	// Should not duplicate.
 	count := strings.Count(got, `"fmt"`)
 	if count != 1 {
@@ -112,12 +112,12 @@ import (
 
 func Foo() { foo.X() }
 `
-	_, warn := ensureImport(src, importEntry{Path: "example.com/bar", Alias: "baz"})
-	if warn.Message == "" {
-		t.Error("expected alias mismatch warning")
+	_, warnings := addImports(src, []importEntry{{Path: "example.com/bar", Alias: "baz"}})
+	if len(warnings) == 0 {
+		t.Fatal("expected alias mismatch warning")
 	}
-	if !strings.Contains(warn.Message, "alias") {
-		t.Errorf("warning should mention alias, got: %s", warn.Message)
+	if !strings.Contains(warnings[0].Message, "alias") {
+		t.Errorf("warning should mention alias, got: %s", warnings[0].Message)
 	}
 }
 

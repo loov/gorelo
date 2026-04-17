@@ -8,33 +8,55 @@ import (
 	"strings"
 )
 
-// ensureImport adds an import to the source if not already present.
-// Returns the updated source and a warning if the import exists with a
-// different alias.
-func ensureImport(src string, entry importEntry) (string, Warning) {
-	quotedPath := strconv.Quote(entry.Path)
-	if existingAlias, has := sourceImportAlias(src, quotedPath); has {
-		expectedAlias := entry.Alias
-		if expectedAlias == "" {
-			expectedAlias = guessImportLocalName(entry.Path)
+// addImports adds all entries to src in one pass. It parses src once
+// to check for existing imports, collects warnings for alias
+// mismatches, and inserts all new import lines with a single text
+// edit. Entries should be pre-sorted by path for deterministic output.
+func addImports(src string, entries []importEntry) (string, Warnings) {
+	fset := token.NewFileSet()
+	file, _ := parser.ParseFile(fset, "", src, parser.ImportsOnly)
+
+	existing := make(map[string]string)
+	if file != nil {
+		for _, imp := range file.Imports {
+			p := importPath(imp)
+			alias := ""
+			if imp.Name != nil {
+				alias = imp.Name.Name
+			}
+			existing[p] = alias
 		}
-		existingEffective := existingAlias
-		if existingEffective == "" {
-			existingEffective = guessImportLocalName(entry.Path)
-		}
-		if existingEffective != expectedAlias {
-			return src, Warnf(
-				"import %s exists with alias %q but moved code expects %q",
-				quotedPath, existingEffective, expectedAlias)
-		}
-		return src, Warning{}
 	}
 
-	importLine := "\t"
-	if entry.Alias != "" {
-		importLine += entry.Alias + " "
+	var newLines []string
+	var warnings Warnings
+	for _, entry := range entries {
+		if existingAlias, has := existing[entry.Path]; has {
+			expected := entry.Alias
+			if expected == "" {
+				expected = guessImportLocalName(entry.Path)
+			}
+			effective := existingAlias
+			if effective == "" {
+				effective = guessImportLocalName(entry.Path)
+			}
+			if effective != expected {
+				warnings.Addf("import %s exists with alias %q but moved code expects %q",
+					strconv.Quote(entry.Path), effective, expected)
+			}
+			continue
+		}
+		line := "\t"
+		if entry.Alias != "" {
+			line += entry.Alias + " "
+		}
+		line += strconv.Quote(entry.Path)
+		newLines = append(newLines, line)
 	}
-	importLine += quotedPath
+
+	if len(newLines) == 0 {
+		return src, warnings
+	}
 
 	lines := strings.Split(src, "\n")
 
@@ -44,73 +66,52 @@ func ensureImport(src string, entry importEntry) (string, Warning) {
 		if trimmed == "import (" {
 			for j := i + 1; j < len(lines); j++ {
 				if strings.TrimSpace(lines[j]) == ")" {
-					newLines := make([]string, 0, len(lines)+1)
-					newLines = append(newLines, lines[:j]...)
-					newLines = append(newLines, importLine)
-					newLines = append(newLines, lines[j:]...)
-					return strings.Join(newLines, "\n"), Warning{}
+					out := make([]string, 0, len(lines)+len(newLines))
+					out = append(out, lines[:j]...)
+					out = append(out, newLines...)
+					out = append(out, lines[j:]...)
+					return strings.Join(out, "\n"), warnings
 				}
 			}
-			// No closing ")" found; insert after "import (" as fallback.
-			newLines := make([]string, 0, len(lines)+1)
-			newLines = append(newLines, lines[:i+1]...)
-			newLines = append(newLines, importLine)
-			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n"), Warning{}
+			out := make([]string, 0, len(lines)+len(newLines))
+			out = append(out, lines[:i+1]...)
+			out = append(out, newLines...)
+			out = append(out, lines[i+1:]...)
+			return strings.Join(out, "\n"), warnings
 		}
 	}
 
-	// Look for single-line import.
+	// Look for single-line import — convert to grouped block.
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "import ") && !strings.HasPrefix(trimmed, "import (") {
 			existingImport := "\t" + strings.TrimPrefix(trimmed, "import ")
-			newLines := make([]string, 0, len(lines)+3)
-			newLines = append(newLines, lines[:i]...)
-			newLines = append(newLines, "import (")
-			newLines = append(newLines, existingImport)
-			newLines = append(newLines, importLine)
-			newLines = append(newLines, ")")
-			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n"), Warning{}
+			out := make([]string, 0, len(lines)+len(newLines)+3)
+			out = append(out, lines[:i]...)
+			out = append(out, "import (")
+			out = append(out, existingImport)
+			out = append(out, newLines...)
+			out = append(out, ")")
+			out = append(out, lines[i+1:]...)
+			return strings.Join(out, "\n"), warnings
 		}
 	}
 
 	// No import — add after package clause.
 	for i, line := range lines {
 		if strings.HasPrefix(strings.TrimSpace(line), "package ") {
-			newLines := make([]string, 0, len(lines)+4)
-			newLines = append(newLines, lines[:i+1]...)
-			newLines = append(newLines, "")
-			newLines = append(newLines, "import (")
-			newLines = append(newLines, importLine)
-			newLines = append(newLines, ")")
-			newLines = append(newLines, lines[i+1:]...)
-			return strings.Join(newLines, "\n"), Warning{}
+			out := make([]string, 0, len(lines)+len(newLines)+4)
+			out = append(out, lines[:i+1]...)
+			out = append(out, "")
+			out = append(out, "import (")
+			out = append(out, newLines...)
+			out = append(out, ")")
+			out = append(out, lines[i+1:]...)
+			return strings.Join(out, "\n"), warnings
 		}
 	}
 
-	return src, Warning{}
-}
-
-// sourceImportAlias checks if the source already imports the given path
-// and returns the alias (or "" if no explicit alias) and whether it was
-// found.
-func sourceImportAlias(src, quotedPath string) (alias string, found bool) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
-	if err != nil {
-		return "", false
-	}
-	for _, imp := range file.Imports {
-		if imp.Path.Value == quotedPath {
-			if imp.Name != nil {
-				return imp.Name.Name, true
-			}
-			return "", true
-		}
-	}
-	return "", false
+	return src, warnings
 }
 
 // removeUnusedImportsText re-parses src and removes any imports whose
