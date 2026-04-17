@@ -131,10 +131,8 @@ func defIdentFile(ix *mast.Index, id *ast.Ident) *mast.File {
 	if grp == nil {
 		return nil
 	}
-	for _, it := range grp.Idents {
-		if it.Kind == mast.Def && it.File != nil {
-			return it.File
-		}
+	if def := grp.DefIdent(); def != nil {
+		return def.File
 	}
 	return nil
 }
@@ -240,7 +238,7 @@ func emitFileMoveEdits(ctx *compileCtx) {
 		srcPath := src.Path
 
 		targetDir := filepath.Dir(info.move.To)
-		targetPkgName := fileMovePackageName(ix, targetDir, src)
+		targetPkgName := fileMovePackageName(ctx, targetDir, src)
 		if targetPkgName != src.Syntax.Name.Name {
 			pkgName := src.Syntax.Name
 			pkgOff := ix.Fset.Position(pkgName.Pos()).Offset
@@ -272,11 +270,11 @@ func emitFileMoveEdits(ctx *compileCtx) {
 // source, the source's package name is used. Otherwise, existing
 // packages in the target directory take precedence; the directory
 // basename is the final fallback.
-func fileMovePackageName(ix *mast.Index, targetDir string, srcFile *mast.File) string {
+func fileMovePackageName(ctx *compileCtx, targetDir string, srcFile *mast.File) string {
 	if targetDir == filepath.Dir(srcFile.Path) {
 		return srcFile.Syntax.Name.Name
 	}
-	if pkg := findPkgForDir(ix, targetDir); pkg != nil {
+	if pkg := ctx.cachedPkgForDir(targetDir); pkg != nil {
 		return pkg.Name
 	}
 	return guessPackageName(targetDir)

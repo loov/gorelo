@@ -15,20 +15,16 @@ type assembler struct {
 
 	out map[string]FileEdit
 
-	byTarget map[string][]*resolvedRelo
-	bySource map[string][]*resolvedRelo
-
 	fileMoveSourcePaths map[string]bool
 	fileMoveTargetPaths map[string]bool
 }
 
 // assemble builds the final FileEdit list (phase 8).
 func assemble(ctx *compileCtx) {
+	ctx.initGroupByTargetSource()
 	a := &assembler{
 		compileCtx: ctx,
 		out:        make(map[string]FileEdit),
-		byTarget:   groupByTarget(ctx.resolved),
-		bySource:   groupBySource(ctx.resolved),
 	}
 
 	a.fileMoveSourcePaths = collectFileMoveSourcePaths(ctx.fmInfos)
@@ -131,7 +127,7 @@ func (a *assembler) gatherInputs() (inputs map[string][]byte, existedBefore map[
 			continue
 		}
 		if rrs, ok := a.byTarget[path]; ok {
-			inputs[path] = []byte(buildTargetPreamble(a.ix, rrs))
+			inputs[path] = []byte(buildTargetPreamble(a.compileCtx, rrs))
 		}
 	}
 	return inputs, existedBefore
@@ -185,8 +181,8 @@ func (a *assembler) postProcess(outputs map[string][]byte, existedBefore map[str
 // new target file's input to plan.Apply: an optional `//go:build`
 // constraint (when all contributing rrs share one), then the package
 // clause. Move primitives at offset -1 land after this preamble.
-func buildTargetPreamble(ix *mast.Index, rrs []*resolvedRelo) string {
-	targetPkgName := determineTargetPkgName(ix, rrs)
+func buildTargetPreamble(ctx *compileCtx, rrs []*resolvedRelo) string {
+	targetPkgName := determineTargetPkgName(ctx, rrs)
 	constraint := collectBuildConstraint(rrs)
 	var b strings.Builder
 	if constraint != "" {
@@ -257,7 +253,7 @@ func (a *assembler) generateAllStubs() map[string]string {
 }
 
 // determineTargetPkgName figures out the package name for a new target file.
-func determineTargetPkgName(ix *mast.Index, rrs []*resolvedRelo) string {
+func determineTargetPkgName(ctx *compileCtx, rrs []*resolvedRelo) string {
 	for _, rr := range rrs {
 		if rr.File != nil && rr.File.Pkg != nil {
 			if isSamePackageDir(rr.File.Pkg, rr.TargetFile) {
@@ -267,7 +263,7 @@ func determineTargetPkgName(ix *mast.Index, rrs []*resolvedRelo) string {
 	}
 	if len(rrs) > 0 {
 		targetDir := filepath.Dir(rrs[0].TargetFile)
-		if pkg := findPkgForDir(ix, targetDir); pkg != nil {
+		if pkg := ctx.cachedPkgForDir(targetDir); pkg != nil {
 			return pkg.Name
 		}
 		return guessPackageName(targetDir)

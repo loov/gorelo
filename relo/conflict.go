@@ -12,8 +12,9 @@ import (
 
 // checkConstraints warns about build constraint issues (phase 4).
 func checkConstraints(ctx *compileCtx) {
-	resolved, plan := ctx.resolved, ctx.plan
-	byTarget := groupByTarget(resolved)
+	plan := ctx.plan
+	ctx.initGroupByTargetSource()
+	byTarget := ctx.byTarget
 
 	sortedTargets := sortedKeys(byTarget)
 	for _, target := range sortedTargets {
@@ -108,7 +109,7 @@ func detectConflicts(ctx *compileCtx) error {
 
 	// Check against existing declarations in target packages.
 	for dir, entries := range byTargetDir {
-		targetPkg := findPkgForDir(ix, dir)
+		targetPkg := ctx.cachedPkgForDir(dir)
 		if targetPkg == nil {
 			continue
 		}
@@ -179,7 +180,7 @@ func detectConflicts(ctx *compileCtx) error {
 		if !rr.isCrossPackageMove() {
 			continue
 		}
-		srcImportPath := guessImportPath(rr.SourceDir)
+		srcImportPath := ctx.cachedImportPath(rr.SourceDir)
 		if srcImportPath == "" {
 			continue
 		}
@@ -189,7 +190,7 @@ func detectConflicts(ctx *compileCtx) error {
 		if !stubForces && !sourceNeedsTargetImport(rr, resolved) {
 			continue
 		}
-		if !targetImportsSource(ix, rr.TargetFile, finalDir(rr), srcImportPath) {
+		if !targetImportsSource(ctx, rr.TargetFile, finalDir(rr), srcImportPath) {
 			continue
 		}
 		plan.Warnings.AddAtf(rr, ix,
@@ -217,7 +218,7 @@ func detectConflicts(ctx *compileCtx) error {
 	checkCrossPkgRefs(ix, resolved, spans, resolvedGroups, plan)
 
 	// Warn when a source file has build constraints.
-	checkSourceBuildConstraints(ix, resolved, plan)
+	checkSourceBuildConstraints(ctx)
 
 	return nil
 }
@@ -297,8 +298,9 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 // constraint. We only warn when the constraint could be lost: the target
 // file already exists, or the items mixed constrained and unconstrained
 // sources (the mixed-constraints case is already covered by checkConstraints).
-func checkSourceBuildConstraints(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) {
-	byTarget := groupByTarget(resolved)
+func checkSourceBuildConstraints(ctx *compileCtx) {
+	ix, resolved, plan := ctx.ix, ctx.resolved, ctx.plan
+	byTarget := ctx.byTarget
 
 	warnedFiles := make(map[string]bool)
 	for _, rr := range resolved {
@@ -569,8 +571,8 @@ func sourceNeedsTargetImport(rr *resolvedRelo, resolved []*resolvedRelo) bool {
 // targetImportsSource reports whether any file in the package at targetDir
 // imports srcImportPath. It handles both existing target files and packages
 // rooted at a target directory that doesn't yet contain the target file.
-func targetImportsSource(ix *mast.Index, targetFilePath, targetDir, srcImportPath string) bool {
-	if f := ix.FilesByPath[targetFilePath]; f != nil {
+func targetImportsSource(ctx *compileCtx, targetFilePath, targetDir, srcImportPath string) bool {
+	if f := ctx.ix.FilesByPath[targetFilePath]; f != nil {
 		for _, imp := range f.Syntax.Imports {
 			if importPath(imp) == srcImportPath {
 				return true
@@ -578,7 +580,7 @@ func targetImportsSource(ix *mast.Index, targetFilePath, targetDir, srcImportPat
 		}
 		return false
 	}
-	targetPkg := findPkgForDir(ix, targetDir)
+	targetPkg := ctx.cachedPkgForDir(targetDir)
 	if targetPkg == nil {
 		return false
 	}

@@ -62,6 +62,12 @@ type compileCtx struct {
 	resolvedGroups map[*mast.Group]bool
 	movedSpans     movedSpanIndex
 	reloByGroup    map[*mast.Group]*resolvedRelo
+
+	// Caches populated lazily or once and reused across phases.
+	importPathCache map[string]string          // dir → import path
+	pkgByDir        map[string]*mast.Package   // dir → non-test package
+	byTarget        map[string][]*resolvedRelo // target file → relos
+	bySource        map[string][]*resolvedRelo // source file → relos
 }
 
 // Compile builds a Plan from a set of Relo and FileMove instructions against
@@ -72,9 +78,11 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	}
 
 	ctx := &compileCtx{
-		ix:   ix,
-		opts: opts,
-		plan: &Plan{},
+		ix:              ix,
+		opts:            opts,
+		plan:            &Plan{},
+		importPathCache: make(map[string]string),
+		pkgByDir:        buildPkgByDir(ix),
 	}
 
 	// Expand file moves into per-decl relos and collect the moves for the
@@ -149,6 +157,67 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	assemble(ctx)
 
 	return ctx.plan, nil
+}
+
+// qualifyEdit describes how to qualify a reference to a group that is
+// moving to a different directory than the observer.
+type qualifyEdit struct {
+	// LocalRef is true when observer and group end up in the same package —
+	// any existing qualifier should be stripped and no import is needed.
+	LocalRef bool
+	// Qualifier is the package name the observer must use (empty when local).
+	Qualifier string
+	// ImportPath is the import the observer's file needs (empty when local).
+	ImportPath string
+}
+
+// classifyRef determines how a reference to a group whose destination is
+// groupDir should be qualified from the perspective of code in observerDir.
+// Both directories must be absolute paths.
+func (ctx *compileCtx) classifyRef(groupDir, observerDir string) qualifyEdit {
+	if groupDir == observerDir {
+		return qualifyEdit{LocalRef: true}
+	}
+	impPath := ctx.cachedImportPath(groupDir)
+	return qualifyEdit{
+		Qualifier:  ctx.cachedPackageLocalName(groupDir),
+		ImportPath: impPath,
+	}
+}
+
+// cachedImportPath returns guessImportPath(dir) with memoization.
+func (ctx *compileCtx) cachedImportPath(dir string) string {
+	if v, ok := ctx.importPathCache[dir]; ok {
+		return v
+	}
+	v := guessImportPath(dir)
+	ctx.importPathCache[dir] = v
+	return v
+}
+
+// cachedPkgForDir returns the non-test package in dir, or nil. Cached.
+func (ctx *compileCtx) cachedPkgForDir(dir string) *mast.Package {
+	if pkg, ok := ctx.pkgByDir[dir]; ok {
+		return pkg
+	}
+	return nil
+}
+
+// cachedPackageLocalName returns the package local name for dir, using cached lookups.
+func (ctx *compileCtx) cachedPackageLocalName(dir string) string {
+	if pkg := ctx.cachedPkgForDir(dir); pkg != nil {
+		return pkg.Name
+	}
+	return guessImportLocalName(ctx.cachedImportPath(dir))
+}
+
+// initGroupByTargetSource populates byTarget and bySource once.
+func (ctx *compileCtx) initGroupByTargetSource() {
+	if ctx.byTarget != nil {
+		return
+	}
+	ctx.byTarget = groupByTarget(ctx.resolved)
+	ctx.bySource = groupBySource(ctx.resolved)
 }
 
 // Apply writes a Plan to disk.

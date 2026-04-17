@@ -109,15 +109,24 @@ type spanRewriter struct {
 // groupAction describes how a moved group's references should be
 // rewritten in the destination.
 type groupAction struct {
-	targetName  string
-	impPath     string // non-empty → cross-target
-	crossTarget bool
+	targetName string
+	ref        qualifyEdit
+}
+
+// qualifiedName returns the fully-qualified text for this action,
+// using sw.destLocal to resolve any import alias at the destination.
+func (act *groupAction) qualifiedName(sw *spanRewriter) string {
+	if act.ref.LocalRef {
+		return act.targetName
+	}
+	return sw.destLocal(act.ref.ImportPath) + "." + act.targetName
 }
 
 // newSpanRewriter builds the action table and registers cross-target
 // destination imports. The returned spanRewriter is ready for the
 // single-pass rewrite walk in rewriteSpanQualifiers.
-func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet) *spanRewriter {
+func newSpanRewriter(ctx *compileCtx, rr *resolvedRelo, s *span) *spanRewriter {
+	ix, resolved, resolvedGroups, imports := ctx.ix, ctx.resolved, ctx.resolvedGroups, ctx.imports
 	targetPath := rr.TargetFile
 	targetDir := filepath.Dir(targetPath)
 
@@ -128,7 +137,7 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 		resolvedGroups:   resolvedGroups,
 		imports:          imports,
 		targetPath:       targetPath,
-		targetImportPath: guessImportPath(targetDir),
+		targetImportPath: ctx.cachedImportPath(targetDir),
 		isCrossPkg:       rr.isCrossPackageMove(),
 		actions:          make(map[*mast.Group]*groupAction),
 		importByLocal:    make(map[string]string),
@@ -139,19 +148,15 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 	// Build per-group action lookup.
 	for _, r := range resolved {
 		rDir := filepath.Dir(r.TargetFile)
-		if rDir == targetDir || r.Group.Kind.TravelsWithType() {
-			sw.actions[r.Group] = &groupAction{targetName: r.TargetName}
+		if r.Group.Kind.TravelsWithType() {
+			sw.actions[r.Group] = &groupAction{targetName: r.TargetName, ref: qualifyEdit{LocalRef: true}}
 			continue
 		}
-		rImpPath := guessImportPath(rDir)
-		if rImpPath == "" {
+		ref := ctx.classifyRef(rDir, targetDir)
+		if !ref.LocalRef && ref.ImportPath == "" {
 			continue
 		}
-		sw.actions[r.Group] = &groupAction{
-			targetName:  r.TargetName,
-			impPath:     rImpPath,
-			crossTarget: true,
-		}
+		sw.actions[r.Group] = &groupAction{targetName: r.TargetName, ref: ref}
 	}
 
 	// Propagate type renames to embedded field groups.
@@ -168,7 +173,7 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 	}
 
 	if sw.isCrossPkg {
-		sw.srcImportPath = guessImportPath(rr.SourceDir)
+		sw.srcImportPath = ctx.cachedImportPath(rr.SourceDir)
 	}
 
 	// Pre-register cross-target imports in path-sorted order so
@@ -177,9 +182,9 @@ func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*reso
 		seen := make(map[string]bool)
 		var sortedImpPaths []string
 		for _, act := range sw.actions {
-			if act.crossTarget && !seen[act.impPath] {
-				seen[act.impPath] = true
-				sortedImpPaths = append(sortedImpPaths, act.impPath)
+			if !act.ref.LocalRef && act.ref.ImportPath != "" && !seen[act.ref.ImportPath] {
+				seen[act.ref.ImportPath] = true
+				sortedImpPaths = append(sortedImpPaths, act.ref.ImportPath)
 			}
 		}
 		sort.Strings(sortedImpPaths)
@@ -256,12 +261,13 @@ func (sw *spanRewriter) destLocal(impPath string) string {
 // mast qualifier, the SelectorExpr handler emits the full rewrite
 // and returns false to skip children. Otherwise, import-qualifier
 // rewrites are handled here and children are visited normally.
-func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet, origin string) {
+func rewriteSpanQualifiers(ctx *compileCtx, rr *resolvedRelo, s *span, origin string) {
 	if rr.File == nil || s == nil {
 		return
 	}
 
-	sw := newSpanRewriter(ix, rr, s, resolved, resolvedGroups, imports)
+	sw := newSpanRewriter(ctx, rr, s)
+	ix, plan := ctx.ix, ctx.edits
 	srcPath := rr.File.Path
 	fset := ix.Fset
 
@@ -285,10 +291,7 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 				if act, ok := sw.actions[grp]; ok {
 					for _, gid := range grp.Idents {
 						if gid.Ident == sel.Sel && gid.Qualifier == qid {
-							newText := act.targetName
-							if act.crossTarget {
-								newText = sw.destLocal(act.impPath) + "." + act.targetName
-							}
+							newText := act.qualifiedName(sw)
 							emitEdit(plan, srcPath, qOff, selEnd, newText, origin)
 							return false
 						}
@@ -333,10 +336,7 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 		}
 
 		if act, ok := sw.actions[grp]; ok {
-			newText := act.targetName
-			if act.crossTarget {
-				newText = sw.destLocal(act.impPath) + "." + act.targetName
-			}
+			newText := act.qualifiedName(sw)
 			if newText == ident.Name {
 				return true
 			}

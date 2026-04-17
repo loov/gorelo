@@ -181,6 +181,18 @@ func findPkgForDir(ix *mast.Index, dir string) *mast.Package {
 	return nil
 }
 
+// buildPkgByDir builds a dir → *mast.Package map for all non-test packages.
+func buildPkgByDir(ix *mast.Index) map[string]*mast.Package {
+	m := make(map[string]*mast.Package, len(ix.Pkgs))
+	for _, pkg := range ix.Pkgs {
+		if len(pkg.Files) == 0 || strings.HasSuffix(pkg.Name, "_test") {
+			continue
+		}
+		m[filepath.Dir(pkg.Files[0].Path)] = pkg
+	}
+	return m
+}
+
 // importPath returns the unquoted import path from an ImportSpec.
 func importPath(imp *ast.ImportSpec) string {
 	p, _ := strconv.Unquote(imp.Path.Value)

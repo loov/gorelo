@@ -24,14 +24,11 @@ import (
 // extraction and file-move paths share this loop; only the Move
 // emission differs.
 func rewriteAllCrossFileQualifiers(ctx *compileCtx) {
-	ix, resolved := ctx.ix, ctx.resolved
-	resolvedGroups, spans, edits, imports := ctx.resolvedGroups, ctx.spans, ctx.edits, ctx.imports
-
-	for _, rr := range resolved {
+	for _, rr := range ctx.resolved {
 		if !rr.isCrossFileMove() || rr.File == nil {
 			continue
 		}
-		s := spans[rr]
+		s := ctx.spans[rr]
 		if s == nil {
 			continue
 		}
@@ -39,7 +36,7 @@ func rewriteAllCrossFileQualifiers(ctx *compileCtx) {
 		if rr.FromFileMove != nil {
 			origin = "filemove"
 		}
-		rewriteSpanQualifiers(edits, ix, rr, s, resolved, resolvedGroups, imports, origin)
+		rewriteSpanQualifiers(ctx, rr, s, origin)
 	}
 }
 

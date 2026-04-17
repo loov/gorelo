@@ -78,6 +78,27 @@ type Group struct {
 	Idents []*Ident
 }
 
+// DefIdent returns the first Def ident in the group, or nil if none exists.
+func (grp *Group) DefIdent() *Ident {
+	for _, id := range grp.Idents {
+		if id.Kind == Def {
+			return id
+		}
+	}
+	return nil
+}
+
+// FindIdent returns the ident in the group that matches target by pointer
+// identity and has the given kind, or nil if no match exists.
+func (grp *Group) FindIdent(target *ast.Ident, kind IdentKind) *Ident {
+	for _, id := range grp.Idents {
+		if id.Ident == target && id.Kind == kind {
+			return id
+		}
+	}
+	return nil
+}
+
 // IsPackageScope reports whether the group represents a package-scope
 // declaration (as opposed to a local variable, parameter, or result).
 // A package-scope group has at least one Def ident at file top-level —

@@ -16,11 +16,6 @@ import (
 func computeConsumerEdits(ctx *compileCtx) {
 	ix, resolved := ctx.ix, ctx.resolved
 	movedSpans, edits, imports, opts := ctx.movedSpans, ctx.edits, ctx.imports, ctx.opts
-	type moveInfo struct {
-		srcPkgPath string // source package import path
-		tgtPkgPath string // target package import path
-		tgtDir     string // target directory (absolute path)
-	}
 
 	// Groups that cannot rely on stubs: file-move groups (source file
 	// is deleted) and detach/attach groups (calling convention changes,
@@ -32,38 +27,17 @@ func computeConsumerEdits(ctx *compileCtx) {
 		}
 	}
 
-	// Collect cross-package moves keyed by group.
-	movedGroups := make(map[*mast.Group]*moveInfo)
-
-	// Track target directories per group so we can skip consumer edits
-	// for files in the same package as the group's destination (where
-	// the declaration becomes local). We use per-group target dirs
-	// rather than a blanket set so that a file which is a target for
-	// one group can still receive consumer edits for a different group.
-	groupTargetDirs := make(map[*mast.Group]map[string]bool)
+	// Collect cross-package moved groups and their target directories.
+	type groupInfo struct {
+		targetDir string
+	}
+	movedGroups := make(map[*mast.Group]*groupInfo)
 
 	for _, rr := range resolved {
-		tgtDir := finalDir(rr)
-		if groupTargetDirs[rr.Group] == nil {
-			groupTargetDirs[rr.Group] = make(map[string]bool)
-		}
-		groupTargetDirs[rr.Group][tgtDir] = true
-
 		if !rr.isCrossPackageMove() {
 			continue
 		}
-
-		srcPkgPath := guessImportPath(rr.SourceDir)
-		tgtPkgPath := guessImportPath(tgtDir)
-		if srcPkgPath == "" || tgtPkgPath == "" {
-			continue
-		}
-
-		movedGroups[rr.Group] = &moveInfo{
-			srcPkgPath: srcPkgPath,
-			tgtPkgPath: tgtPkgPath,
-			tgtDir:     tgtDir,
-		}
+		movedGroups[rr.Group] = &groupInfo{targetDir: finalDir(rr)}
 	}
 
 	if len(movedGroups) == 0 {
@@ -96,7 +70,6 @@ func computeConsumerEdits(ctx *compileCtx) {
 				continue
 			}
 			filePath := id.File.Path
-			inTargetPkg := groupTargetDirs[grp][filepath.Dir(filePath)]
 			identOff := ix.Fset.Position(id.Ident.Pos()).Offset
 			identEnd := identOff + len(id.Ident.Name)
 			qualified := id.Qualifier != nil
@@ -105,38 +78,33 @@ func computeConsumerEdits(ctx *compileCtx) {
 				continue
 			}
 
-			switch {
-			case inTargetPkg && !qualified:
-				// Bare reference becoming local — no qualifier to edit.
+			qe := ctx.classifyRef(info.targetDir, filepath.Dir(filePath))
 
-			case inTargetPkg && qualified:
-				// Qualified reference becoming local — strip qualifier.
-				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
-				selOff := ix.Fset.Position(id.Ident.Pos()).Offset
-				emitEdit(edits, filePath, qualOff, selOff, "", "consumer-qualifier")
-
-			case !inTargetPkg && !qualified:
-				// Bare reference to declaration leaving the package —
-				// insert package qualifier before the ident.
-				if stubsHandled || grp.Kind.TravelsWithType() {
-					continue
+			if qe.LocalRef {
+				if qualified {
+					qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
+					selOff := ix.Fset.Position(id.Ident.Pos()).Offset
+					emitEdit(edits, filePath, qualOff, selOff, "", "consumer-qualifier")
 				}
-				tgtLocalName := packageLocalName(ix, info.tgtDir)
-				emitEdit(edits, filePath, identOff, identOff, tgtLocalName+".", "consumer-qualifier")
-				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
+				continue
+			}
 
-			case !inTargetPkg && qualified:
-				// Qualified cross-package reference — requalify.
-				if stubsHandled || grp.Kind.TravelsWithType() {
-					continue
-				}
-				tgtLocalName := packageLocalName(ix, info.tgtDir)
+			// External reference — stubs handle the rewrite for these groups.
+			if stubsHandled || grp.Kind.TravelsWithType() {
+				continue
+			}
+
+			if !qualified {
+				emitEdit(edits, filePath, identOff, identOff, qe.Qualifier+".", "consumer-qualifier")
+			} else {
 				qualOff := ix.Fset.Position(id.Qualifier.Pos()).Offset
 				qualEnd := qualOff + len(id.Qualifier.Name)
-				if id.Qualifier.Name != tgtLocalName {
-					emitEdit(edits, filePath, qualOff, qualEnd, tgtLocalName, "consumer-qualifier")
+				if id.Qualifier.Name != qe.Qualifier {
+					emitEdit(edits, filePath, qualOff, qualEnd, qe.Qualifier, "consumer-qualifier")
 				}
-				addImportEntry(imports, ix, filePath, importEntry{Path: info.tgtPkgPath})
+			}
+			if qe.ImportPath != "" {
+				addImportEntry(imports, ix, filePath, importEntry{Path: qe.ImportPath})
 			}
 		}
 	}

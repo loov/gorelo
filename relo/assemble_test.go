@@ -412,8 +412,8 @@ func TestDetermineTargetPkgName_SameDir(t *testing.T) {
 			TargetFile: filepath.Join(pkgDir, "target.go"),
 		},
 	}
-	ix := &mast.Index{}
-	got := determineTargetPkgName(ix, rrs)
+	ctx := &compileCtx{ix: &mast.Index{}, pkgByDir: buildPkgByDir(&mast.Index{})}
+	got := determineTargetPkgName(ctx, rrs)
 	if got != "mypkg" {
 		t.Errorf("determineTargetPkgName = %q, want %q", got, "mypkg")
 	}
@@ -430,8 +430,8 @@ func TestDetermineTargetPkgName_DifferentDir(t *testing.T) {
 			TargetFile: filepath.Join(base, "dst", "target.go"),
 		},
 	}
-	ix := &mast.Index{}
-	got := determineTargetPkgName(ix, rrs)
+	ctx := &compileCtx{ix: &mast.Index{}, pkgByDir: buildPkgByDir(&mast.Index{})}
+	got := determineTargetPkgName(ctx, rrs)
 	if got != "dst" {
 		t.Errorf("determineTargetPkgName = %q, want %q", got, "dst")
 	}
@@ -462,6 +462,7 @@ func TestDetermineTargetPkgName_SkipsTestPackage(t *testing.T) {
 	ix := &mast.Index{
 		Pkgs: []*mast.Package{testPkg, mainPkg},
 	}
+	ctx := &compileCtx{ix: ix, pkgByDir: buildPkgByDir(ix)}
 
 	rrs := []*resolvedRelo{
 		{
@@ -469,7 +470,7 @@ func TestDetermineTargetPkgName_SkipsTestPackage(t *testing.T) {
 			TargetFile: filepath.Join(targetDir, "new.go"),
 		},
 	}
-	got := determineTargetPkgName(ix, rrs)
+	got := determineTargetPkgName(ctx, rrs)
 	if got != "mylib" {
 		t.Errorf("determineTargetPkgName = %q, want %q (should skip _test package)", got, "mylib")
 	}

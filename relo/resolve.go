@@ -77,23 +77,12 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 			return nil, fmt.Errorf("ident %q at %v is not tracked by the index", r.Ident.Name, r.Ident.Pos())
 		}
 
-		// Find the Def ident in the group that matches this ast.Ident.
-		var defIdent *mast.Ident
-		for _, id := range grp.Idents {
-			if id.Ident == r.Ident && id.Kind == mast.Def {
-				defIdent = id
-				break
-			}
-		}
+		// Find the Def ident. Prefer the one matching r.Ident by
+		// pointer identity (the user provided the def itself); fall
+		// back to the group's first def.
+		defIdent := grp.FindIdent(r.Ident, mast.Def)
 		if defIdent == nil {
-			// The provided ident might not be the def itself;
-			// find any def in the group.
-			for _, id := range grp.Idents {
-				if id.Kind == mast.Def {
-					defIdent = id
-					break
-				}
-			}
+			defIdent = grp.DefIdent()
 		}
 		if defIdent == nil {
 			return nil, fmt.Errorf("no definition found for ident %q", r.Ident.Name)
@@ -270,14 +259,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 					continue
 				}
 
-				// Find the def ident.
-				var defIdent *mast.Ident
-				for _, id := range grp.Idents {
-					if id.Kind == mast.Def {
-						defIdent = id
-						break
-					}
-				}
+				defIdent := grp.DefIdent()
 				if defIdent == nil {
 					continue
 				}
