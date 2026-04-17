@@ -19,26 +19,40 @@ import (
 //
 // File-move-synthesized rrs are skipped — assembleFileMoves owns
 // their rendering via a sub-Plan.
-func emitCrossFileExtraction(ctx *compileCtx) {
+// rewriteAllCrossFileQualifiers rewrites qualifier references inside
+// every cross-file-moved span in a single pass. Both per-decl
+// extraction and file-move paths share this loop; only the Move
+// emission differs.
+func rewriteAllCrossFileQualifiers(ctx *compileCtx) {
 	ix, resolved := ctx.ix, ctx.resolved
 	resolvedGroups, spans, edits, imports := ctx.resolvedGroups, ctx.spans, ctx.edits, ctx.imports
+
+	for _, rr := range resolved {
+		if !rr.isCrossFileMove() || rr.File == nil {
+			continue
+		}
+		s := spans[rr]
+		if s == nil {
+			continue
+		}
+		origin := "extract"
+		if rr.FromFileMove != nil {
+			origin = "filemove"
+		}
+		rewriteSpanQualifiers(edits, ix, rr, s, resolved, resolvedGroups, imports, origin)
+	}
+}
+
+func emitCrossFileExtraction(ctx *compileCtx) {
+	spans, edits := ctx.spans, ctx.edits
 	type spanKey struct {
 		path       string
 		start, end int
 	}
 	emittedSpan := make(map[spanKey]bool)
 
-	for _, rr := range resolved {
-		if !rr.isCrossFileMove() {
-			continue
-		}
-		if rr.File == nil {
-			continue
-		}
-		// File-move-synthesized rrs are handled by assembleFileMoves,
-		// not by the main plan.Apply pass; their source file isn't in
-		// inputs so emitting a Move here would be out-of-bounds.
-		if rr.FromFileMove != nil {
+	for _, rr := range ctx.resolved {
+		if !rr.isCrossFileMove() || rr.File == nil || rr.FromFileMove != nil {
 			continue
 		}
 		s := spans[rr]
@@ -46,16 +60,7 @@ func emitCrossFileExtraction(ctx *compileCtx) {
 			continue
 		}
 		srcPath := rr.File.Path
-		targetPath := rr.TargetFile
 
-		// Unified per-ident walk that emits all qualifier-related
-		// edits (moved-group renames + cross-target qualifies +
-		// self-import unqualifies + alias rewrites + cross-pkg-stay
-		// qualifies) and registers destination imports inline.
-		rewriteSpanQualifiers(edits, ix, rr, s, resolved, resolvedGroups, imports, "extract")
-
-		// Emit the Move once per unique source span (multi-name decls
-		// like `const A, B = 1, 2` yield multiple rrs sharing one span).
 		key := spanKey{srcPath, s.Start, s.End}
 		if emittedSpan[key] {
 			continue
@@ -71,7 +76,7 @@ func emitCrossFileExtraction(ctx *compileCtx) {
 		}
 		edits.Move(
 			ed.Span{Path: srcPath, Start: s.Start, End: s.End},
-			ed.Anchor{Path: targetPath, Offset: -1},
+			ed.Anchor{Path: rr.TargetFile, Offset: -1},
 			opts,
 			"extract",
 		)

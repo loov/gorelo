@@ -136,13 +136,13 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	// Phase 7b: compute consumer qualifier edits (rewrite files that import moved symbols).
 	computeConsumerEdits(ctx)
 
-	// Phase 7c: emit cross-file extraction (Move primitives + carried
-	// qualification edits) so plan.Apply produces both source-side
-	// deletions and target-side appended content.
-	emitCrossFileExtraction(ctx)
+	// Phase 7c: rewrite qualifiers inside all cross-file-moved spans
+	// (both per-decl extractions and file moves share one loop).
+	rewriteAllCrossFileQualifiers(ctx)
 
-	// Phase 7d: emit whole-file moves (Move + carried qualification
-	// edits + package-clause Replace) onto the shared Plan.
+	// Phase 7d: emit Move primitives — per-span for per-decl
+	// extractions, per-file for whole-file moves.
+	emitCrossFileExtraction(ctx)
 	emitFileMoveEdits(ctx)
 
 	// Phase 8: assemble file edits.

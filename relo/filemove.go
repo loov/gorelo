@@ -230,8 +230,7 @@ func lookupFile(ix *mast.Index, path string) *mast.File {
 // file-move content sorts before any per-decl extraction Moves (which
 // use the default Order 0).
 func emitFileMoveEdits(ctx *compileCtx) {
-	ix, resolved := ctx.ix, ctx.resolved
-	resolvedGroups, spans, edits, imports := ctx.resolvedGroups, ctx.spans, ctx.edits, ctx.imports
+	ix, edits := ctx.ix, ctx.edits
 
 	for _, info := range ctx.fmInfos {
 		src := info.srcFile
@@ -239,14 +238,6 @@ func emitFileMoveEdits(ctx *compileCtx) {
 			continue
 		}
 		srcPath := src.Path
-
-		for _, rr := range info.relos {
-			s := spans[rr]
-			if s == nil {
-				continue
-			}
-			rewriteSpanQualifiers(edits, ix, rr, s, resolved, resolvedGroups, imports, "filemove")
-		}
 
 		targetDir := filepath.Dir(info.move.To)
 		targetPkgName := fileMovePackageName(ix, targetDir, src)
