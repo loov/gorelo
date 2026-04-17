@@ -24,6 +24,7 @@ func main() {
 	}).Run(ctx, func(cmds clingy.Commands) {
 		cmds.New("apply", "apply rules from files and/or inline arguments", new(cmdApply))
 		cmds.New("check", "dry-run: print plan without writing", &cmdApply{dryRun: true})
+		cmds.New("ls", "list declarations in the codebase", new(cmdLs))
 		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
 	})
 	if err != nil {
@@ -61,6 +62,8 @@ Examples:
   gorelo apply "@stubs" "Server -> server.go"     # with stubs directive
   gorelo check                                    # preview without writing
   gorelo check refactor.rules                     # preview specific file
+  gorelo ls                                       # list all declarations
+  gorelo ls --json                                # JSON output for tooling
 
 Rule syntax:
   Server -> server.go                  # move declaration to file (forward)
