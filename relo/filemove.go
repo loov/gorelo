@@ -229,8 +229,11 @@ func lookupFile(ix *mast.Index, path string) *mast.File {
 // The Move uses Order -1 so that at the destination anchor, the
 // file-move content sorts before any per-decl extraction Moves (which
 // use the default Order 0).
-func emitFileMoveEdits(ix *mast.Index, infos []*fileMoveInfo, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
-	for _, info := range infos {
+func emitFileMoveEdits(ctx *compileCtx) {
+	ix, resolved := ctx.ix, ctx.resolved
+	resolvedGroups, spans, edits, imports := ctx.resolvedGroups, ctx.spans, ctx.edits, ctx.imports
+
+	for _, info := range ctx.fmInfos {
 		src := info.srcFile
 		if src == nil || src.Src == nil {
 			continue

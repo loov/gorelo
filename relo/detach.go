@@ -16,13 +16,13 @@ import (
 // edits are emitted onto the same Plan. For cross-file moves, the decl
 // edits sit inside the moved span and ride along with the enclosing
 // Move (or carryPlanInSpans for file-move targets).
-func computeDetachEdits(ix *mast.Index, resolved []*resolvedRelo, edits *ed.Plan, imports *importSet, plan *Plan) {
-	for _, rr := range resolved {
+func computeDetachEdits(ctx *compileCtx) {
+	for _, rr := range ctx.resolved {
 		switch {
 		case rr.Relo.Detach:
-			detachMethod(ix, rr, resolved, edits, imports, plan)
+			detachMethod(ctx.ix, rr, ctx.resolved, ctx.edits, ctx.imports, ctx.plan)
 		case rr.Relo.MethodOf != "":
-			attachMethod(ix, rr, edits, plan)
+			attachMethod(ctx.ix, rr, ctx.edits, ctx.plan)
 		}
 	}
 }

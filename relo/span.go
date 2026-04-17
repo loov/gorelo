@@ -51,7 +51,9 @@ func (m movedSpanIndex) Contains(filePath string, off, endOff int) bool {
 }
 
 // computeSpans computes byte ranges for each resolved relo (phases 2-3).
-func computeSpans(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) (map[*resolvedRelo]*span, error) {
+func computeSpans(ctx *compileCtx) (map[*resolvedRelo]*span, error) {
+	ix, resolved, plan := ctx.ix, ctx.resolved, ctx.plan
+
 	// First pass: cache enclosing decl on every resolvedRelo so that
 	// checkIotaBlock and downstream phases can use rr.Decl directly.
 	for _, rr := range resolved {

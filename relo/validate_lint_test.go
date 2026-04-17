@@ -53,8 +53,9 @@ func TestPostResolutionValidatorsTakeResolved(t *testing.T) {
 }
 
 // signatureHasResolvedParam reports whether fn's parameter list
-// includes []*resolvedRelo or map[*resolvedRelo]*span (or similar
-// map keyed by *resolvedRelo).
+// includes []*resolvedRelo, map[*resolvedRelo]*span (or similar
+// map keyed by *resolvedRelo), or *compileCtx (which embeds
+// the resolved slice).
 func signatureHasResolvedParam(fn *ast.FuncDecl) bool {
 	if fn.Type.Params == nil {
 		return false
@@ -75,6 +76,9 @@ func typeRefersToResolved(expr ast.Expr) bool {
 	case *ast.MapType:
 		// map[*resolvedRelo]T
 		return exprString(t.Key) == "*resolvedRelo"
+	case *ast.StarExpr:
+		// *compileCtx (which contains the resolved slice)
+		return exprString(t.X) == "compileCtx"
 	}
 	return false
 }

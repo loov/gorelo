@@ -16,7 +16,9 @@ import (
 // renamed groups. It only touches the ident region [identStart, identEnd);
 // qualifier changes and structural edits (detach, consumer) are handled
 // by their own passes on non-overlapping byte regions.
-func computeRenames(ix *mast.Index, resolved []*resolvedRelo, movedSpans movedSpanIndex, opts *Options, plan *Plan, edits *ed.Plan) {
+func computeRenames(ctx *compileCtx) {
+	ix, resolved := ctx.ix, ctx.resolved
+	movedSpans, opts, plan, edits := ctx.movedSpans, ctx.opts, ctx.plan, ctx.edits
 	renamedGroups := make(map[*mast.Group]string)
 
 	// When stubs are enabled, track groups with cross-package moves.

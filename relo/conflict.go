@@ -11,7 +11,8 @@ import (
 )
 
 // checkConstraints warns about build constraint issues (phase 4).
-func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
+func checkConstraints(ctx *compileCtx) {
+	resolved, plan := ctx.resolved, ctx.plan
 	byTarget := groupByTarget(resolved)
 
 	sortedTargets := sortedKeys(byTarget)
@@ -36,7 +37,9 @@ func checkConstraints(resolved []*resolvedRelo, plan *Plan) {
 }
 
 // detectConflicts checks for naming and movement conflicts (phase 5).
-func detectConflicts(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, resolvedGroups map[*mast.Group]bool, opts *Options, plan *Plan) error {
+func detectConflicts(ctx *compileCtx) error {
+	ix, resolved, spans := ctx.ix, ctx.resolved, ctx.spans
+	resolvedGroups, opts, plan := ctx.resolvedGroups, ctx.opts, ctx.plan
 	// Check movement conflicts: same group moved to two different targets.
 	// Use a composite key of (group, source file path) so that declarations
 	// from non-overlapping build constraints can target different files.

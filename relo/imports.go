@@ -42,7 +42,8 @@ type importSet struct {
 // import in any source file with a moved declaration. These imports
 // cannot be auto-transferred to the destination — the user must
 // reproduce them manually if the moved code relies on them.
-func warnNontransferableImports(ix *mast.Index, resolved []*resolvedRelo, plan *Plan) {
+func warnNontransferableImports(ctx *compileCtx) {
+	ix, resolved, plan := ctx.ix, ctx.resolved, ctx.plan
 	for _, rr := range resolved {
 		if rr.File == nil {
 			continue

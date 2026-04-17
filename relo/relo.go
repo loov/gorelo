@@ -46,13 +46,35 @@ type Options struct {
 
 func (o *Options) stubsEnabled() bool { return o != nil && o.Stubs }
 
+// compileCtx holds the shared pipeline state threaded through every
+// phase of a Compile run. Each field is populated progressively as
+// phases execute.
+type compileCtx struct {
+	ix      *mast.Index
+	opts    *Options
+	plan    *Plan
+	fmInfos []*fileMoveInfo
+
+	resolved       []*resolvedRelo
+	spans          map[*resolvedRelo]*span
+	edits          *ed.Plan
+	imports        *importSet
+	resolvedGroups map[*mast.Group]bool
+	movedSpans     movedSpanIndex
+}
+
 // Compile builds a Plan from a set of Relo and FileMove instructions against
 // a mast.Index.
 func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) (*Plan, error) {
 	if opts == nil {
 		opts = &Options{}
 	}
-	plan := &Plan{}
+
+	ctx := &compileCtx{
+		ix:   ix,
+		opts: opts,
+		plan: &Plan{},
+	}
 
 	// Expand file moves into per-decl relos and collect the moves for the
 	// whole-file assembly pass. userRelos gets mutated so that explicit
@@ -64,70 +86,67 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	if err != nil {
 		return nil, err
 	}
+	ctx.fmInfos = fmInfos
 	relos = append(userRelos, expanded...)
 
 	// Phase 0-1: validate, deduplicate, synthesize.
-	resolved, err := resolve(ix, relos, fmInfos, plan)
+	resolved, err := resolve(ix, relos, fmInfos, ctx.plan)
 	if err != nil {
 		return nil, err
 	}
 	tagFileMoves(resolved, fmInfos)
 	if len(resolved) == 0 {
-		return plan, nil
+		return ctx.plan, nil
 	}
+	ctx.resolved = resolved
 
 	// Post-resolution validators (see validate.go).
-	if err := checkUnexportedCrossPkg(resolved, fmInfos); err != nil {
+	if err := checkUnexportedCrossPkg(ctx.resolved, ctx.fmInfos); err != nil {
 		return nil, err
 	}
 
 	// Phase 2-3: compute spans with block semantics.
-	spans, err := computeSpans(ix, resolved, plan)
+	spans, err := computeSpans(ctx)
 	if err != nil {
 		return nil, err
 	}
+	ctx.spans = spans
 
 	// Phase 4-5: check build constraints and detect conflicts.
-	checkConstraints(resolved, plan)
-	resolvedGroups := buildResolvedGroups(resolved)
-	if err := detectConflicts(ix, resolved, spans, resolvedGroups, opts, plan); err != nil {
+	checkConstraints(ctx)
+	ctx.resolvedGroups = buildResolvedGroups(ctx.resolved)
+	if err := detectConflicts(ctx); err != nil {
 		return nil, err
 	}
 
 	// Phase 6: compute rename edits into the shared edit.Plan.
-	// Rename only touches the ident region; qualifier and structural
-	// edits from detach/consumer target non-overlapping regions.
-	edits := &ed.Plan{}
-	movedSpans := buildMovedSpanIndex(resolved, spans)
-	computeRenames(ix, resolved, movedSpans, opts, plan, edits)
+	ctx.edits = &ed.Plan{}
+	ctx.movedSpans = buildMovedSpanIndex(ctx.resolved, ctx.spans)
+	computeRenames(ctx)
 
-	// Phase 7: import changes accumulate into importChanges.
-	// rewriteSpanQualifiers (called from emitCrossFileExtraction and
-	// assembleFileMoves) registers all source-side imports the moved
-	// span actually uses; computeDetachEdits and computeConsumerEdits
-	// register the imports specific to their rewrites.
-	importChanges := &importSet{byFile: make(map[string]*importChange)}
-	warnNontransferableImports(ix, resolved, plan)
+	// Phase 7: import changes accumulate into ctx.imports.
+	ctx.imports = &importSet{byFile: make(map[string]*importChange)}
+	warnNontransferableImports(ctx)
 
 	// Phase 7a: compute detach/attach structural edits.
-	computeDetachEdits(ix, resolved, edits, importChanges, plan)
+	computeDetachEdits(ctx)
 
 	// Phase 7b: compute consumer qualifier edits (rewrite files that import moved symbols).
-	computeConsumerEdits(ix, resolved, movedSpans, edits, importChanges, opts)
+	computeConsumerEdits(ctx)
 
 	// Phase 7c: emit cross-file extraction (Move primitives + carried
 	// qualification edits) so plan.Apply produces both source-side
 	// deletions and target-side appended content.
-	emitCrossFileExtraction(ix, resolved, resolvedGroups, spans, edits, importChanges)
+	emitCrossFileExtraction(ctx)
 
 	// Phase 7d: emit whole-file moves (Move + carried qualification
 	// edits + package-clause Replace) onto the shared Plan.
-	emitFileMoveEdits(ix, fmInfos, resolved, resolvedGroups, spans, edits, importChanges)
+	emitFileMoveEdits(ctx)
 
 	// Phase 8: assemble file edits.
-	assemble(ix, resolved, spans, edits, importChanges, fmInfos, opts, plan)
+	assemble(ctx)
 
-	return plan, nil
+	return ctx.plan, nil
 }
 
 // Apply writes a Plan to disk.

@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
 
@@ -14,7 +13,9 @@ import (
 // computeRenames on the non-overlapping ident region. Groups whose
 // kind TravelsWithType (methods, fields) are skipped in external
 // packages — they are accessed via receivers, not package qualifiers.
-func computeConsumerEdits(ix *mast.Index, resolved []*resolvedRelo, movedSpans movedSpanIndex, edits *ed.Plan, imports *importSet, opts *Options) {
+func computeConsumerEdits(ctx *compileCtx) {
+	ix, resolved := ctx.ix, ctx.resolved
+	movedSpans, edits, imports, opts := ctx.movedSpans, ctx.edits, ctx.imports, ctx.opts
 	type moveInfo struct {
 		srcPkgPath string // source package import path
 		tgtPkgPath string // target package import path

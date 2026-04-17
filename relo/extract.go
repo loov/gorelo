@@ -5,7 +5,6 @@ import (
 	"sort"
 
 	ed "github.com/loov/gorelo/edit"
-	"github.com/loov/gorelo/mast"
 )
 
 // emitCrossFileExtraction emits the Plan primitives that move each
@@ -20,7 +19,9 @@ import (
 //
 // File-move-synthesized rrs are skipped — assembleFileMoves owns
 // their rendering via a sub-Plan.
-func emitCrossFileExtraction(ix *mast.Index, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet) {
+func emitCrossFileExtraction(ctx *compileCtx) {
+	ix, resolved := ctx.ix, ctx.resolved
+	resolvedGroups, spans, edits, imports := ctx.resolvedGroups, ctx.spans, ctx.edits, ctx.imports
 	type spanKey struct {
 		path       string
 		start, end int

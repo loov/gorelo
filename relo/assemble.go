@@ -6,20 +6,12 @@ import (
 	"sort"
 	"strings"
 
-	ed "github.com/loov/gorelo/edit"
 	"github.com/loov/gorelo/mast"
 )
 
-// assembler holds the state shared by plan.Apply and the
-// import-application pass that compose Plan.Edits.
+// assembler holds assembly-specific state built on top of compileCtx.
 type assembler struct {
-	ix       *mast.Index
-	resolved []*resolvedRelo
-	spans    map[*resolvedRelo]*span
-	edits    *ed.Plan
-	imports  *importSet
-	opts     *Options
-	plan     *Plan
+	*compileCtx
 
 	out map[string]FileEdit
 
@@ -31,22 +23,16 @@ type assembler struct {
 }
 
 // assemble builds the final FileEdit list (phase 8).
-func assemble(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolvedRelo]*span, edits *ed.Plan, imports *importSet, fileMoves []*fileMoveInfo, opts *Options, plan *Plan) {
+func assemble(ctx *compileCtx) {
 	a := &assembler{
-		ix:       ix,
-		resolved: resolved,
-		spans:    spans,
-		edits:    edits,
-		imports:  imports,
-		opts:     opts,
-		plan:     plan,
-		out:      make(map[string]FileEdit),
-		byTarget: groupByTarget(resolved),
-		bySource: groupBySource(resolved),
+		compileCtx: ctx,
+		out:        make(map[string]FileEdit),
+		byTarget:   groupByTarget(ctx.resolved),
+		bySource:   groupBySource(ctx.resolved),
 	}
 
-	a.fileMoveSourcePaths = collectFileMoveSourcePaths(fileMoves)
-	a.fileMoveTargetPaths = collectFileMoveTargetPaths(fileMoves)
+	a.fileMoveSourcePaths = collectFileMoveSourcePaths(ctx.fmInfos)
+	a.fileMoveTargetPaths = collectFileMoveTargetPaths(ctx.fmInfos)
 	inputs, existedBefore := a.gatherInputs()
 
 	outputs, err := a.edits.Apply(inputs)

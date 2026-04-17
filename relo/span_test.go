@@ -209,7 +209,7 @@ func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
 	}
 
 	plan := &Plan{}
-	computeSpans(ix, []*resolvedRelo{rr}, plan)
+	computeSpans(&compileCtx{ix: ix, resolved: []*resolvedRelo{rr}, plan: plan})
 
 	if !hasWarning(plan, "multi-name declaration") {
 		t.Errorf("expected multi-name warning, got: %v", plan.Warnings)
@@ -265,7 +265,7 @@ const (
 	}
 
 	plan := &Plan{}
-	_, err := computeSpans(ix, resolved, plan)
+	_, err := computeSpans(&compileCtx{ix: ix, resolved: resolved, plan: plan})
 	if err == nil {
 		t.Fatal("expected error for iota block with different targets, got nil")
 	}
@@ -315,7 +315,7 @@ const (
 	}
 
 	plan := &Plan{}
-	_, err := computeSpans(ix, resolved, plan)
+	_, err := computeSpans(&compileCtx{ix: ix, resolved: resolved, plan: plan})
 	if err != nil {
 		t.Fatalf("expected no error when all iota specs go to same target, got: %v", err)
 	}

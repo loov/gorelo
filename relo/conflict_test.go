@@ -254,7 +254,7 @@ func TestCheckConstraints_MixedWarning(t *testing.T) {
 		},
 	}
 
-	checkConstraints(resolved, plan)
+	checkConstraints(&compileCtx{resolved: resolved, plan: plan})
 
 	if !hasWarning(plan, "mixed build constraints") {
 		t.Errorf("expected 'mixed build constraints' warning, got: %v", plan.Warnings)
@@ -278,7 +278,7 @@ func TestCheckConstraints_NoWarningForSameConstraint(t *testing.T) {
 		},
 	}
 
-	checkConstraints(resolved, plan)
+	checkConstraints(&compileCtx{resolved: resolved, plan: plan})
 
 	if len(plan.Warnings) != 0 {
 		t.Errorf("expected no warnings, got: %v", plan.Warnings)
@@ -316,7 +316,7 @@ func TestDetectConflicts_InterReloCollision(t *testing.T) {
 		testResolvedRelo(grpB, "/tmp/target/other.go", "Foo", fileB),
 	}
 
-	err := detectConflicts(ix, resolved, nil, buildResolvedGroups(resolved), nil, plan)
+	err := detectConflicts(&compileCtx{ix: ix, resolved: resolved, resolvedGroups: buildResolvedGroups(resolved), plan: plan})
 	if !errContains(err, "name collision") {
 		t.Fatalf("expected 'name collision' error for inter-relo collision, got: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestDetectConflicts_InterReloCollision_NonOverlappingConstraints(t *testing
 		testResolvedRelo(grpB, "/tmp/target/other.go", "Foo", fileB),
 	}
 
-	err := detectConflicts(ix, resolved, nil, buildResolvedGroups(resolved), nil, plan)
+	err := detectConflicts(&compileCtx{ix: ix, resolved: resolved, resolvedGroups: buildResolvedGroups(resolved), plan: plan})
 	if err != nil {
 		t.Fatalf("expected no error for non-overlapping constraints, got: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestCheckConstraints_NoWarningForUnconstrained(t *testing.T) {
 		},
 	}
 
-	checkConstraints(resolved, plan)
+	checkConstraints(&compileCtx{resolved: resolved, plan: plan})
 
 	if len(plan.Warnings) != 0 {
 		t.Errorf("expected no warnings, got: %v", plan.Warnings)
