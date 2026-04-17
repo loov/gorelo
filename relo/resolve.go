@@ -293,36 +293,13 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 
 	// Warnings.
 	for _, typeRelo := range movedTypes {
-		// Warn about NewT constructors.
-		ctorKey := typeRelo.Group.Pkg + ".New" + typeRelo.Group.Name
+		ctorName := "New" + typeRelo.Group.Name
+		ctorKey := typeRelo.Group.Pkg + "." + ctorName
 		if _, moved := movedNames[ctorKey]; !moved {
-			// Check if the constructor exists.
-			ctorFound := false
-			for _, pkg := range ix.Pkgs {
-				if pkg.Path != typeRelo.Group.Pkg {
-					continue
-				}
-				for _, file := range pkg.Files {
-					for _, decl := range file.Syntax.Decls {
-						fd, ok := decl.(*ast.FuncDecl)
-						if !ok || fd.Recv != nil {
-							continue
-						}
-						if fd.Name.Name == "New"+typeRelo.Group.Name {
-							plan.Warnings.AddAtf(typeRelo, ix,
-								"constructor New%s exists but is not being moved with type %s",
-								typeRelo.Group.Name, typeRelo.Group.Name)
-							ctorFound = true
-							break
-						}
-					}
-					if ctorFound {
-						break
-					}
-				}
-				if ctorFound {
-					break
-				}
+			if ix.FindDef(ctorName, typeRelo.Group.Pkg) != nil {
+				plan.Warnings.AddAtf(typeRelo, ix,
+					"constructor %s exists but is not being moved with type %s",
+					ctorName, typeRelo.Group.Name)
 			}
 		}
 	}
