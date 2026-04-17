@@ -116,103 +116,107 @@ func computeRenames(ix *mast.Index, resolved []*resolvedRelo, spans map[*resolve
 	}
 }
 
-// rewriteSpanQualifiers walks the moved span in rr's source file once
-// and emits primitives onto plan that transform every package qualifier
-// and every moved-group ident reference to its destination
-// representation. As a side effect it registers every destination
-// import the rewrites need on the importSet — external imports the
-// span uses (subsuming the old computeImports phase), cross-target
-// moved-group imports, and the source-package import for cross-pkg
-// stay-references. addImportEntry resolves collisions against the
-// destination's existing+queued imports, so the alias used in the
-// emitted edits matches what applyImportsPass will actually install.
-//
-// Subsumes computeImports + the trio computeExtractedEdits +
-// collectSelfImportEdits + computeImportAliasEdits with one walk.
-func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet, origin string) {
-	if rr.File == nil || s == nil {
-		return
-	}
+// spanRewriter holds precomputed state for rewriting qualifiers and
+// ident references within a moved span.
+type spanRewriter struct {
+	ix             *mast.Index
+	rr             *resolvedRelo
+	s              *span
+	resolvedGroups map[*mast.Group]bool
+	imports        *importSet
 
+	targetPath       string
+	targetImportPath string
+	srcImportPath    string
+	isCrossPkg       bool
+	actions          map[*mast.Group]*groupAction
+
+	// importByLocal maps source-file import local names to import paths.
+	importByLocal map[string]string
+
+	// handledQualifier marks qualifier idents whose SelectorExpr is
+	// handled by the Ident handler (extends left to replace pkg.Name).
+	handledQualifier map[*ast.Ident]bool
+
+	// registered tracks imports already queued to avoid duplicates.
+	registered map[string]bool
+}
+
+// groupAction describes how a moved group's references should be
+// rewritten in the destination.
+type groupAction struct {
+	targetName  string
+	impPath     string // non-empty → cross-target
+	crossTarget bool
+}
+
+// newSpanRewriter builds the action table, registers destination
+// imports, and runs the pre-pass that identifies handled qualifiers
+// and used external imports. The returned spanRewriter is ready for
+// the rewrite walk.
+func newSpanRewriter(ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet) *spanRewriter {
 	targetPath := rr.TargetFile
 	targetDir := filepath.Dir(targetPath)
-	targetImportPath := guessImportPath(targetDir)
-	isCrossPkg := rr.isCrossPackageMove()
 
-	// Per-group action lookup.
-	type groupAction struct {
-		// For same-target / TravelsWithType groups: plain rename to
-		// targetName. For cross-target groups: qualified
-		// `<destLocal>.<targetName>` where the qualifier is resolved
-		// from imports lazily so any addImportEntry collision alias
-		// is reflected.
-		targetName  string
-		impPath     string // non-empty → cross-target
-		crossTarget bool
+	sw := &spanRewriter{
+		ix:               ix,
+		rr:               rr,
+		s:                s,
+		resolvedGroups:   resolvedGroups,
+		imports:          imports,
+		targetPath:       targetPath,
+		targetImportPath: guessImportPath(targetDir),
+		isCrossPkg:       rr.isCrossPackageMove(),
+		actions:          make(map[*mast.Group]*groupAction),
+		importByLocal:    make(map[string]string),
+		handledQualifier: make(map[*ast.Ident]bool),
+		registered:       make(map[string]bool),
 	}
-	actions := make(map[*mast.Group]*groupAction)
 
+	// Build per-group action lookup.
 	for _, r := range resolved {
 		if r.Relo.Detach || r.Relo.MethodOf != "" {
 			continue
 		}
 		rDir := filepath.Dir(r.TargetFile)
 		if rDir == targetDir || r.Group.Kind.TravelsWithType() {
-			actions[r.Group] = &groupAction{targetName: r.TargetName}
+			sw.actions[r.Group] = &groupAction{targetName: r.TargetName}
 			continue
 		}
 		rImpPath := guessImportPath(rDir)
 		if rImpPath == "" {
 			continue
 		}
-		actions[r.Group] = &groupAction{
+		sw.actions[r.Group] = &groupAction{
 			targetName:  r.TargetName,
 			impPath:     rImpPath,
 			crossTarget: true,
 		}
 	}
 
-	// Propagate type renames to embedded field groups so composite
-	// literal keys (notesView{notesPage: page}) get rewritten.
+	// Propagate type renames to embedded field groups.
 	for _, r := range resolved {
 		if r.Group.Kind != mast.TypeName || r.TargetName == r.Group.Name {
 			continue
 		}
 		for _, fgrp := range ix.EmbeddedFieldGroups(r.Group.Name, r.Group.Pkg) {
-			if _, ok := actions[fgrp]; ok {
+			if _, ok := sw.actions[fgrp]; ok {
 				continue
 			}
-			actions[fgrp] = &groupAction{targetName: r.TargetName}
+			sw.actions[fgrp] = &groupAction{targetName: r.TargetName}
 		}
 	}
 
-	var srcImportPath string
-	if isCrossPkg {
-		srcImportPath = guessImportPath(filepath.Dir(rr.File.Path))
-	}
-
-	// registerImport queues impPath in destination's importChange.
-	// addImportEntry handles real-pkg-name aliasing and collision
-	// resolution against the destination's existing+queued imports.
-	registered := make(map[string]bool)
-	registerImport := func(impPath string) {
-		if impPath == "" || registered[impPath] {
-			return
-		}
-		registered[impPath] = true
-		addImportEntry(imports, ix, targetPath, importEntry{Path: impPath})
+	if sw.isCrossPkg {
+		sw.srcImportPath = guessImportPath(filepath.Dir(rr.File.Path))
 	}
 
 	// Pre-register cross-target imports in path-sorted order so
-	// addImportEntry's collision resolution yields deterministic
-	// alias assignments independent of walk order. srcImportPath is
-	// lazily registered only when an actual cross-pkg-stay edit needs
-	// it (otherwise we'd add a spurious source-package import that
-	// reformats the destination's import block).
+	// collision resolution is deterministic.
 	{
 		seen := make(map[string]bool)
 		var sortedImpPaths []string
-		for _, act := range actions {
+		for _, act := range sw.actions {
 			if act.crossTarget && !seen[act.impPath] {
 				seen[act.impPath] = true
 				sortedImpPaths = append(sortedImpPaths, act.impPath)
@@ -220,53 +224,19 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 		}
 		sort.Strings(sortedImpPaths)
 		for _, impPath := range sortedImpPaths {
-			registerImport(impPath)
+			sw.registerImport(impPath)
 		}
 	}
 
-	// destLocal returns the local name destination uses for impPath,
-	// honoring any alias addImportEntry assigned. Falls back to the
-	// package's real name from ix when impPath isn't (yet) recorded.
-	destLocal := func(impPath string) string {
-		if ic := imports.byFile[targetPath]; ic != nil {
-			for _, e := range ic.Add {
-				if e.Path == impPath && e.Alias != "" {
-					return e.Alias
-				}
-			}
-			for _, e := range ic.Existing {
-				if e.Path == impPath && e.Alias != "" {
-					return e.Alias
-				}
-			}
-		}
-		for _, pkg := range ix.Pkgs {
-			if pkg.Path == impPath {
-				return pkg.Name
-			}
-		}
-		return guessImportLocalName(impPath)
-	}
-
-	// Source-file imports keyed by their local name as referenced in
-	// source code, plus the spec for each so we can preserve explicit
-	// aliases when registering imports in the destination.
-	importByLocal := make(map[string]string)
+	// Build source-file import maps.
 	specByPath := make(map[string]*ast.ImportSpec)
 	for _, imp := range rr.File.Syntax.Imports {
 		impPath := importPath(imp)
-		importByLocal[importLocalName(imp, impPath)] = impPath
+		sw.importByLocal[importLocalName(imp, impPath)] = impPath
 		specByPath[impPath] = imp
 	}
 
-	// Pre-pass: walk every SelectorExpr in the span. Two outputs:
-	//   - handledQualifier marks X for every X.Sel where Sel is in a
-	//     moved group (so the qualifier-rewrite handler in the main
-	//     walk skips it; the Ident handler for Sel extends left).
-	//   - usedExternalImpPaths collects every source-side import the
-	//     span actually references (subsumes computeImports). dot/
-	//     blank/self imports are filtered out and warned about.
-	handledQualifier := make(map[*ast.Ident]bool)
+	// Pre-pass: find handled qualifiers and used external imports.
 	usedExternalImpPaths := make(map[string]bool)
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
@@ -282,43 +252,79 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 		if qOff < s.Start || sOff > s.End {
 			return true
 		}
-		if grp := ix.Group(sel.Sel); grp != nil && actions[grp] != nil {
-			handledQualifier[qid] = true
+		if grp := ix.Group(sel.Sel); grp != nil && sw.actions[grp] != nil {
+			sw.handledQualifier[qid] = true
 		}
-		if impPath, isImport := importByLocal[qid.Name]; isImport && impPath != targetImportPath {
+		if impPath, isImport := sw.importByLocal[qid.Name]; isImport && impPath != sw.targetImportPath {
 			usedExternalImpPaths[impPath] = true
 		}
 		return true
 	})
 
-	// Register every external import the span uses (path-sorted so
-	// collision aliasing is deterministic). dot/blank imports are
-	// skipped here; warnNontransferableImports emits warnings about
-	// them once at phase 7.
-	{
-		sortedExternal := make([]string, 0, len(usedExternalImpPaths))
-		for p := range usedExternalImpPaths {
-			sortedExternal = append(sortedExternal, p)
+	// Register used external imports (path-sorted for determinism).
+	sortedExternal := make([]string, 0, len(usedExternalImpPaths))
+	for p := range usedExternalImpPaths {
+		sortedExternal = append(sortedExternal, p)
+	}
+	sort.Strings(sortedExternal)
+	for _, impPath := range sortedExternal {
+		spec := specByPath[impPath]
+		localName := importLocalName(spec, impPath)
+		if localName == "." || localName == "_" {
+			continue
 		}
-		sort.Strings(sortedExternal)
-		for _, impPath := range sortedExternal {
-			spec := specByPath[impPath]
-			localName := importLocalName(spec, impPath)
-			if localName == "." || localName == "_" {
-				continue
-			}
-			entry := importEntry{Path: impPath}
-			if spec.Name != nil && spec.Name.Name != path.Base(impPath) {
-				entry.Alias = spec.Name.Name
-			}
-			addImportEntry(imports, ix, targetPath, entry)
+		entry := importEntry{Path: impPath}
+		if spec.Name != nil && spec.Name.Name != path.Base(impPath) {
+			entry.Alias = spec.Name.Name
 		}
+		addImportEntry(imports, ix, targetPath, entry)
 	}
 
-	srcPath := rr.File.Path
-	inSpan := func(start, end int) bool {
-		return start >= s.Start && end <= s.End
+	return sw
+}
+
+func (sw *spanRewriter) registerImport(impPath string) {
+	if impPath == "" || sw.registered[impPath] {
+		return
 	}
+	sw.registered[impPath] = true
+	addImportEntry(sw.imports, sw.ix, sw.targetPath, importEntry{Path: impPath})
+}
+
+// destLocal returns the local name the destination uses for impPath.
+func (sw *spanRewriter) destLocal(impPath string) string {
+	if ic := sw.imports.byFile[sw.targetPath]; ic != nil {
+		for _, e := range ic.Add {
+			if e.Path == impPath && e.Alias != "" {
+				return e.Alias
+			}
+		}
+		for _, e := range ic.Existing {
+			if e.Path == impPath && e.Alias != "" {
+				return e.Alias
+			}
+		}
+	}
+	for _, pkg := range sw.ix.Pkgs {
+		if pkg.Path == impPath {
+			return pkg.Name
+		}
+	}
+	return guessImportLocalName(impPath)
+}
+
+// rewriteSpanQualifiers walks the moved span and emits edit primitives
+// that transform package qualifiers and ident references to their
+// destination representation. It also registers destination imports on
+// the importSet.
+func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *span, resolved []*resolvedRelo, resolvedGroups map[*mast.Group]bool, imports *importSet, origin string) {
+	if rr.File == nil || s == nil {
+		return
+	}
+
+	sw := newSpanRewriter(ix, rr, s, resolved, resolvedGroups, imports)
+	srcPath := rr.File.Path
+	fset := ix.Fset
 
 	ast.Inspect(rr.File.Syntax, func(n ast.Node) bool {
 		// SelectorExpr handler: rewrite import-qualifier idents that
@@ -326,23 +332,23 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 		// import with a different local name (rewrite).
 		if sel, ok := n.(*ast.SelectorExpr); ok {
 			qid, ok := sel.X.(*ast.Ident)
-			if !ok || handledQualifier[qid] {
+			if !ok || sw.handledQualifier[qid] {
 				return true
 			}
-			qOff := ix.Fset.Position(qid.Pos()).Offset
-			sOff := ix.Fset.Position(sel.Sel.Pos()).Offset
-			if !inSpan(qOff, sOff) {
+			qOff := fset.Position(qid.Pos()).Offset
+			sOff := fset.Position(sel.Sel.Pos()).Offset
+			if qOff < s.Start || sOff > s.End {
 				return true
 			}
-			impPath, isImport := importByLocal[qid.Name]
+			impPath, isImport := sw.importByLocal[qid.Name]
 			if !isImport {
 				return true
 			}
-			if targetImportPath != "" && impPath == targetImportPath {
+			if sw.targetImportPath != "" && impPath == sw.targetImportPath {
 				emitEdit(plan, srcPath, qOff, sOff, "", origin)
 				return true
 			}
-			destName := destLocal(impPath)
+			destName := sw.destLocal(impPath)
 			if destName == qid.Name {
 				return true
 			}
@@ -356,9 +362,9 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 		if !ok {
 			return true
 		}
-		off := ix.Fset.Position(ident.Pos()).Offset
+		off := fset.Position(ident.Pos()).Offset
 		endOff := off + len(ident.Name)
-		if !inSpan(off, endOff) {
+		if off < s.Start || endOff > s.End {
 			return true
 		}
 		grp := ix.Group(ident)
@@ -366,15 +372,15 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 			return true
 		}
 
-		if act, ok := actions[grp]; ok {
+		if act, ok := sw.actions[grp]; ok {
 			newText := act.targetName
 			if act.crossTarget {
-				newText = destLocal(act.impPath) + "." + act.targetName
+				newText = sw.destLocal(act.impPath) + "." + act.targetName
 			}
 			editStart := off
 			for _, gid := range grp.Idents {
 				if gid.Ident == ident && gid.Qualifier != nil {
-					qOff := ix.Fset.Position(gid.Qualifier.Pos()).Offset
+					qOff := fset.Position(gid.Qualifier.Pos()).Offset
 					if qOff >= s.Start {
 						editStart = qOff
 					}
@@ -390,7 +396,7 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 
 		// Cross-pkg extraction: bare reference to a non-moved
 		// package-scope source-pkg symbol must be qualified.
-		if !isCrossPkg || srcImportPath == "" || resolvedGroups[grp] ||
+		if !sw.isCrossPkg || sw.srcImportPath == "" || sw.resolvedGroups[grp] ||
 			grp.Kind.TravelsWithType() || !grp.IsPackageScope() {
 			return true
 		}
@@ -400,7 +406,7 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 			if gid.Kind != mast.Def || gid.File == nil {
 				continue
 			}
-			defOff := ix.Fset.Position(gid.Ident.Pos()).Offset
+			defOff := fset.Position(gid.Ident.Pos()).Offset
 			defEnd := defOff + len(gid.Ident.Name)
 			if gid.File.Path == rr.File.Path && defOff >= s.Start && defEnd <= s.End {
 				definedInSpan = true
@@ -413,8 +419,8 @@ func rewriteSpanQualifiers(plan *ed.Plan, ix *mast.Index, rr *resolvedRelo, s *s
 		if definedInSpan || !inSourcePkg || !token.IsExported(grp.Name) {
 			return true
 		}
-		registerImport(srcImportPath)
-		emitEdit(plan, srcPath, off, endOff, destLocal(srcImportPath)+"."+grp.Name, origin)
+		sw.registerImport(sw.srcImportPath)
+		emitEdit(plan, srcPath, off, endOff, sw.destLocal(sw.srcImportPath)+"."+grp.Name, origin)
 		return true
 	})
 }
