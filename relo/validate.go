@@ -45,17 +45,13 @@ func checkUnexportedCrossPkg(resolved []*resolvedRelo, fmInfos []*fileMoveInfo) 
 		if rr.Synthesized {
 			continue
 		}
-		if rr.Relo.MoveTo == "" || rr.File == nil {
-			continue
-		}
-		srcPkg := rr.File.Pkg
-		if srcPkg == nil || isSamePackageDir(srcPkg, rr.Relo.MoveTo) {
+		if !rr.isCrossPackageMove() {
 			continue
 		}
 		if token.IsExported(rr.TargetName) {
 			continue
 		}
-		if !hasExternalUses(rr.Group, filepath.Dir(rr.Relo.MoveTo), fileMoveTargetDir) {
+		if !hasExternalUses(rr.Group, finalDir(rr), fileMoveTargetDir) {
 			continue
 		}
 		return fmt.Errorf("unexported name %q cannot be moved cross-package without a rename to an exported name", rr.Group.Name)

@@ -168,6 +168,11 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 		if rr.TargetFile == "" && rr.File != nil {
 			rr.TargetFile = rr.File.Path
 		}
+		if rr.TargetFile != "" {
+			if abs, err := filepath.Abs(rr.TargetFile); err == nil {
+				rr.TargetFile = abs
+			}
+		}
 
 		seen[sk] = rr
 		resolved = append(resolved, rr)
@@ -459,9 +464,5 @@ func isSamePackageDir(pkg *mast.Package, targetFile string) bool {
 	if len(pkg.Files) == 0 {
 		return false
 	}
-	absTarget, err := filepath.Abs(targetFile)
-	if err != nil {
-		return false
-	}
-	return filepath.Dir(pkg.Files[0].Path) == filepath.Dir(absTarget)
+	return filepath.Dir(pkg.Files[0].Path) == filepath.Dir(targetFile)
 }

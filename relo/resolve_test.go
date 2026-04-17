@@ -88,21 +88,13 @@ func TestIsSamePackageDir(t *testing.T) {
 	}
 }
 
-func TestIsSamePackageDir_RelativeTarget(t *testing.T) {
+func TestIsSamePackageDir_AbsoluteTarget(t *testing.T) {
 	t.Parallel()
-
-	// Simulate the real scenario: package files have absolute paths
-	// (from mast.Load), but the target comes from a rules file as a
-	// relative path like "render_assets.go".
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	pkg := &mast.Package{
 		Name: "pkg",
 		Files: []*mast.File{
-			{Path: filepath.Join(cwd, "existing.go")},
+			{Path: "/proj/pkg/existing.go"},
 		},
 	}
 
@@ -111,9 +103,8 @@ func TestIsSamePackageDir_RelativeTarget(t *testing.T) {
 		target string
 		want   bool
 	}{
-		{"bare filename", "new_file.go", true},
-		{"dot-slash prefix", "./new_file.go", true},
-		{"subdirectory", "sub/new_file.go", false},
+		{"same directory", "/proj/pkg/new_file.go", true},
+		{"different directory", "/proj/other/new_file.go", false},
 	}
 
 	for _, tt := range tests {
