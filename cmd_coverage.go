@@ -452,10 +452,14 @@ func fileHasSuffix(filePath, suffix string) bool {
 }
 
 // collectTypeMethods returns groups for every method declared on typeGrp's
-// type, scoped to the package where typeGrp is defined.
+// type, scoped to the package where typeGrp is defined. Both concrete
+// (FuncDecl receiver) methods and interface methods are enumerated.
+// Embedded interfaces are not expanded — only leaf method names declared
+// directly on the interface are returned.
 func collectTypeMethods(ix *mast.Index, typeGrp *mast.Group) []*mast.Group {
 	var methods []*mast.Group
 	seen := make(map[*mast.Group]bool)
+
 	for _, pkg := range ix.Pkgs {
 		if pkg.Path != typeGrp.Pkg {
 			continue
@@ -478,8 +482,46 @@ func collectTypeMethods(ix *mast.Index, typeGrp *mast.Group) []*mast.Group {
 			}
 		}
 	}
+
+	if it := findInterfaceType(typeGrp); it != nil && it.Methods != nil {
+		for _, field := range it.Methods.List {
+			for _, name := range field.Names {
+				g := ix.Group(name)
+				if g == nil || seen[g] {
+					continue
+				}
+				seen[g] = true
+				methods = append(methods, g)
+			}
+		}
+	}
+
 	sort.Slice(methods, func(i, j int) bool { return methods[i].Name < methods[j].Name })
 	return methods
+}
+
+// findInterfaceType returns the InterfaceType node for typeGrp if its
+// declaration is `type T interface { ... }`, or nil otherwise.
+func findInterfaceType(typeGrp *mast.Group) *ast.InterfaceType {
+	def := typeGrp.DefIdent()
+	if def == nil || def.File == nil {
+		return nil
+	}
+	for _, decl := range def.File.Syntax.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*ast.TypeSpec)
+			if !ok || ts.Name != def.Ident {
+				continue
+			}
+			it, _ := ts.Type.(*ast.InterfaceType)
+			return it
+		}
+	}
+	return nil
 }
 
 // reachableTargets returns the subset of targets that are transitively

@@ -1,0 +1,62 @@
+# Interface methods are enumerated from the interface body.
+exec gorelo coverage -for IDB 'Test*'
+stdout 'IDB.*2 of 2 entries reach 2 of 2 methods'
+stdout 'TestIfaceGet.*Get'
+stdout 'TestIfaceBoth.*Get, Put'
+
+# By-method view lists tests under each interface method.
+exec gorelo coverage -for IDB --by-method 'Test*'
+stdout 'Get +2 entries'
+stdout 'Put +1 entry'
+
+# Method-narrow form works for interfaces.
+exec gorelo coverage -for 'IDB#Get' 'Test*'
+stdout 'IDB#Get'
+stdout 'TestIfaceGet.*Get'
+stdout 'TestIfaceBoth.*Get'
+
+# Method-glob form works for interfaces.
+exec gorelo coverage -for 'IDB#P*' 'Test*'
+stdout 'IDB#P\*'
+stdout 'TestIfaceBoth.*Put'
+! stdout 'TestIfaceGet'
+
+# Empty interface is rejected with the same error as a struct with no methods.
+! exec gorelo coverage -for Empty 'Test*'
+stderr 'has no methods'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- db.go --
+package main
+
+type IDB interface {
+	Get() string
+	Put(s string)
+}
+
+type Empty interface{}
+
+type fakeDB struct{}
+
+func (f *fakeDB) Get() string  { return "" }
+func (f *fakeDB) Put(s string) {}
+
+func newIDB() IDB { return &fakeDB{} }
+-- db_test.go --
+package main
+
+import "testing"
+
+func TestIfaceGet(t *testing.T) {
+	db := newIDB()
+	_ = db.Get()
+}
+
+func TestIfaceBoth(t *testing.T) {
+	db := newIDB()
+	_ = db.Get()
+	db.Put("x")
+}
