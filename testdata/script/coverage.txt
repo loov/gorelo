@@ -53,9 +53,29 @@ stderr 'is not a type'
 ! exec gorelo coverage -for NoSuchType 'Test*'
 stderr 'could not find "NoSuchType"'
 
-# Errors: --for with glob is rejected.
+# Errors: --for with glob in type/source is rejected.
 ! exec gorelo coverage -for 'D*' 'Test*'
 stderr 'does not accept globs'
+
+# --for accepts a single method to narrow the target set.
+exec gorelo coverage -for 'DB#Get' 'Test*'
+stdout 'DB#Get'
+stdout 'TestGetOnly.*Get'
+stdout 'TestPutAndGet.*Get'
+stdout 'TestFull.*Get'
+! stdout 'TestPutDirect'
+
+# --for accepts a glob on the method name.
+exec gorelo coverage -for 'DB#Put*' 'Test*'
+stdout 'DB#Put\*'
+stdout 'TestPutDirect.*Put'
+stdout 'TestPutAndGet.*Put'
+stdout 'TestFull.*Put'
+! stdout 'TestGetOnly'
+
+# Method glob that matches no methods errors clearly.
+! exec gorelo coverage -for 'DB#Nope*' 'Test*'
+stderr 'no methods of "DB" match "Nope\*"'
 
 -- go.mod --
 module example.com/test

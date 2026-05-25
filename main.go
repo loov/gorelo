@@ -78,6 +78,8 @@ Examples:
   gorelo coverage -for DB 'Test*'                  # which DB methods each Test* reaches
   gorelo coverage -for ./pkg.DB '*_test.go:Test*'  # restrict entries by source glob
   gorelo coverage -for DB --by-method 'Test*'      # invert: per-method entry lists
+  gorelo coverage -for 'DB#Get' 'Test*'            # narrow target to one method
+  gorelo coverage -for 'DB#Get*' 'Test*'           # glob over methods of DB
 
 Rule syntax:
   Server -> server.go                  # move declaration to file (forward)

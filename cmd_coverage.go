@@ -64,14 +64,9 @@ func (c *cmdCoverage) Execute(ctx context.Context) error {
 		return fmt.Errorf("resolving working directory: %w", err)
 	}
 
-	typeGrp, err := resolveTargetType(ix, absDir, c.forType)
+	typeGrp, methods, filter, err := resolveTargetMethods(ix, absDir, c.forType)
 	if err != nil {
 		return err
-	}
-
-	methods := collectTypeMethods(ix, typeGrp)
-	if len(methods) == 0 {
-		return fmt.Errorf("type %q has no methods", typeGrp.Name)
 	}
 	targetSet := make(map[*mast.Group]bool, len(methods))
 	for _, m := range methods {
@@ -111,6 +106,7 @@ func (c *cmdCoverage) Execute(ctx context.Context) error {
 	result := coverageResult{
 		Type:    typeGrp.Name,
 		Package: typeGrp.Pkg,
+		Filter:  filter,
 		Methods: make([]coverageMethod, 0, len(methods)),
 		Entries: make([]coverageEntry, 0, len(hits)),
 	}
@@ -172,6 +168,7 @@ func (c *cmdCoverage) Execute(ctx context.Context) error {
 type coverageResult struct {
 	Type    string           `json:"type"`
 	Package string           `json:"package"`
+	Filter  string           `json:"filter,omitempty"`
 	Methods []coverageMethod `json:"methods"`
 	Entries []coverageEntry  `json:"entries"`
 }
@@ -274,10 +271,14 @@ func printCoverageByMethod(w io.Writer, r coverageResult) {
 }
 
 func qualifyType(r coverageResult) string {
-	if r.Package == "" {
-		return r.Type
+	name := r.Type
+	if r.Package != "" {
+		name = r.Package + "." + r.Type
 	}
-	return r.Package + "." + r.Type
+	if r.Filter != "" {
+		name += "#" + r.Filter
+	}
+	return name
 }
 
 func countNonEmptyMethods(ms []coverageMethod) int {
@@ -290,18 +291,25 @@ func countNonEmptyMethods(ms []coverageMethod) int {
 	return n
 }
 
-// resolveTargetType locates the type named by --for. The argument must be
-// a single, non-glob type specifier (e.g. DB, ./pkg.DB, file.go:DB).
-func resolveTargetType(ix *mast.Index, absDir, arg string) (*mast.Group, error) {
+// resolveTargetMethods locates the target type named by --for and returns
+// the set of its methods that should serve as coverage targets, along with
+// an optional method-name filter (the substring after '#', if any) for
+// display purposes.
+//
+// Accepted forms:
+//
+//	DB               every method of DB
+//	DB#Get           the single method DB.Get
+//	DB#Get*          every method of DB whose name matches the glob
+//
+// Globs in the type name or source qualifier are not accepted.
+func resolveTargetMethods(ix *mast.Index, absDir, arg string) (*mast.Group, []*mast.Group, string, error) {
 	item, err := rules.ParseItem(arg)
 	if err != nil {
-		return nil, fmt.Errorf("parsing --for %q: %w", arg, err)
-	}
-	if item.Field != "" {
-		return nil, fmt.Errorf("--for must not include a field (got %q)", arg)
+		return nil, nil, "", fmt.Errorf("parsing --for %q: %w", arg, err)
 	}
 	if hasGlob(item.Name) || hasGlob(item.Source) {
-		return nil, fmt.Errorf("--for does not accept globs (got %q)", arg)
+		return nil, nil, "", fmt.Errorf("--for does not accept globs in the type or source (got %q)", arg)
 	}
 	source := relo.ResolveSource(ix, item.Source, absDir)
 	id := ix.FindDef(item.Name, source)
@@ -310,16 +318,35 @@ func resolveTargetType(ix *mast.Index, absDir, arg string) (*mast.Group, error) 
 		if item.Source != "" {
 			src = " in " + item.Source
 		}
-		return nil, fmt.Errorf("could not find %q%s", item.Name, src)
+		return nil, nil, "", fmt.Errorf("could not find %q%s", item.Name, src)
 	}
 	grp := ix.Group(id)
 	if grp == nil {
-		return nil, fmt.Errorf("no group for %q", arg)
+		return nil, nil, "", fmt.Errorf("no group for %q", arg)
 	}
 	if grp.Kind != mast.TypeName {
-		return nil, fmt.Errorf("%q is not a type (kind %s)", arg, objectKindString(grp.Kind))
+		return nil, nil, "", fmt.Errorf("%q is not a type (kind %s)", arg, objectKindString(grp.Kind))
 	}
-	return grp, nil
+
+	all := collectTypeMethods(ix, grp)
+	if len(all) == 0 {
+		return nil, nil, "", fmt.Errorf("type %q has no methods", grp.Name)
+	}
+
+	if item.Field == "" {
+		return grp, all, "", nil
+	}
+
+	var matched []*mast.Group
+	for _, m := range all {
+		if matchName(m.Name, item.Field) {
+			matched = append(matched, m)
+		}
+	}
+	if len(matched) == 0 {
+		return nil, nil, "", fmt.Errorf("no methods of %q match %q", grp.Name, item.Field)
+	}
+	return grp, matched, item.Field, nil
 }
 
 // collectEntries enumerates package-scope FuncDecls (functions and methods)
