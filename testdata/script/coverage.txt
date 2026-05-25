@@ -1,0 +1,111 @@
+# Default output: entries sorted by number of reached methods (ascending).
+exec gorelo coverage -for DB 'Test*'
+stdout 'TestGetOnly.*Get'
+stdout 'TestPutAndGet.*Get, Put'
+stdout 'TestFull.*Delete, Get, Put'
+
+# By-method view groups entries under each method.
+exec gorelo coverage -for DB --by-method 'Test*'
+stdout 'Get +3 entries'
+stdout 'Put +3 entries'
+stdout 'Delete +1 entry'
+stdout 'Unused +0 entries'
+
+# Source glob narrows which files we scan for entries.
+exec gorelo coverage -for DB '*_test.go:Test*'
+stdout 'TestGetOnly'
+stdout 'TestPutAndGet'
+
+# Source glob that matches nothing yields a clear error.
+! exec gorelo coverage -for DB 'nonexistent_*.go:Test*'
+stderr 'no entries matched'
+
+# Globs work in the name part: 'TestPut*' is a subset.
+exec gorelo coverage -for DB 'TestPut*'
+stdout 'TestPutAndGet'
+stdout 'TestPutDirect'
+! stdout 'TestGetOnly'
+! stdout 'TestFull'
+
+# Non-test entries: methods of the target type itself can be entry points.
+exec gorelo coverage -for DB 'roundTrip'
+stdout 'roundTrip.*Get, Put'
+
+# JSON output is structured.
+exec gorelo coverage -for DB --json 'Test*'
+stdout '"type": "DB"'
+stdout '"methods":'
+stdout '"entries":'
+
+# Errors: --for missing.
+! exec gorelo coverage 'Test*'
+stderr '--for is required'
+
+# Errors: no entries given.
+! exec gorelo coverage -for DB
+stderr 'at least one entry specifier is required'
+
+# Errors: --for is not a type.
+! exec gorelo coverage -for roundTrip 'Test*'
+stderr 'is not a type'
+
+# Errors: --for refers to unknown name.
+! exec gorelo coverage -for NoSuchType 'Test*'
+stderr 'could not find "NoSuchType"'
+
+# Errors: --for with glob is rejected.
+! exec gorelo coverage -for 'D*' 'Test*'
+stderr 'does not accept globs'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- db.go --
+package main
+
+type DB struct{}
+
+func (d *DB) Get() string    { return "" }
+func (d *DB) Put(s string)   {}
+func (d *DB) Delete()        {}
+func (d *DB) Unused()        {}
+-- helpers.go --
+package main
+
+func roundTrip(d *DB, s string) string {
+	d.Put(s)
+	return d.Get()
+}
+
+func wipe(d *DB) {
+	d.Delete()
+}
+
+func noop() {}
+-- db_test.go --
+package main
+
+import "testing"
+
+func TestGetOnly(t *testing.T) {
+	var d DB
+	_ = d.Get()
+}
+
+func TestPutAndGet(t *testing.T) {
+	var d DB
+	_ = roundTrip(&d, "x")
+}
+
+func TestPutDirect(t *testing.T) {
+	var d DB
+	d.Put("y")
+}
+
+func TestFull(t *testing.T) {
+	var d DB
+	d.Put("a")
+	_ = d.Get()
+	wipe(&d)
+}

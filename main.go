@@ -20,6 +20,7 @@ func run() int {
 		cmds.New("deps", "show what a declaration depends on", new(cmdDeps))
 		cmds.New("ls", "list declarations in the codebase", new(cmdLs))
 		cmds.New("refs", "show where declarations are referenced", new(cmdRefs))
+		cmds.New("coverage", "show which methods of a type each entry transitively reaches", new(cmdCoverage))
 		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
 	})
 	if err != nil {
@@ -56,19 +57,27 @@ Examples:
   gorelo apply "Server -> server.go"              # inline rule
   gorelo apply refactor.rules "X=Y -> target.go"  # file plus inline rule
   gorelo apply "@stubs" "Server -> server.go"     # with stubs directive
-  gorelo check                                    # preview without writing
-  gorelo check refactor.rules                     # preview specific file
-  gorelo ls                                       # list all declarations
-  gorelo ls --json                                # JSON output for tooling
-  gorelo ls --detail Server                       # include refs and deps for a type
-  gorelo ls Server                                # list a type and its methods
-  gorelo ls ./pkg.Server                          # qualified by package
-  gorelo ls server.go:Server                      # qualified by file
-  gorelo deps Server                              # show what Server depends on
-  gorelo deps ./pkg.Server                        # qualified by package
-  gorelo refs Server                              # show references to Server
-  gorelo refs ./pkg.Server                        # qualified by package
-  gorelo refs Server#Start                        # references to a method
+
+  gorelo check                 # preview without writing
+  gorelo check refactor.rules  # preview specific file
+
+  gorelo ls                    # list all declarations
+  gorelo ls --json             # JSON output for tooling
+  gorelo ls --detail Server    # include refs and deps for a type
+  gorelo ls Server             # list a type and its methods
+  gorelo ls ./pkg.Server       # qualified by package
+  gorelo ls server.go:Server   # qualified by file
+
+  gorelo deps Server           # show what Server depends on
+  gorelo deps ./pkg.Server     # qualified by package
+
+  gorelo refs Server           # show references to Server
+  gorelo refs ./pkg.Server     # qualified by package
+  gorelo refs Server#Start     # references to a method
+
+  gorelo coverage -for DB 'Test*'                  # which DB methods each Test* reaches
+  gorelo coverage -for ./pkg.DB '*_test.go:Test*'  # restrict entries by source glob
+  gorelo coverage -for DB --by-method 'Test*'      # invert: per-method entry lists
 
 Rule syntax:
   Server -> server.go                  # move declaration to file (forward)
