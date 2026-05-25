@@ -1,0 +1,8 @@
+exec gorelo skill
+stdout '# gorelo'
+stdout 'When to use gorelo'
+stdout 'Identifier specifiers'
+stdout 'Rule syntax'
+stdout 'JSON output'
+stdout 'Pitfalls'
+stdout 'Coverage'

@@ -22,6 +22,7 @@ func run() int {
 		cmds.New("refs", "show where declarations are referenced", new(cmdRefs))
 		cmds.New("coverage", "show which methods of a type each entry transitively reaches", new(cmdCoverage))
 		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
+		cmds.New("skill", "print an LLM-oriented guide to using gorelo", new(cmdSkill))
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gorelo: %v\n", err)
