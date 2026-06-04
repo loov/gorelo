@@ -17,7 +17,7 @@ build constraints.
 ## Workflow
 
 1. Explore: `gorelo ls`, `gorelo refs <name>`, `gorelo deps <name>`,
-   `gorelo coverage --for <type> <entries>`.
+   `gorelo coverage --for <type> <entries>`, `gorelo grep <pattern>`.
 2. Preview: `gorelo check <rules>`.
 3. Apply: `gorelo apply <rules>` (`-v` to log every edit).
 
@@ -31,6 +31,7 @@ build constraints.
 - `deps <specifier>` — what a declaration depends on. Flag: `--json`.
 - `coverage --for <type> <entry ...>` — see "Coverage" below.
   Flags: `--json`, `--by-method`.
+- `grep <pattern> [specifier ...]` — see "Grep" below. Flag: `--json`.
 - `help` — rule-syntax cheat sheet.
 - `skill` — this guide.
 
@@ -47,8 +48,9 @@ contains `->`, `<-`, `=`, `#`, or starts with `@`.
 - `Type#Method` — a method or field on a type.
 - `Type#Outer.Inner` — a nested anonymous struct field.
 
-Globs (`*`, `?`) are accepted only in `coverage` entry specifiers and
-in the method part of `--for Type#Glob*`. Not accepted elsewhere.
+Globs (`*`, `?`) are accepted in `coverage` entry specifiers, in the
+method part of `--for Type#Glob*`, and in `grep` patterns and specifiers.
+Not accepted elsewhere.
 
 ## Rule syntax
 
@@ -116,14 +118,47 @@ Use it to:
 The walk follows direct calls through function and method bodies in
 the loaded module.
 
+## Grep
+
+`grep` finds functions and methods whose source contains a pattern. It
+answers "which declarations contain this string or code snippet?"
+
+The pattern is a glob matched, as a substring, against the full
+declaration source (doc comment, signature, and body):
+
+- `*` matches any run of characters, including `/` and newlines.
+- `?` matches any single character.
+- `|` separates alternatives (`A|B|C`); a declaration matches when it
+  contains any one of them.
+- A pattern with no wildcards is a literal substring.
+
+Unlike the name-oriented globs elsewhere, the pattern is unanchored, so
+it need not be wrapped in `*...*`. Output lists each matching
+declaration with the source lines where a match begins.
+
+Optional specifiers restrict where to search (multiple = union; none =
+the whole module):
+
+```
+gorelo grep 'ctx.Done()'             # anywhere in the module
+gorelo grep 'http.*Handler'          # '*' spans any text
+gorelo grep 'panic(|recover('        # '|' matches any alternative
+gorelo grep 'panic(' ./pkg.*         # only declarations in ./pkg
+gorelo grep 'recover()' file.go      # only a file (suffix match)
+gorelo grep 'ctx' 'Handle*'          # only decls whose name matches
+gorelo grep 'recover()' DB#*         # only methods of type DB
+```
+
 ## JSON output
 
-`ls`, `refs`, `deps`, and `coverage` accept `--json`. Schemas:
+`ls`, `refs`, `deps`, `coverage`, and `grep` accept `--json`. Schemas:
 
 - `ls`: `[{file, package, build_tag?, decls: [{name, kind, receiver?,
   line, end, lines, refs?, deps?}]}]`
 - `refs`/`deps`: `[{name, kind, def_file, def_line, refs|deps: [...]}]`
 - `coverage`: `{type, package, filter?, methods: [...], entries: [...]}`
+- `grep`: `[{name, kind, receiver?, file, line, end, matches: [{line,
+  text}]}]`
 
 ## Pitfalls
 

@@ -21,6 +21,7 @@ func run() int {
 		cmds.New("ls", "list declarations in the codebase", new(cmdLs))
 		cmds.New("refs", "show where declarations are referenced", new(cmdRefs))
 		cmds.New("coverage", "show which methods of a type each entry transitively reaches", new(cmdCoverage))
+		cmds.New("grep", "find functions and methods whose source matches a glob", new(cmdGrep))
 		cmds.New("help", "print rule syntax and examples", new(cmdHelp))
 		cmds.New("skill", "print an LLM-oriented guide to using gorelo", new(cmdSkill))
 	})
@@ -81,6 +82,12 @@ Examples:
   gorelo coverage -for DB --by-method 'Test*'      # invert: per-method entry lists
   gorelo coverage -for 'DB#Get' 'Test*'            # narrow target to one method
   gorelo coverage -for 'DB#Get*' 'Test*'           # glob over methods of DB
+
+  gorelo grep 'ctx.Done()'             # decls whose source contains the snippet
+  gorelo grep 'http.*Handler'          # '*' spans any text, including newlines
+  gorelo grep 'panic(|recover('        # '|' matches any of several patterns
+  gorelo grep 'panic(' ./pkg.*         # restrict the search to a package
+  gorelo grep 'recover()' DB#*         # restrict to methods of type DB
 
 Rule syntax:
   Server -> server.go                  # move declaration to file (forward)

@@ -1,0 +1,122 @@
+# A no-wildcard pattern is a literal substring search over decl source.
+exec gorelo grep 'ctx.Done()'
+stdout '2 declarations contain "ctx.Done\(\)"'
+stdout 'srv.go:\d+  method  Server.Serve'
+stdout 'work.go:\d+  func    Worker'
+! stdout 'Idle'
+
+# A single match reports a singular noun.
+exec gorelo grep 'recover()'
+stdout '1 declaration contain'
+stdout 'method  Server.Stop'
+
+# '*' spans arbitrary text, including across newlines and slashes.
+exec gorelo grep 'for*range*tasks'
+stdout 'func    Worker'
+
+# '?' matches exactly one character.
+exec gorelo grep 'panic("b??m")'
+stdout 'func    Boom'
+
+# '|' matches any of several patterns.
+exec gorelo grep 'recover()|panic('
+stdout '2 declarations contain'
+stdout 'method  Server.Stop'
+stdout 'func    Boom'
+! stdout 'Worker'
+
+# Alternatives may themselves use wildcards.
+exec gorelo grep 'for*range|<-ctx'
+stdout 'method  Server.Serve'
+stdout 'func    Worker'
+
+# Empty alternatives are ignored, but an all-empty pattern is rejected.
+exec gorelo grep 'recover()|'
+stdout 'Server.Stop'
+! exec gorelo grep '||'
+stderr 'no non-empty patterns'
+
+# A source specifier restricts which files are searched.
+exec gorelo grep 'ctx.Done()' work.go
+stdout '1 declaration'
+stdout 'Worker'
+! stdout 'Serve'
+
+# A package specifier restricts the search to that package.
+exec gorelo grep 'ctx.Done()' 'example.com/test.*'
+stdout 'Worker'
+
+# A name glob restricts to declarations whose own name matches.
+exec gorelo grep 'ctx' 'Work*'
+stdout 'Worker'
+! stdout 'Serve'
+
+# A Type#Method glob restricts to methods of a receiver type.
+exec gorelo grep 'ctx' 'Server#*'
+stdout 'Server.Serve'
+! stdout 'Worker'
+
+# The doc comment is part of the searched source.
+exec gorelo grep 'cancellation'
+stdout 'method  Server.Serve'
+
+# No matches reports zero and exits cleanly.
+exec gorelo grep 'nonexistent_snippet_xyz'
+stdout '0 declarations contain'
+
+# An empty pattern is an error.
+! exec gorelo grep ''
+stderr 'a search pattern is required'
+
+# A specifier carrying a rename is rejected.
+! exec gorelo grep 'ctx' 'Foo=Bar'
+stderr 'must not contain'
+
+# JSON output carries structured matches.
+exec gorelo grep --json 'recover()'
+stdout '"name": "Stop"'
+stdout '"kind": "method"'
+stdout '"receiver": "Server"'
+stdout '"matches"'
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+
+-- srv.go --
+package main
+
+import "context"
+
+type Server struct{}
+
+// Serve runs until the context signals cancellation.
+func (s *Server) Serve(ctx context.Context) {
+	<-ctx.Done()
+}
+
+func (s *Server) Stop() {
+	defer func() { recover() }()
+}
+
+func (s *Server) Idle() {}
+
+-- work.go --
+package main
+
+import "context"
+
+func Worker(ctx context.Context, tasks []int) {
+	for range tasks {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+	}
+}
+
+func Boom() {
+	panic("boom")
+}
