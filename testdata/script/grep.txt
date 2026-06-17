@@ -56,6 +56,18 @@ exec gorelo grep 'ctx' 'Server#*'
 stdout 'Server.Serve'
 ! stdout 'Worker'
 
+# A bare type name expands to all of the type's methods (DWIM Type#*).
+exec gorelo grep 'ctx|recover' 'Server'
+stdout 'Server.Serve'
+stdout 'Server.Stop'
+! stdout 'Worker'
+
+# The expansion is package-scoped like the rest of the specifier grammar.
+exec gorelo grep 'ctx|recover' 'example.com/test.Server'
+stdout 'Server.Serve'
+stdout 'Server.Stop'
+! stdout 'Worker'
+
 # The doc comment is part of the searched source.
 exec gorelo grep 'cancellation'
 stdout 'method  Server.Serve'

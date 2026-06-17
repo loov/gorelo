@@ -37,6 +37,7 @@ import (
 //	file.go       every declaration in a file (suffix match)
 //	Handle*       declarations whose own name matches the glob
 //	DB#Get*       methods of type DB whose name matches the glob
+//	DB            a bare type name expands to all of its methods (DB#*)
 
 type cmdGrep struct {
 	jsonOutput bool
@@ -286,9 +287,42 @@ func parseGrepSpecs(ix *mast.Index, absDir string, args []string) (grepSpecs, er
 		if spec.source != "" && !hasGlob(spec.source) {
 			spec.source = relo.ResolveSource(ix, spec.source, absDir)
 		}
+		// DWIM: a bare, literal name that resolves to a type means "this
+		// type's methods", so "./pkg.DB" behaves like "./pkg.DB#*". Without
+		// this, the name would only match a function literally named DB,
+		// which a type never is, silently yielding nothing.
+		if spec.field == "" && !hasGlob(spec.name) &&
+			declIsType(ix, spec.source, spec.name, absDir) {
+			spec.field = "*"
+		}
 		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// declIsType reports whether name is declared as a type in any file matching
+// source. It mirrors matchSource's scoping so the lookup sees exactly the
+// files a spec would search.
+func declIsType(ix *mast.Index, source, name string, absDir string) bool {
+	for _, pkg := range ix.Pkgs {
+		for _, file := range pkg.Files {
+			if !matchSource(file, pkg, source, absDir) {
+				continue
+			}
+			for _, decl := range file.Syntax.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok || gd.Tok != token.TYPE {
+					continue
+				}
+				for _, spec := range gd.Specs {
+					if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == name {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // matchFile reports whether any spec could match a declaration in file. It is
