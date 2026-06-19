@@ -1,0 +1,38 @@
+# Renaming a bare name prefers the top-level function over a same-named method.
+# Here insertEvent exists both as a package-level func and as a *Tx method.
+exec gorelo apply 'insertEvent=txInsertEvent'
+
+# The top-level function is renamed.
+exec grep -F 'func txInsertEvent()' tx.go
+
+# The method declaration is left untouched.
+exec grep -F 'func (t *Tx) insertEvent()' tx.go
+! exec grep -F 'func (t *Tx) txInsertEvent()' tx.go
+
+# The method call site is left untouched, the function call site is renamed.
+exec grep -F 't.insertEvent()' tx.go
+! exec grep -F 't.txInsertEvent()' tx.go
+
+# Sanity: the result still compiles.
+exec go build ./...
+
+-- go.mod --
+module example.com/test
+
+go 1.21
+-- tx.go --
+package main
+
+type Tx struct{}
+
+func (t *Tx) insertEvent() {}
+
+func insertEvent() {}
+
+func useThem() {
+	insertEvent()
+	var t Tx
+	t.insertEvent()
+}
+
+func main() {}

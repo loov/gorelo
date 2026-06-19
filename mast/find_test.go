@@ -79,6 +79,28 @@ func TestFindDef(t *testing.T) {
 	}
 }
 
+// TestFindDefSkipsMethods verifies that FindDef returns the package-level
+// function and not a method that shares the same name, even when the method
+// is declared first. See testdata/example/samename.go.
+func TestFindDefSkipsMethods(t *testing.T) {
+	t.Parallel()
+
+	ix := loadTestdata(t)
+
+	id := ix.FindDef("sameName", "")
+	if id == nil {
+		t.Fatal("FindDef(\"sameName\", \"\") = nil, want the top-level function")
+	}
+
+	grp := ix.Group(id)
+	if grp == nil {
+		t.Fatalf("FindDef(\"sameName\", \"\") returned ident with no group")
+	}
+	if grp.Kind != mast.Func {
+		t.Errorf("FindDef(\"sameName\", \"\") kind = %v, want Func (got the method, not the top-level function)", grp.Kind)
+	}
+}
+
 func TestFindDefSourcePackage(t *testing.T) {
 	t.Parallel()
 

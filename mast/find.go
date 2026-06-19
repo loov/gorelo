@@ -9,6 +9,13 @@ import (
 // FindDef searches loaded packages for a top-level definition with the given name
 // and returns its defining *ast.Ident, suitable for use in relo.Relo.
 //
+// Package-level declarations (functions, types, variables, constants) take
+// precedence over methods. A method is returned only as a fallback, when no
+// package-level declaration with that name exists — this is what lets a bare
+// method name like "Render" resolve when it is not shadowed by a top-level
+// function. When both a top-level function and a method share a name, the
+// top-level function wins, regardless of declaration order.
+//
 // If source is non-empty, the search is narrowed: source is matched against
 // package import paths (exact match) and file paths (suffix match), so it can
 // be a full import path like "example.com/pkg" or a relative file name like
@@ -16,6 +23,7 @@ import (
 //
 // Returns nil if no tracked definition is found.
 func (ix *Index) FindDef(name, source string) *ast.Ident {
+	var method *ast.Ident // first matching method, used only as a fallback
 	for _, pkg := range ix.Pkgs {
 		pkgMatch := source == "" || pkg.Path == source
 		for _, file := range pkg.Files {
@@ -25,9 +33,19 @@ func (ix *Index) FindDef(name, source string) *ast.Ident {
 			for _, decl := range file.Syntax.Decls {
 				switch d := decl.(type) {
 				case *ast.FuncDecl:
-					if d.Name.Name == name && ix.Group(d.Name) != nil {
-						return d.Name
+					if d.Name.Name != name || ix.Group(d.Name) == nil {
+						continue
 					}
+					if d.Recv != nil {
+						// A method only shares its name with a package-level
+						// function by coincidence; remember the first one and
+						// keep looking for a top-level declaration to prefer.
+						if method == nil {
+							method = d.Name
+						}
+						continue
+					}
+					return d.Name
 				case *ast.GenDecl:
 					for _, spec := range d.Specs {
 						switch s := spec.(type) {
@@ -47,7 +65,7 @@ func (ix *Index) FindDef(name, source string) *ast.Ident {
 			}
 		}
 	}
-	return nil
+	return method
 }
 
 // FindFieldDef searches for a field or method definition within a type
