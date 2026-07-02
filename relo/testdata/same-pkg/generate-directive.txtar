@@ -2,7 +2,7 @@
 
 Gen -> generated.go
 
-@warn moved decl Gen has a //go:generate directive
+@warn moved decl "Gen" has a //go:generate directive
 
 -- input/go.mod --
 module example.com/pkg

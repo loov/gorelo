@@ -7,7 +7,7 @@ config=Config newConfig=NewConfig -> dst/config.go
 profiles=Profiles summary=Summary showProfile=ShowProfile -> dst/display.go
 status=Status writeReport=WriteReport -> dst/report.go
 
-@warn renaming type config to Config will also change embedded field names
+@warn renaming type "config" to "Config" will also change embedded field names
 
 -- input/go.mod --
 module example.com/test

@@ -1,6 +1,7 @@
 package relo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"path/filepath"
@@ -45,18 +46,23 @@ var X = 1
 			if decl == nil {
 				t.Fatalf("no enclosing decl for %q", tt.identName)
 			}
-			switch decl.(type) {
-			case *ast.FuncDecl:
-				if tt.wantKind != "FuncDecl" {
-					t.Errorf("got FuncDecl, want %s", tt.wantKind)
-				}
-			case *ast.GenDecl:
-				if tt.wantKind != "GenDecl" {
-					t.Errorf("got GenDecl, want %s", tt.wantKind)
-				}
+			got := declKind(decl)
+			if got != tt.wantKind {
+				t.Errorf("enclosing decl kind = %s, want %s", got, tt.wantKind)
 			}
 		})
 	}
+}
+
+// declKind returns a short name for the concrete declaration type.
+func declKind(decl ast.Decl) string {
+	switch decl.(type) {
+	case *ast.FuncDecl:
+		return "FuncDecl"
+	case *ast.GenDecl:
+		return "GenDecl"
+	}
+	return fmt.Sprintf("%T", decl)
 }
 
 func TestFindEnclosingDecl_NotFound(t *testing.T) {
@@ -163,19 +169,27 @@ const (
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			for _, spec := range gd.Specs {
-				vs := spec.(*ast.ValueSpec)
-				if vs.Names[0].Name == tt.name {
-					got := constSpecDependsOnIota(gd, vs)
-					if got != tt.want {
-						t.Errorf("constSpecDependsOnIota(%s) = %v, want %v", tt.name, got, tt.want)
-					}
-					return
-				}
+			vs := findValueSpec(t, gd, tt.name)
+			got := constSpecDependsOnIota(gd, vs)
+			if got != tt.want {
+				t.Errorf("constSpecDependsOnIota(%s) = %v, want %v", tt.name, got, tt.want)
 			}
-			t.Fatalf("spec %q not found", tt.name)
 		})
 	}
+}
+
+// findValueSpec returns the *ast.ValueSpec in gd whose first name is
+// name, failing the test if there is none.
+func findValueSpec(t *testing.T, gd *ast.GenDecl, name string) *ast.ValueSpec {
+	t.Helper()
+	for _, spec := range gd.Specs {
+		vs := spec.(*ast.ValueSpec)
+		if vs.Names[0].Name == name {
+			return vs
+		}
+	}
+	t.Fatalf("spec %q not found", name)
+	return nil
 }
 
 func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
@@ -193,7 +207,7 @@ func TestComputeSpans_MultiNameValueSpecWarning(t *testing.T) {
 	grp := ix.Group(ident)
 	var defIdent *mast.Ident
 	for _, id := range grp.Idents {
-		if id.Kind == mast.Def {
+		if id.Kind == mast.IdentDef {
 			defIdent = id
 			break
 		}
@@ -250,7 +264,7 @@ const (
 		grp := ix.Group(ident)
 		var defIdent *mast.Ident
 		for _, id := range grp.Idents {
-			if id.Kind == mast.Def {
+			if id.Kind == mast.IdentDef {
 				defIdent = id
 				break
 			}
@@ -300,7 +314,7 @@ const (
 		grp := ix.Group(ident)
 		var defIdent *mast.Ident
 		for _, id := range grp.Idents {
-			if id.Kind == mast.Def {
+			if id.Kind == mast.IdentDef {
 				defIdent = id
 				break
 			}

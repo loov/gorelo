@@ -80,7 +80,7 @@ func (c *cmdGrep) Execute(ctx context.Context) error {
 		return err
 	}
 
-	results := []grepResult{}
+	results := []grepResult{} // emit [] rather than null in --json output
 	for _, pkg := range ix.Pkgs {
 		for _, file := range pkg.Files {
 			if !specs.matchFile(file, pkg, absDir) {
@@ -295,6 +295,11 @@ func parseGrepSpecs(ix *mast.Index, absDir string, args []string) (grepSpecs, er
 			declIsType(ix, spec.source, spec.name, absDir) {
 			spec.field = "*"
 		}
+		for _, pat := range []string{spec.source, spec.name, spec.field} {
+			if err := validateGlob(pat); err != nil {
+				return nil, fmt.Errorf("parsing %q: %w", arg, err)
+			}
+		}
 		specs = append(specs, spec)
 	}
 	return specs, nil
@@ -327,11 +332,11 @@ func declIsType(ix *mast.Index, source, name string, absDir string) bool {
 
 // matchFile reports whether any spec could match a declaration in file. It is
 // a cheap pre-filter; matchDecl makes the final per-declaration decision.
-func (specs grepSpecs) matchFile(file *mast.File, pkg *mast.Package, absDir string) bool {
-	if len(specs) == 0 {
+func (ss grepSpecs) matchFile(file *mast.File, pkg *mast.Package, absDir string) bool {
+	if len(ss) == 0 {
 		return true
 	}
-	for _, s := range specs {
+	for _, s := range ss {
 		if matchSource(file, pkg, s.source, absDir) {
 			return true
 		}
@@ -339,11 +344,11 @@ func (specs grepSpecs) matchFile(file *mast.File, pkg *mast.Package, absDir stri
 	return false
 }
 
-func (specs grepSpecs) matchDecl(fd *ast.FuncDecl, file *mast.File, pkg *mast.Package, absDir string) bool {
-	if len(specs) == 0 {
+func (ss grepSpecs) matchDecl(fd *ast.FuncDecl, file *mast.File, pkg *mast.Package, absDir string) bool {
+	if len(ss) == 0 {
 		return true
 	}
-	for _, s := range specs {
+	for _, s := range ss {
 		if s.matchDecl(fd, file, pkg, absDir) {
 			return true
 		}

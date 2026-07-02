@@ -23,7 +23,7 @@ func makeRR(t *testing.T, src, identName string, kind mast.ObjectKind) *resolved
 		},
 		DefIdent: &mast.Ident{
 			Ident: ident,
-			Kind:  mast.Def,
+			Kind:  mast.IdentDef,
 			File:  &mast.File{Syntax: file},
 		},
 		File:       &mast.File{Syntax: file},
@@ -39,7 +39,7 @@ func TestGenerateFuncAlias_Generic(t *testing.T) {
 func Map[T any](s []T) []T { return nil }
 `
 	file, fset := parseSource(t, src)
-	rr := makeRR(t, src, "Map", mast.Func)
+	rr := makeRR(t, src, "Map", mast.ObjectFunc)
 	// Override File.Syntax to use the same parsed file
 	rr.File.Syntax = file
 	rr.DefIdent.Ident = findIdentByName(file, "Map")
@@ -68,7 +68,7 @@ func TestGenerateFuncAlias_GenericMultiParam(t *testing.T) {
 func Zip[K comparable, V any](keys []K, vals []V) map[K]V { return nil }
 `
 	file, fset := parseSource(t, src)
-	rr := makeRR(t, src, "Zip", mast.Func)
+	rr := makeRR(t, src, "Zip", mast.ObjectFunc)
 	rr.File.Syntax = file
 	rr.DefIdent.Ident = findIdentByName(file, "Zip")
 
@@ -91,7 +91,7 @@ func TestGenerateFuncAlias_NonGeneric(t *testing.T) {
 func Add(a, b int) int { return a + b }
 `
 	file, fset := parseSource(t, src)
-	rr := makeRR(t, src, "Add", mast.Func)
+	rr := makeRR(t, src, "Add", mast.ObjectFunc)
 	rr.File.Syntax = file
 	rr.DefIdent.Ident = findIdentByName(file, "Add")
 
@@ -120,11 +120,11 @@ var ErrFoo = "foo"
 	rr := &resolvedRelo{
 		Group: &mast.Group{
 			Name: "ErrFoo",
-			Kind: mast.Var,
+			Kind: mast.ObjectVar,
 		},
 		DefIdent: &mast.Ident{
 			Ident: findIdentByName(file, "ErrFoo"),
-			Kind:  mast.Def,
+			Kind:  mast.IdentDef,
 			File:  &mast.File{Syntax: file},
 		},
 		File:       &mast.File{Syntax: file},
@@ -154,7 +154,7 @@ func TestGenerateFuncAlias_ParamShadowsTargetPkg(t *testing.T) {
 func Send(newpkg string) error { return nil }
 `
 	file, fset := parseSource(t, src)
-	rr := makeRR(t, src, "Send", mast.Func)
+	rr := makeRR(t, src, "Send", mast.ObjectFunc)
 	rr.File.Syntax = file
 	rr.DefIdent.Ident = findIdentByName(file, "Send")
 
@@ -199,7 +199,7 @@ func TestGenerateFuncAlias_NoShadow(t *testing.T) {
 func Send(msg string) error { return nil }
 `
 	file, fset := parseSource(t, src)
-	rr := makeRR(t, src, "Send", mast.Func)
+	rr := makeRR(t, src, "Send", mast.ObjectFunc)
 	rr.File.Syntax = file
 	rr.DefIdent.Ident = findIdentByName(file, "Send")
 

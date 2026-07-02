@@ -14,6 +14,9 @@ import (
 // edit. Entries should be pre-sorted by path for deterministic output.
 func addImports(src string, entries []importEntry) (string, Warnings) {
 	fset := token.NewFileSet()
+	// Parsing only serves to detect already-present imports; on error
+	// file is nil, existing stays empty, and the textual insertion
+	// below still runs. At worst a duplicate import line is added.
 	file, _ := parser.ParseFile(fset, "", src, parser.ImportsOnly)
 
 	existing := make(map[string]string)
@@ -41,8 +44,8 @@ func addImports(src string, entries []importEntry) (string, Warnings) {
 				effective = guessImportLocalName(entry.Path)
 			}
 			if effective != expected {
-				warnings.Addf("import %s exists with alias %q but moved code expects %q",
-					strconv.Quote(entry.Path), effective, expected)
+				warnings.Addf("import %q exists with alias %q but moved code expects %q",
+					entry.Path, effective, expected)
 			}
 			continue
 		}

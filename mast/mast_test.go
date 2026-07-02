@@ -132,7 +132,7 @@ func findIdentsInFunc(ix *mast.Index, identName, pathFragment, funcName string) 
 func findFieldGroup(ix *mast.Index, fieldName, pathFragment string) *mast.Group {
 	for _, id := range findIdentsInFile(ix, fieldName, pathFragment) {
 		g := ix.Group(id)
-		if g != nil && g.Kind == mast.Field {
+		if g != nil && g.Kind == mast.ObjectField {
 			return g
 		}
 	}
@@ -143,7 +143,7 @@ func findFieldGroup(ix *mast.Index, fieldName, pathFragment string) *mast.Group 
 func findTypeGroup(ix *mast.Index, typeName, pathFragment string) *mast.Group {
 	for _, id := range findIdentsInFile(ix, typeName, pathFragment) {
 		g := ix.Group(id)
-		if g != nil && g.Kind == mast.TypeName {
+		if g != nil && g.Kind == mast.ObjectTypeName {
 			return g
 		}
 	}
@@ -154,7 +154,7 @@ func findTypeGroup(ix *mast.Index, typeName, pathFragment string) *mast.Group {
 func findMethodGroup(ix *mast.Index, methodName, pathFragment string) *mast.Group {
 	for _, id := range findIdentsInFile(ix, methodName, pathFragment) {
 		g := ix.Group(id)
-		if g != nil && g.Kind == mast.Method {
+		if g != nil && g.Kind == mast.ObjectMethod {
 			return g
 		}
 	}
@@ -165,14 +165,14 @@ func findMethodGroup(ix *mast.Index, methodName, pathFragment string) *mast.Grou
 func findFuncGroup(ix *mast.Index, funcName, pathFragment string) *mast.Group {
 	for _, id := range findIdentsInFile(ix, funcName, pathFragment) {
 		g := ix.Group(id)
-		if g != nil && g.Kind == mast.Func {
+		if g != nil && g.Kind == mast.ObjectFunc {
 			return g
 		}
 	}
 	return nil
 }
 
-func TestLoad(t *testing.T) {
+func TestLoadIncludesFilesFromAllPlatforms(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)
@@ -365,7 +365,7 @@ func TestIdentPkg(t *testing.T) {
 	}
 }
 
-func TestQualifier(t *testing.T) {
+func TestQualifierPresentForQualifiedUse(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)

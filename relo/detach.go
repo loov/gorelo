@@ -16,13 +16,13 @@ import (
 // edits are emitted onto the same Plan. For cross-file moves, the decl
 // edits sit inside the moved span and ride along with the enclosing
 // Move (or carryPlanInSpans for file-move targets).
-func computeDetachEdits(ctx *compileCtx) {
-	for _, rr := range ctx.resolved {
+func computeDetachEdits(cc *compileCtx) {
+	for _, rr := range cc.resolved {
 		switch {
 		case rr.Relo.Detach:
-			detachMethod(ctx.ix, rr, ctx.reloByGroup, ctx.edits, ctx.imports, ctx.plan)
+			detachMethod(cc.ix, rr, cc.reloByGroup, cc.edits, cc.imports, cc.plan)
 		case rr.Relo.MethodOf != "":
-			attachMethod(ctx.ix, rr, ctx.edits, ctx.plan)
+			attachMethod(cc.ix, rr, cc.edits, cc.plan)
 		}
 	}
 }
@@ -35,7 +35,7 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, reloByGroup map[*mast.Group]
 
 	fd := findFuncDecl(rr.File.Syntax, rr.DefIdent.Ident)
 	if fd == nil || fd.Recv == nil {
-		plan.Warnings.AddAtf(rr, ix, "cannot find method declaration for %s", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "cannot find method declaration for %q", rr.Group.Name)
 		return
 	}
 
@@ -136,7 +136,7 @@ func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvPar
 	if hasParams {
 		insertText += ", "
 	}
-	edits.Insert(ed.Anchor{Path: path, Offset: paramsOpen + 1}, insertText, ed.Before, "detach-insert-param")
+	edits.Insert(ed.Anchor{Path: path, Offset: paramsOpen + 1}, insertText, ed.SideBefore, "detach-insert-param")
 }
 
 // detachRecvParamForTarget returns the receiver text formatted as a
@@ -183,7 +183,7 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *
 	}
 
 	for _, id := range rr.Group.Idents {
-		if id.Kind != mast.Use || id.File == nil {
+		if id.Kind != mast.IdentUse || id.File == nil {
 			continue
 		}
 		sel, call := enclosingCallExpr(id.File.Syntax, id.Ident)
@@ -218,11 +218,11 @@ func detachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, imports *
 			if hasArgs {
 				insertText += ", "
 			}
-			edits.Insert(ed.Anchor{Path: filePath, Offset: lparen + 1}, insertText, ed.Before, "detach-callsite-recv-arg")
+			edits.Insert(ed.Anchor{Path: filePath, Offset: lparen + 1}, insertText, ed.SideBefore, "detach-callsite-recv-arg")
 		} else {
 			plan.Warnings.Addf(
-				"method value reference to %s.%s will change signature after detach",
-				recvText, rr.Group.Name)
+				"method value reference to %q will change signature after detach",
+				recvText+"."+rr.Group.Name)
 		}
 	}
 }
@@ -235,40 +235,40 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, plan *Plan) 
 
 	fd := findFuncDecl(rr.File.Syntax, rr.DefIdent.Ident)
 	if fd == nil {
-		plan.Warnings.AddAtf(rr, ix, "cannot find function declaration for %s", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "cannot find function declaration for %q", rr.Group.Name)
 		return
 	}
 	if fd.Recv != nil {
-		plan.Warnings.AddAtf(rr, ix, "%s is already a method", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "%q is already a method", rr.Group.Name)
 		return
 	}
 	if fd.Type.TypeParams != nil && len(fd.Type.TypeParams.List) > 0 {
-		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: generic functions cannot become methods", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: generic functions cannot become methods", rr.Group.Name)
 		return
 	}
 	if fd.Type.Params == nil || len(fd.Type.Params.List) == 0 {
-		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: no parameters", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: no parameters", rr.Group.Name)
 		return
 	}
 
 	firstField := fd.Type.Params.List[0]
 	if _, isEllipsis := firstField.Type.(*ast.Ellipsis); isEllipsis {
-		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: first parameter is variadic", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: first parameter is variadic", rr.Group.Name)
 		return
 	}
 	if len(firstField.Names) == 0 {
-		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: first parameter has no name", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: first parameter has no name", rr.Group.Name)
 		return
 	}
 	if len(firstField.Names) > 1 {
-		plan.Warnings.AddAtf(rr, ix, "cannot attach %s as method: first parameter field has multiple names", rr.Group.Name)
+		plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: first parameter field has multiple names", rr.Group.Name)
 		return
 	}
 
 	recvTypeName := typeExprName(firstField.Type)
 	if recvTypeName != rr.Relo.MethodOf {
 		plan.Warnings.AddAtf(rr, ix,
-			"cannot attach %s as method on %s: first parameter type is %s",
+			"cannot attach %q as method on %q: first parameter type is %q",
 			rr.Group.Name, rr.Relo.MethodOf, recvTypeName)
 		return
 	}
@@ -300,7 +300,7 @@ func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvTex
 	// Insert receiver before the function name.
 	nameStart := fset.Position(fd.Name.Pos()).Offset
 	edits.Insert(ed.Anchor{Path: path, Offset: nameStart},
-		"("+recvText+") ", ed.Before, "attach-insert-recv")
+		"("+recvText+") ", ed.SideBefore, "attach-insert-recv")
 
 	// Remove first parameter from parameter list.
 	paramsOpen := fset.Position(fd.Type.Params.Opening).Offset
@@ -379,7 +379,7 @@ func findImportPathForIdent(f *mast.File, name string) string {
 // The ident region rename is handled by the rename pass.
 func attachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan) {
 	for _, id := range rr.Group.Idents {
-		if id.Kind != mast.Use || id.File == nil {
+		if id.Kind != mast.IdentUse || id.File == nil {
 			continue
 		}
 

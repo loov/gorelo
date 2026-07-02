@@ -14,6 +14,9 @@ func TestMain(m *testing.M) {
 	})
 }
 
+// TestScript is the CLI's primary end-to-end suite. It is deliberately not
+// tagged as an integration test — the scripts under testdata/script are the
+// package's main tests and run by default.
 func TestScript(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/script",

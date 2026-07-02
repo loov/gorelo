@@ -67,7 +67,7 @@ func (c *cmdLs) Execute(ctx context.Context) error {
 	}
 
 	if c.showRefs || c.showDeps {
-		enrichDecls(ix, files, c.showRefs, c.showDeps)
+		enrichDecls(ix, files, lsDetail{refs: c.showRefs, deps: c.showDeps})
 	}
 
 	w := clingy.Stdout(ctx)
@@ -170,7 +170,7 @@ type lsEntry struct {
 }
 
 func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
-	var files []lsFile
+	files := []lsFile{} // emit [] rather than null in --json output
 	for _, pkg := range ix.Pkgs {
 		for _, file := range pkg.Files {
 			rel, err := filepath.Rel(absDir, file.Path)
@@ -255,9 +255,15 @@ func collectDecls(ix *mast.Index, absDir string, filter *lsFilter) []lsFile {
 	return files
 }
 
+// lsDetail selects which extra per-declaration data enrichDecls computes.
+type lsDetail struct {
+	refs bool
+	deps bool
+}
+
 // enrichDecls populates Refs and Deps on each entry by looking up the
 // declaration in the index.
-func enrichDecls(ix *mast.Index, files []lsFile, refs, deps bool) {
+func enrichDecls(ix *mast.Index, files []lsFile, detail lsDetail) {
 	for fi := range files {
 		for di := range files[fi].Decls {
 			d := &files[fi].Decls[di]
@@ -270,12 +276,12 @@ func enrichDecls(ix *mast.Index, files []lsFile, refs, deps bool) {
 				continue
 			}
 
-			if refs {
+			if detail.refs {
 				n := countRefs(grp)
 				d.Refs = &n
 			}
 
-			if deps {
+			if detail.deps {
 				defIdent := grp.DefIdent()
 				if defIdent == nil || defIdent.File == nil {
 					continue
@@ -293,7 +299,7 @@ func enrichDecls(ix *mast.Index, files []lsFile, refs, deps bool) {
 func countRefs(grp *mast.Group) int {
 	n := 0
 	for _, id := range grp.Idents {
-		if id.Kind == mast.Use {
+		if id.Kind == mast.IdentUse {
 			n++
 		}
 	}
@@ -315,7 +321,7 @@ func collectDeclDeps(ix *mast.Index, node ast.Node, self *mast.Group) []string {
 		}
 		// Only include types, funcs, vars, consts — skip fields and methods.
 		switch ref.Kind {
-		case mast.TypeName, mast.Func, mast.Var, mast.Const:
+		case mast.ObjectTypeName, mast.ObjectFunc, mast.ObjectVar, mast.ObjectConst:
 			seen[ref] = true
 			names = append(names, ref.Name)
 		}

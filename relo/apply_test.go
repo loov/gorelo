@@ -55,7 +55,9 @@ func TestApplyPlan_ModifyExistingFile(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "existing.go")
-	os.WriteFile(path, []byte("package old\n"), 0644)
+	if err := os.WriteFile(path, []byte("package old\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	plan := &Plan{
 		Edits: []FileEdit{
@@ -66,7 +68,10 @@ func TestApplyPlan_ModifyExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, _ := os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(data) != "package new\n" {
 		t.Errorf("file content = %q, want %q", string(data), "package new\n")
 	}
@@ -77,7 +82,9 @@ func TestApplyPlan_DeleteFile(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "todelete.go")
-	os.WriteFile(path, []byte("package p\n"), 0644)
+	if err := os.WriteFile(path, []byte("package p\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	plan := &Plan{
 		Edits: []FileEdit{
@@ -123,7 +130,9 @@ func TestApplyPlan_MultipleEdits(t *testing.T) {
 	path1 := filepath.Join(dir, "a.go")
 	path2 := filepath.Join(dir, "b.go")
 	path3 := filepath.Join(dir, "c.go")
-	os.WriteFile(path3, []byte("package old\n"), 0644)
+	if err := os.WriteFile(path3, []byte("package old\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	plan := &Plan{
 		Edits: []FileEdit{

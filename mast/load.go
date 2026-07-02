@@ -144,7 +144,7 @@ func load(cfg *Config, patterns ...string) (*Index, error) {
 func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs map[string]*types.Package) ([]*Package, []error) {
 	dir := packageDir(pkg)
 	if dir == "" {
-		return nil, []error{fmt.Errorf("cannot determine directory for package %s", pkg.PkgPath)}
+		return nil, []error{fmt.Errorf("cannot determine directory for package %q", pkg.PkgPath)}
 	}
 
 	// Discover all .go files in the directory.
@@ -197,13 +197,14 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 	}
 	if len(missingImports) > 0 {
 		extraPkgs, loadErr := packages.Load(cfg, missingImports...)
-		if loadErr == nil {
-			for _, ep := range extraPkgs {
-				if ep.PkgPath != "" && ep.Types != nil {
-					depPkgs[ep.PkgPath] = ep.Types
-				}
-				collectTypeDeps(ep, depPkgs)
+		if loadErr != nil {
+			errs = append(errs, fmt.Errorf("loading missing imports: %w", loadErr))
+		}
+		for _, ep := range extraPkgs {
+			if ep.PkgPath != "" && ep.Types != nil {
+				depPkgs[ep.PkgPath] = ep.Types
 			}
+			collectTypeDeps(ep, depPkgs)
 		}
 	}
 
@@ -286,7 +287,7 @@ func typeCheckFiles(ix *Index, files []parsedFile, fileMap map[*ast.File]*File, 
 				if tp, ok := depPkgs[path]; ok {
 					return tp, nil
 				}
-				return nil, fmt.Errorf("package %s not found in dependencies", path)
+				return nil, fmt.Errorf("package %q not found in dependencies", path)
 			}),
 			Error: func(error) {}, // swallow errors
 		}
@@ -498,9 +499,13 @@ func isKnownGOARCH(s string) bool { return knownGOARCH[s] }
 // behavior of Go's "./..." pattern.
 func discoverMissedDirs(dir string, loadedDirs map[string]bool) []string {
 	var missed []string
-	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck
+	// The walk is best-effort: it only recovers directories that
+	// packages.Load already skipped, and a directory we cannot read
+	// cannot be loaded as a package either. The callback skips errored
+	// entries instead of aborting, so WalkDir never returns an error.
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return nil
 		}
 		if !d.IsDir() {
 			return nil

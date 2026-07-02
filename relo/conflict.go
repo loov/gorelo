@@ -11,10 +11,10 @@ import (
 )
 
 // checkConstraints warns about build constraint issues (phase 4).
-func checkConstraints(ctx *compileCtx) {
-	plan := ctx.plan
-	ctx.initGroupByTargetSource()
-	byTarget := ctx.byTarget
+func checkConstraints(cc *compileCtx) {
+	plan := cc.plan
+	cc.initGroupByTargetSource()
+	byTarget := cc.byTarget
 
 	sortedTargets := sortedKeys(byTarget)
 	for _, target := range sortedTargets {
@@ -31,16 +31,16 @@ func checkConstraints(ctx *compileCtx) {
 		if len(constraints) > 1 {
 			cs := sortedKeys(constraints)
 			plan.Warnings.Addf(
-				"mixed build constraints (%s) going to %s",
+				"mixed build constraints (%s) going to %q",
 				strings.Join(cs, "; "), target)
 		}
 	}
 }
 
 // detectConflicts checks for naming and movement conflicts (phase 5).
-func detectConflicts(ctx *compileCtx) error {
-	ix, resolved, spans := ctx.ix, ctx.resolved, ctx.spans
-	resolvedGroups, opts, plan := ctx.resolvedGroups, ctx.opts, ctx.plan
+func detectConflicts(cc *compileCtx) error {
+	ix, resolved, spans := cc.ix, cc.resolved, cc.spans
+	resolvedGroups, opts, plan := cc.resolvedGroups, cc.opts, cc.plan
 	// Check movement conflicts: same group moved to two different targets.
 	// Use a composite key of (group, source file path) so that declarations
 	// from non-overlapping build constraints can target different files.
@@ -56,7 +56,7 @@ func detectConflicts(ctx *compileCtx) error {
 		}
 		if existing, ok := targetsByKey[mk]; ok {
 			if existing != rr.TargetFile {
-				return fmt.Errorf("conflicting moves: %s targeted to both %s and %s",
+				return fmt.Errorf("conflicting moves: %q targeted to both %q and %q",
 					rr.Group.Name, existing, rr.TargetFile)
 			}
 		}
@@ -101,7 +101,7 @@ func detectConflicts(ctx *compileCtx) error {
 				if !constraintsMayOverlap(entries[i].buildTag, entries[j].buildTag) {
 					continue
 				}
-				return fmt.Errorf("name collision: multiple declarations named %s are being moved to %s",
+				return fmt.Errorf("name collision: multiple declarations named %q are being moved to %q",
 					entries[i].name, dir)
 			}
 		}
@@ -109,7 +109,7 @@ func detectConflicts(ctx *compileCtx) error {
 
 	// Check against existing declarations in target packages.
 	for dir, entries := range byTargetDir {
-		targetPkg := ctx.cachedPkgForDir(dir)
+		targetPkg := cc.cachedPkgForDir(dir)
 		if targetPkg == nil {
 			continue
 		}
@@ -164,7 +164,7 @@ func detectConflicts(ctx *compileCtx) error {
 					if movedFromGroups[entry.reloGroup] && declDefinesGroup(ix, decl, entry.reloGroup) {
 						continue
 					}
-					return fmt.Errorf("name collision: %s already exists in %s",
+					return fmt.Errorf("name collision: %q already exists in %q",
 						entry.name, file.Path)
 				}
 			}
@@ -180,7 +180,7 @@ func detectConflicts(ctx *compileCtx) error {
 		if !rr.isCrossPackageMove() {
 			continue
 		}
-		srcImportPath := ctx.cachedImportPath(rr.SourceDir)
+		srcImportPath := cc.cachedImportPath(rr.SourceDir)
 		if srcImportPath == "" {
 			continue
 		}
@@ -190,11 +190,11 @@ func detectConflicts(ctx *compileCtx) error {
 		if !stubForces && !sourceNeedsTargetImport(rr, resolved) {
 			continue
 		}
-		if !targetImportsSource(ctx, rr.TargetFile, finalDir(rr), srcImportPath) {
+		if !targetImportsSource(cc, rr.TargetFile, finalDir(rr), srcImportPath) {
 			continue
 		}
 		plan.Warnings.AddAtf(rr, ix,
-			"moving %s to %s may create a circular import: target already imports source package %s",
+			"moving %q to %q may create a circular import: target already imports source package %q",
 			rr.Group.Name, rr.TargetFile, srcImportPath)
 	}
 
@@ -205,11 +205,11 @@ func detectConflicts(ctx *compileCtx) error {
 		}
 		if hasDirective(rr.Decl, rr.File.Syntax, ix.Fset, "go:embed") {
 			plan.Warnings.AddAtf(rr, ix,
-				"moved decl %s has a //go:embed directive", rr.Group.Name)
+				"moved decl %q has a //go:embed directive", rr.Group.Name)
 		}
 		if hasDirective(rr.Decl, rr.File.Syntax, ix.Fset, "go:generate") {
 			plan.Warnings.AddAtf(rr, ix,
-				"moved decl %s has a //go:generate directive", rr.Group.Name)
+				"moved decl %q has a //go:generate directive", rr.Group.Name)
 		}
 	}
 
@@ -218,7 +218,7 @@ func detectConflicts(ctx *compileCtx) error {
 	checkCrossPkgRefs(ix, resolved, spans, resolvedGroups, plan)
 
 	// Warn when a source file has build constraints.
-	checkSourceBuildConstraints(ctx)
+	checkSourceBuildConstraints(cc)
 
 	return nil
 }
@@ -260,7 +260,7 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 			}
 			// Only check kinds that represent package-scope declarations.
 			switch grp.Kind {
-			case mast.Func, mast.Const, mast.Var, mast.TypeName:
+			case mast.ObjectFunc, mast.ObjectConst, mast.ObjectVar, mast.ObjectTypeName:
 				// These are the kinds that matter.
 			default:
 				return
@@ -281,11 +281,11 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 			warned[grp] = true
 			if srcPkg.Name == "main" {
 				plan.Warnings.AddAtf(rr, ix,
-					"moved decl %s references %q which stays in package main (main cannot be imported)",
+					"moved decl %q references %q which stays in package main (main cannot be imported)",
 					rr.Group.Name, grp.Name)
 			} else if !token.IsExported(grp.Name) {
 				plan.Warnings.AddAtf(rr, ix,
-					"moved decl %s references unexported %q which is not in the move set",
+					"moved decl %q references unexported %q which is not in the move set",
 					rr.Group.Name, grp.Name)
 			}
 		})
@@ -298,9 +298,9 @@ func checkCrossPkgRefs(ix *mast.Index, resolved []*resolvedRelo, spans map[*reso
 // constraint. We only warn when the constraint could be lost: the target
 // file already exists, or the items mixed constrained and unconstrained
 // sources (the mixed-constraints case is already covered by checkConstraints).
-func checkSourceBuildConstraints(ctx *compileCtx) {
-	ix, resolved, plan := ctx.ix, ctx.resolved, ctx.plan
-	byTarget := ctx.byTarget
+func checkSourceBuildConstraints(cc *compileCtx) {
+	ix, resolved, plan := cc.ix, cc.resolved, cc.plan
+	byTarget := cc.byTarget
 
 	warnedFiles := make(map[string]bool)
 	for _, rr := range resolved {
@@ -337,7 +337,7 @@ func checkSourceBuildConstraints(ctx *compileCtx) {
 
 		warnedFiles[rr.File.Path] = true
 		plan.Warnings.AddAtf(rr, ix,
-			"source file %s has build constraints — moved declarations may need the same constraints in the target",
+			"source file %q has build constraints — moved declarations may need the same constraints in the target",
 			filepath.Base(rr.File.Path))
 	}
 }
@@ -554,7 +554,7 @@ func sourceNeedsTargetImport(rr *resolvedRelo, resolved []*resolvedRelo) bool {
 	}
 
 	for _, id := range rr.Group.Idents {
-		if id.Kind != mast.Use || id.File == nil {
+		if id.Kind != mast.IdentUse || id.File == nil {
 			continue
 		}
 		if id.File.Pkg != srcPkg {
@@ -571,8 +571,8 @@ func sourceNeedsTargetImport(rr *resolvedRelo, resolved []*resolvedRelo) bool {
 // targetImportsSource reports whether any file in the package at targetDir
 // imports srcImportPath. It handles both existing target files and packages
 // rooted at a target directory that doesn't yet contain the target file.
-func targetImportsSource(ctx *compileCtx, targetFilePath, targetDir, srcImportPath string) bool {
-	if f := ctx.ix.FilesByPath[targetFilePath]; f != nil {
+func targetImportsSource(cc *compileCtx, targetFilePath, targetDir, srcImportPath string) bool {
+	if f := cc.ix.FilesByPath[targetFilePath]; f != nil {
 		for _, imp := range f.Syntax.Imports {
 			if importPath(imp) == srcImportPath {
 				return true
@@ -580,7 +580,7 @@ func targetImportsSource(ctx *compileCtx, targetFilePath, targetDir, srcImportPa
 		}
 		return false
 	}
-	targetPkg := ctx.cachedPkgForDir(targetDir)
+	targetPkg := cc.cachedPkgForDir(targetDir)
 	if targetPkg == nil {
 		return false
 	}

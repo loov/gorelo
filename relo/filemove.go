@@ -60,7 +60,7 @@ func expandFileMoves(ix *mast.Index, moves []FileMove, userRelos []Relo) ([]Relo
 			return nil, nil, fmt.Errorf("file-move destination %q: %w", m.To, err)
 		}
 		if absTo == src.Path {
-			return nil, nil, fmt.Errorf("file-move source and destination are the same file: %s", src.Path)
+			return nil, nil, fmt.Errorf("file-move source and destination are the same file: %q", src.Path)
 		}
 		if _, err := os.Stat(absTo); err == nil {
 			return nil, nil, fmt.Errorf("file-move destination %q already exists; use per-declaration rules to merge", absTo)
@@ -227,10 +227,10 @@ func lookupFile(ix *mast.Index, path string) *mast.File {
 // The Move uses Order -1 so that at the destination anchor, the
 // file-move content sorts before any per-decl extraction Moves (which
 // use the default Order 0).
-func emitFileMoveEdits(ctx *compileCtx) {
-	ix, edits := ctx.ix, ctx.edits
+func emitFileMoveEdits(cc *compileCtx) {
+	ix, edits := cc.ix, cc.edits
 
-	for _, info := range ctx.fmInfos {
+	for _, info := range cc.fmInfos {
 		src := info.srcFile
 		if src == nil || src.Src == nil {
 			continue
@@ -238,7 +238,7 @@ func emitFileMoveEdits(ctx *compileCtx) {
 		srcPath := src.Path
 
 		targetDir := filepath.Dir(info.move.To)
-		targetPkgName := fileMovePackageName(ctx, targetDir, src)
+		targetPkgName := fileMovePackageName(cc, targetDir, src)
 		if targetPkgName != src.Syntax.Name.Name {
 			pkgName := src.Syntax.Name
 			pkgOff := ix.Fset.Position(pkgName.Pos()).Offset
@@ -270,11 +270,11 @@ func emitFileMoveEdits(ctx *compileCtx) {
 // source, the source's package name is used. Otherwise, existing
 // packages in the target directory take precedence; the directory
 // basename is the final fallback.
-func fileMovePackageName(ctx *compileCtx, targetDir string, srcFile *mast.File) string {
+func fileMovePackageName(cc *compileCtx, targetDir string, srcFile *mast.File) string {
 	if targetDir == filepath.Dir(srcFile.Path) {
 		return srcFile.Syntax.Name.Name
 	}
-	if pkg := ctx.cachedPkgForDir(targetDir); pkg != nil {
+	if pkg := cc.cachedPkgForDir(targetDir); pkg != nil {
 		return pkg.Name
 	}
 	return guessPackageName(targetDir)

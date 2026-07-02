@@ -15,39 +15,28 @@ func TestFindDef(t *testing.T) {
 	tests := []struct {
 		name   string
 		source string
-		want   string // expected Group.Kind, or "" for nil result
+		want   mast.ObjectKind // expected Group.Kind
 	}{
 		// Types
-		{name: "User", want: "TypeName"},
-		{name: "Counter", want: "TypeName"},
-		{name: "Role", want: "TypeName"},
-		{name: "Pair", want: "TypeName"},
-		{name: "Stringer", want: "TypeName"},
-		{name: "Node", want: "TypeName"},
+		{name: "User", want: mast.ObjectTypeName},
+		{name: "Counter", want: mast.ObjectTypeName},
+		{name: "Role", want: mast.ObjectTypeName},
+		{name: "Pair", want: mast.ObjectTypeName},
+		{name: "Stringer", want: mast.ObjectTypeName},
+		{name: "Node", want: mast.ObjectTypeName},
 
 		// Functions
-		{name: "NewUser", want: "Func"},
-		{name: "MakePair", want: "Func"},
-		{name: "Names", want: "Func"},
+		{name: "NewUser", want: mast.ObjectFunc},
+		{name: "MakePair", want: mast.ObjectFunc},
+		{name: "Names", want: mast.ObjectFunc},
 
 		// Variables
-		{name: "DefaultUser", want: "Var"},
-		{name: "ErrNotFound", want: "Var"},
+		{name: "DefaultUser", want: mast.ObjectVar},
+		{name: "ErrNotFound", want: mast.ObjectVar},
 
 		// Constants
-		{name: "MaxUsers", want: "Const"},
-		{name: "RoleGuest", want: "Const"},
-
-		// Not found
-		{name: "DoesNotExist", want: ""},
-		{name: "doesnotexist", want: ""},
-	}
-
-	kindString := map[mast.ObjectKind]string{
-		mast.TypeName: "TypeName",
-		mast.Func:     "Func",
-		mast.Var:      "Var",
-		mast.Const:    "Const",
+		{name: "MaxUsers", want: mast.ObjectConst},
+		{name: "RoleGuest", want: mast.ObjectConst},
 	}
 
 	for _, tt := range tests {
@@ -55,25 +44,34 @@ func TestFindDef(t *testing.T) {
 			t.Parallel()
 
 			id := ix.FindDef(tt.name, tt.source)
-			if tt.want == "" {
-				if id != nil {
-					t.Errorf("FindDef(%q, %q) = %s, want nil", tt.name, tt.source, id.Name)
-				}
-				return
-			}
 			if id == nil {
-				t.Fatalf("FindDef(%q, %q) = nil, want %s", tt.name, tt.source, tt.want)
+				t.Fatalf("FindDef(%q, %q) = nil, want %v", tt.name, tt.source, tt.want)
 			}
 			grp := ix.Group(id)
 			if grp == nil {
 				t.Fatalf("FindDef(%q, %q) returned ident with no group", tt.name, tt.source)
 			}
-			got := kindString[grp.Kind]
-			if got != tt.want {
-				t.Errorf("FindDef(%q, %q) kind = %s, want %s", tt.name, tt.source, got, tt.want)
+			if grp.Kind != tt.want {
+				t.Errorf("FindDef(%q, %q) kind = %v, want %v", tt.name, tt.source, grp.Kind, tt.want)
 			}
 			if id.Name != tt.name {
 				t.Errorf("FindDef(%q, %q) ident name = %q", tt.name, tt.source, id.Name)
+			}
+		})
+	}
+}
+
+func TestFindDefReturnsNilForUnknownName(t *testing.T) {
+	t.Parallel()
+
+	ix := loadTestdata(t)
+
+	for _, name := range []string{"DoesNotExist", "doesnotexist"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if id := ix.FindDef(name, ""); id != nil {
+				t.Errorf("FindDef(%q, %q) = %s, want nil", name, "", id.Name)
 			}
 		})
 	}
@@ -96,7 +94,7 @@ func TestFindDefSkipsMethods(t *testing.T) {
 	if grp == nil {
 		t.Fatalf("FindDef(\"sameName\", \"\") returned ident with no group")
 	}
-	if grp.Kind != mast.Func {
+	if grp.Kind != mast.ObjectFunc {
 		t.Errorf("FindDef(\"sameName\", \"\") kind = %v, want Func (got the method, not the top-level function)", grp.Kind)
 	}
 }
@@ -152,7 +150,7 @@ func TestFindDefSubpackageFunc(t *testing.T) {
 	}
 
 	grp := ix.Group(id)
-	if grp == nil || grp.Kind != mast.Func {
+	if grp == nil || grp.Kind != mast.ObjectFunc {
 		t.Errorf("expected Func kind for Name in example/linux")
 	}
 }
@@ -176,7 +174,7 @@ func TestFindDefReturnsDefIdent(t *testing.T) {
 	// Verify the returned ident is the Def in the group.
 	var found bool
 	for _, gid := range grp.Idents {
-		if gid.Ident == id && gid.Kind == mast.Def {
+		if gid.Ident == id && gid.Kind == mast.IdentDef {
 			found = true
 			break
 		}
@@ -237,7 +235,6 @@ func TestFindFieldDef(t *testing.T) {
 		fieldPath string
 		wantIdent string // expected ident name (last segment of path)
 		source    string
-		wantNil   bool
 	}{
 		{desc: "User.Name", typeName: "User", fieldPath: "Name", wantIdent: "Name"},
 		{desc: "User.Email", typeName: "User", fieldPath: "Email", wantIdent: "Email"},
@@ -258,15 +255,6 @@ func TestFindFieldDef(t *testing.T) {
 		{desc: "Server.TLS.KeyFile", typeName: "Server", fieldPath: "TLS.KeyFile", wantIdent: "KeyFile"},
 		{desc: "Database.TLS.CertFile", typeName: "Database", fieldPath: "TLS.CertFile", wantIdent: "CertFile"},
 		{desc: "Database.TLS.CAFile", typeName: "Database", fieldPath: "TLS.CAFile", wantIdent: "CAFile"},
-
-		// Not found cases.
-		{desc: "User.Missing", typeName: "User", fieldPath: "Missing", wantNil: true},
-		{desc: "Missing.Name", typeName: "Missing", fieldPath: "Name", wantNil: true},
-		{desc: "Counter.X (not a struct)", typeName: "Counter", fieldPath: "X", wantNil: true},
-		{desc: "Config.Missing", typeName: "Config", fieldPath: "Missing", wantNil: true},
-		{desc: "Server.TLS.Missing", typeName: "Server", fieldPath: "TLS.Missing", wantNil: true},
-		{desc: "Server.Missing.CertFile", typeName: "Server", fieldPath: "Missing.CertFile", wantNil: true},
-		{desc: "Server.Addr.X (not nested struct)", typeName: "Server", fieldPath: "Addr.X", wantNil: true},
 	}
 
 	for _, tt := range tests {
@@ -274,12 +262,6 @@ func TestFindFieldDef(t *testing.T) {
 			t.Parallel()
 
 			id := ix.FindFieldDef(tt.typeName, tt.fieldPath, tt.source)
-			if tt.wantNil {
-				if id != nil {
-					t.Errorf("FindFieldDef(%q, %q, %q) = %s, want nil", tt.typeName, tt.fieldPath, tt.source, id.Name)
-				}
-				return
-			}
 			if id == nil {
 				t.Fatalf("FindFieldDef(%q, %q, %q) = nil", tt.typeName, tt.fieldPath, tt.source)
 			}
@@ -290,8 +272,38 @@ func TestFindFieldDef(t *testing.T) {
 			if grp == nil {
 				t.Fatalf("returned ident has no group")
 			}
-			if grp.Kind != mast.Field {
-				t.Errorf("group kind = %d, want Field", grp.Kind)
+			if grp.Kind != mast.ObjectField {
+				t.Errorf("group kind = %v, want Field", grp.Kind)
+			}
+		})
+	}
+}
+
+func TestFindFieldDefReturnsNilForMissingField(t *testing.T) {
+	t.Parallel()
+
+	ix := loadTestdata(t)
+
+	tests := []struct {
+		desc      string
+		typeName  string
+		fieldPath string
+	}{
+		{desc: "User.Missing", typeName: "User", fieldPath: "Missing"},
+		{desc: "Missing.Name", typeName: "Missing", fieldPath: "Name"},
+		{desc: "Counter.X (not a struct)", typeName: "Counter", fieldPath: "X"},
+		{desc: "Config.Missing", typeName: "Config", fieldPath: "Missing"},
+		{desc: "Server.TLS.Missing", typeName: "Server", fieldPath: "TLS.Missing"},
+		{desc: "Server.Missing.CertFile", typeName: "Server", fieldPath: "Missing.CertFile"},
+		{desc: "Server.Addr.X (not nested struct)", typeName: "Server", fieldPath: "Addr.X"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+
+			if id := ix.FindFieldDef(tt.typeName, tt.fieldPath, ""); id != nil {
+				t.Errorf("FindFieldDef(%q, %q, %q) = %s, want nil", tt.typeName, tt.fieldPath, "", id.Name)
 			}
 		})
 	}
@@ -344,7 +356,7 @@ func TestFindFieldDefReturnsDefIdent(t *testing.T) {
 
 	var found bool
 	for _, gid := range grp.Idents {
-		if gid.Ident == id && gid.Kind == mast.Def {
+		if gid.Ident == id && gid.Kind == mast.IdentDef {
 			found = true
 			break
 		}

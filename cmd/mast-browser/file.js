@@ -79,7 +79,7 @@ sourcePane.addEventListener("click", function (e) {
 //       file: string,        // relative file path
 //       pkg:  string,        // package path the file belongs to
 //       snippets: [{
-//         contextStart: int, // 1-based line number of first context line
+//         context_start: int, // 1-based line number of first context line
 //         context: [string], // source lines surrounding the references
 //         highlights: [{
 //           line: int,       // 1-based line number
@@ -163,7 +163,7 @@ function renderSnippet(snippet) {
 	}
 
 	for (var i = 0; i < snippet.context.length; i++) {
-		var lineNum = snippet.contextStart + i;
+		var lineNum = snippet.context_start + i;
 		var lineText = snippet.context[i];
 		div.appendChild(renderLine(lineNum, lineText, hlByLine[lineNum]));
 	}

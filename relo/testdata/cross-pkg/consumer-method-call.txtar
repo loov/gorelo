@@ -6,7 +6,7 @@
 
 Server -> dst/server.go
 
-@warn constructor NewServer exists but is not being moved with type Server
+@warn constructor "NewServer" exists but is not being moved with type "Server"
 
 -- input/go.mod --
 module example.com/test

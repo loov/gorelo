@@ -97,7 +97,7 @@ func TestTypeHasEmbeddedUses(t *testing.T) {
 					{
 						Ident: ident,
 						File:  mastFile,
-						Kind:  mast.Use,
+						Kind:  mast.IdentUse,
 					},
 				},
 			}

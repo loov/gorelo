@@ -11,7 +11,7 @@ User CreateUser -> user.go
 Product=Goods CreateProduct=CreateGoods -> product.go
 User#Name=FullName
 
-@warn renaming type Product to Goods will also change embedded field names
+@warn renaming type "Product" to "Goods" will also change embedded field names
 
 -- input/go.mod --
 module example.com/pkg

@@ -35,14 +35,14 @@ func (ix *Index) Group(id *ast.Ident) *Group {
 func (ix *Index) EmbeddedFieldGroups(name, pkg string) []*Group {
 	var groups []*Group
 	for key, grp := range ix.groupsByKey {
-		if key.Name != name || key.PkgPath != pkg || grp.Kind != Field {
+		if key.Name != name || key.PkgPath != pkg || grp.Kind != ObjectField {
 			continue
 		}
 		// Embedded field groups have no Def ident — the definition
 		// is redirected to the type name's group in resolveInfo.
 		hasDef := false
 		for _, id := range grp.Idents {
-			if id.Kind == Def {
+			if id.Kind == IdentDef {
 				hasDef = true
 				break
 			}
@@ -79,9 +79,9 @@ type Group struct {
 }
 
 // DefIdent returns the first Def ident in the group, or nil if none exists.
-func (grp *Group) DefIdent() *Ident {
-	for _, id := range grp.Idents {
-		if id.Kind == Def {
+func (g *Group) DefIdent() *Ident {
+	for _, id := range g.Idents {
+		if id.Kind == IdentDef {
 			return id
 		}
 	}
@@ -90,8 +90,8 @@ func (grp *Group) DefIdent() *Ident {
 
 // FindIdent returns the ident in the group that matches target by pointer
 // identity and has the given kind, or nil if no match exists.
-func (grp *Group) FindIdent(target *ast.Ident, kind IdentKind) *Ident {
-	for _, id := range grp.Idents {
+func (g *Group) FindIdent(target *ast.Ident, kind IdentKind) *Ident {
+	for _, id := range g.Idents {
 		if id.Ident == target && id.Kind == kind {
 			return id
 		}
@@ -103,9 +103,9 @@ func (grp *Group) FindIdent(target *ast.Ident, kind IdentKind) *Ident {
 // declaration (as opposed to a local variable, parameter, or result).
 // A package-scope group has at least one Def ident at file top-level —
 // not nested inside any FuncDecl or FuncLit.
-func (grp *Group) IsPackageScope() bool {
-	for _, id := range grp.Idents {
-		if id.Kind != Def || id.File == nil {
+func (g *Group) IsPackageScope() bool {
+	for _, id := range g.Idents {
+		if id.Kind != IdentDef || id.File == nil {
 			continue
 		}
 		if !isInsideFuncBody(id.Ident, id.File.Syntax) {
@@ -148,7 +148,7 @@ func isInsideFuncBody(ident *ast.Ident, file *ast.File) bool {
 // HasUses reports whether the group has any Use idents.
 func (g *Group) HasUses() bool {
 	for _, id := range g.Idents {
-		if id.Kind == Use {
+		if id.Kind == IdentUse {
 			return true
 		}
 	}
@@ -167,24 +167,57 @@ type Ident struct {
 type IdentKind int
 
 const (
-	Def IdentKind = iota
-	Use
+	IdentInvalid IdentKind = iota
+	IdentDef
+	IdentUse
 )
+
+func (k IdentKind) String() string {
+	switch k {
+	case IdentDef:
+		return "def"
+	case IdentUse:
+		return "use"
+	}
+	return "invalid"
+}
 
 // ObjectKind classifies the entity an identifier refers to.
 type ObjectKind int
 
 const (
-	Unknown ObjectKind = iota
-	TypeName
-	Func
-	Method
-	Field
-	Var
-	Const
-	PackageName
-	Label
+	ObjectUnknown ObjectKind = iota
+	ObjectTypeName
+	ObjectFunc
+	ObjectMethod
+	ObjectField
+	ObjectVar
+	ObjectConst
+	ObjectPackageName
+	ObjectLabel
 )
+
+func (k ObjectKind) String() string {
+	switch k {
+	case ObjectTypeName:
+		return "type"
+	case ObjectFunc:
+		return "func"
+	case ObjectMethod:
+		return "method"
+	case ObjectField:
+		return "field"
+	case ObjectVar:
+		return "var"
+	case ObjectConst:
+		return "const"
+	case ObjectPackageName:
+		return "package"
+	case ObjectLabel:
+		return "label"
+	}
+	return "unknown"
+}
 
 // TravelsWithType reports whether this kind represents an entity that
 // moves with its parent type (methods and fields). These are accessed
@@ -192,7 +225,7 @@ const (
 // qualified identifiers, so they must not be package-qualified during
 // cross-package moves.
 func (k ObjectKind) TravelsWithType() bool {
-	return k == Method || k == Field
+	return k == ObjectMethod || k == ObjectField
 }
 
 // HasStub reports whether this kind gets its own backward-compatibility
@@ -200,7 +233,7 @@ func (k ObjectKind) TravelsWithType() bool {
 // because they follow the receiver type's alias automatically.
 func (k ObjectKind) HasStub() bool {
 	switch k {
-	case TypeName, Func, Const, Var:
+	case ObjectTypeName, ObjectFunc, ObjectConst, ObjectVar:
 		return true
 	default:
 		return false

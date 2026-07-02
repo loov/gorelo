@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +41,13 @@ func (c *cmdApply) Execute(ctx context.Context) error {
 		ruleFiles = []string{"gorelo.rules"}
 	}
 	return withProfile(c.cpuprofile, func() error {
-		return runRelo(c.verbose, c.dryRun, ruleFiles, inlineRules, defaultFile)
+		return runRelo(reloOptions{
+			verbose:      c.verbose,
+			dryRun:       c.dryRun,
+			ruleFiles:    ruleFiles,
+			inlineRules:  inlineRules,
+			defaultFiles: defaultFile,
+		})
 	})
 }
 
@@ -62,7 +70,7 @@ func isRuleSyntax(s string) bool {
 		strings.HasPrefix(s, "@")
 }
 
-func withProfile(path string, fn func() error) error {
+func withProfile(path string, fn func() error) (err error) {
 	if path == "" {
 		return fn()
 	}
@@ -70,7 +78,7 @@ func withProfile(path string, fn func() error) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { err = errors.Join(err, f.Close()) }()
 	if err := pprof.StartCPUProfile(f); err != nil {
 		return err
 	}
@@ -78,13 +86,21 @@ func withProfile(path string, fn func() error) error {
 	return fn()
 }
 
-func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, defaultFiles bool) error {
+type reloOptions struct {
+	verbose      bool
+	dryRun       bool
+	ruleFiles    []string
+	inlineRules  []string
+	defaultFiles bool
+}
+
+func runRelo(opts reloOptions) error {
 	var merged rules.File
 
-	for _, rulesPath := range ruleFiles {
+	for _, rulesPath := range opts.ruleFiles {
 		data, err := os.ReadFile(rulesPath)
 		if err != nil {
-			if defaultFiles && os.IsNotExist(err) {
+			if opts.defaultFiles && os.IsNotExist(err) {
 				continue
 			}
 			return err
@@ -97,7 +113,7 @@ func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, def
 		merged.Rules = append(merged.Rules, f.Rules...)
 	}
 
-	for i, r := range inlineRules {
+	for i, r := range opts.inlineRules {
 		f, err := rules.Parse(fmt.Sprintf("arg[%d]", i), []byte(r))
 		if err != nil {
 			return fmt.Errorf("parsing rule %q: %w", r, err)
@@ -111,12 +127,12 @@ func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, def
 	}
 
 	// Process directives.
-	opts := &relo.Options{}
+	reloOpts := &relo.Options{}
 	var fmtCmd string
 	for _, d := range merged.Directives {
 		switch d.Key {
 		case "stubs":
-			opts.Stubs = d.Value == "" || d.Value == "true"
+			reloOpts.Stubs = d.Value == "" || d.Value == "true"
 		case "fmt":
 			fmtCmd = d.Value
 		}
@@ -140,7 +156,7 @@ func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, def
 	}
 
 	// Compile plan.
-	plan, err := relo.Compile(ix, relos, fileMoves, opts)
+	plan, err := relo.Compile(ix, relos, fileMoves, reloOpts)
 	if err != nil {
 		return fmt.Errorf("compiling plan: %w", err)
 	}
@@ -151,9 +167,9 @@ func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, def
 	}
 
 	// Dry run or verbose: print plan summary.
-	if dryRun || verbose {
+	if opts.dryRun || opts.verbose {
 		w := os.Stdout
-		if verbose {
+		if opts.verbose {
 			w = os.Stderr
 		}
 		printDeclSummary(w, ix, relos, fileMoves, absDir)
@@ -161,7 +177,7 @@ func runRelo(verbose, dryRun bool, ruleFiles []string, inlineRules []string, def
 		for _, edit := range plan.Edits {
 			fmt.Fprintf(w, "  %-7s %s\n", editAction(edit), relPath(absDir, edit.Path))
 		}
-		if dryRun {
+		if opts.dryRun {
 			return nil
 		}
 	}
@@ -215,7 +231,7 @@ func editAction(edit relo.FileEdit) string {
 	}
 }
 
-func printDeclSummary(w *os.File, ix *mast.Index, relos []relo.Relo, fileMoves []relo.FileMove, absDir string) {
+func printDeclSummary(w io.Writer, ix *mast.Index, relos []relo.Relo, fileMoves []relo.FileMove, absDir string) {
 	for _, fm := range fileMoves {
 		from := relPath(absDir, fm.From)
 		to := relPath(absDir, fm.To)

@@ -15,6 +15,10 @@ func run() int {
 	ok, err := (clingy.Environment{
 		Name: "gorelo",
 	}).Run(ctx, func(cmds clingy.Commands) {
+		// clingy guarantees that Flag/Arg results have the dynamic type
+		// implied by the default value and transforms, so the bare type
+		// assertions in each command's Setup are intentional — a mismatch
+		// is a programmer bug, not a user error.
 		cmds.New("apply", "apply rules from files and/or inline arguments", new(cmdApply))
 		cmds.New("check", "dry-run: print plan without writing", &cmdApply{dryRun: true})
 		cmds.New("deps", "show what a declaration depends on", new(cmdDeps))

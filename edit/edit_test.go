@@ -6,8 +6,10 @@ import (
 )
 
 func TestPlan_CollectsPrimitives(t *testing.T) {
+	t.Parallel()
+
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 10}, "hello", Before, "src-a")
+	p.Insert(Anchor{Path: "a.go", Offset: 10}, "hello", SideBefore, "src-a")
 	p.Delete(Span{Path: "a.go", Start: 20, End: 30}, "src-b")
 	p.Replace(Span{Path: "a.go", Start: 40, End: 50}, "world", "src-c")
 	p.Move(Span{Path: "a.go", Start: 60, End: 70}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{GroupKeyword: "const"}, "src-d")
@@ -21,7 +23,7 @@ func TestPlan_CollectsPrimitives(t *testing.T) {
 	if !ok {
 		t.Fatalf("prims[0]: want Insert, got %T", prims[0])
 	}
-	if ins.Anchor.Path != "a.go" || ins.Anchor.Offset != 10 || ins.Text != "hello" || ins.Side != Before {
+	if ins.Anchor.Path != "a.go" || ins.Anchor.Offset != 10 || ins.Text != "hello" || ins.Side != SideBefore {
 		t.Errorf("Insert: got %+v", ins)
 	}
 	if ins.Origin() != "src-a" {
@@ -63,8 +65,10 @@ func TestPlan_CollectsPrimitives(t *testing.T) {
 }
 
 func TestPlan_PrimitivesIsCopy(t *testing.T) {
+	t.Parallel()
+
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", Before, "o")
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", SideBefore, "o")
 	prims := p.Primitives()
 	prims[0] = Delete{}
 	if _, ok := p.Primitives()[0].(Insert); !ok {
@@ -73,6 +77,8 @@ func TestPlan_PrimitivesIsCopy(t *testing.T) {
 }
 
 func TestConflictError_MessageWithoutFrames(t *testing.T) {
+	t.Parallel()
+
 	err := &ConflictError{
 		A:      Insert{origin: "rename"},
 		B:      Delete{origin: "self-import"},
@@ -85,16 +91,20 @@ func TestConflictError_MessageWithoutFrames(t *testing.T) {
 }
 
 func TestPlan_NonDebugOmitsFrames(t *testing.T) {
+	t.Parallel()
+
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", Before, "o")
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", SideBefore, "o")
 	if fr := p.Primitives()[0].Frames(); fr != nil {
 		t.Errorf("non-debug plan recorded frames: %v", fr)
 	}
 }
 
 func TestPlan_DebugRecordsFrames(t *testing.T) {
+	t.Parallel()
+
 	p := Plan{Debug: true}
-	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", Before, "o")
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "x", SideBefore, "o")
 	p.Delete(Span{Path: "a.go", Start: 0, End: 1}, "o")
 	p.Replace(Span{Path: "a.go", Start: 0, End: 1}, "y", "o")
 	p.Move(Span{Path: "a.go", Start: 0, End: 1}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "o")
@@ -116,6 +126,8 @@ func TestPlan_DebugRecordsFrames(t *testing.T) {
 }
 
 func TestConflictError_MessageIncludesFrames(t *testing.T) {
+	t.Parallel()
+
 	p := Plan{Debug: true}
 	p.Replace(Span{Path: "a.go", Start: 0, End: 3}, "XX", "one")
 	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "YY", "two")

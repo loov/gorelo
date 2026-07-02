@@ -87,7 +87,7 @@ func FromRules(ix *mast.Index, parsed []rules.Rule, dir string) ([]Relo, []FileM
 				// Bare field references (no rename) still get MoveTo
 				// so that resolve catches them as errors.
 				grp := ix.Group(r.Ident)
-				if grp == nil || grp.Kind != mast.Field || r.Rename == "" {
+				if grp == nil || grp.Kind != mast.ObjectField || r.Rename == "" {
 					r.MoveTo = filepath.Join(dir, rule.Dest)
 				}
 			}

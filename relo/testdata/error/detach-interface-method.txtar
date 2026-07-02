@@ -1,7 +1,7 @@
 # Detaching an interface method should warn (no FuncDecl to transform).
 
-@warn cannot find declaration for Read
-@warn cannot find method declaration for Read
+@warn cannot find declaration for "Read"
+@warn cannot find method declaration for "Read"
 Reader#Read=!
 
 -- input/go.mod --

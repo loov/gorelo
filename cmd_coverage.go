@@ -107,6 +107,7 @@ func (c *cmdCoverage) Execute(ctx context.Context) error {
 		Type:    typeGrp.Name,
 		Package: typeGrp.Pkg,
 		Filter:  filter,
+		// non-nil slices emit [] rather than null in --json output
 		Methods: make([]coverageMethod, 0, len(methods)),
 		Entries: make([]coverageEntry, 0, len(hits)),
 	}
@@ -311,6 +312,9 @@ func resolveTargetMethods(ix *mast.Index, absDir, arg string) (*mast.Group, []*m
 	if hasGlob(item.Name) || hasGlob(item.Source) {
 		return nil, nil, "", fmt.Errorf("--for does not accept globs in the type or source (got %q)", arg)
 	}
+	if err := validateGlob(item.Field); err != nil {
+		return nil, nil, "", fmt.Errorf("parsing --for %q: %w", arg, err)
+	}
 	source := relo.ResolveSource(ix, item.Source, absDir)
 	id := ix.FindDef(item.Name, source)
 	if id == nil {
@@ -324,7 +328,7 @@ func resolveTargetMethods(ix *mast.Index, absDir, arg string) (*mast.Group, []*m
 	if grp == nil {
 		return nil, nil, "", fmt.Errorf("no group for %q", arg)
 	}
-	if grp.Kind != mast.TypeName {
+	if grp.Kind != mast.ObjectTypeName {
 		return nil, nil, "", fmt.Errorf("%q is not a type (kind %s)", arg, objectKindString(grp.Kind))
 	}
 
@@ -366,6 +370,12 @@ func collectEntries(ix *mast.Index, absDir string, args []string) ([]*mast.Group
 		if item.Name == "" {
 			return nil, fmt.Errorf("entry specifier %q missing name", arg)
 		}
+		if err := validateGlob(item.Name); err != nil {
+			return nil, fmt.Errorf("parsing %q: %w", arg, err)
+		}
+		if err := validateGlob(item.Source); err != nil {
+			return nil, fmt.Errorf("parsing %q: %w", arg, err)
+		}
 
 		// Pre-resolve a non-glob source so "./pkg" turns into a package path.
 		resolvedSource := item.Source
@@ -401,13 +411,26 @@ func collectEntries(ix *mast.Index, absDir string, args []string) ([]*mast.Group
 
 func hasGlob(s string) bool { return strings.ContainsAny(s, "*?") }
 
+// validateGlob rejects malformed glob patterns up front so that match sites
+// can safely ignore the path.Match error. Patterns without wildcards are
+// matched literally and need no validation.
+func validateGlob(pattern string) error {
+	if !hasGlob(pattern) {
+		return nil
+	}
+	if _, err := path.Match(pattern, ""); err != nil {
+		return fmt.Errorf("invalid pattern %q: %w", pattern, err)
+	}
+	return nil
+}
+
 // matchName reports whether name matches pattern. With no wildcards the
 // match is exact; otherwise '*' and '?' globs are honored via path.Match.
 func matchName(name, pattern string) bool {
 	if !hasGlob(pattern) {
 		return name == pattern
 	}
-	ok, _ := path.Match(pattern, name)
+	ok, _ := path.Match(pattern, name) // pattern validated at parse time by validateGlob
 	return ok
 }
 
@@ -432,11 +455,11 @@ func matchSource(file *mast.File, pkg *mast.Package, pattern, absDir string) boo
 			rel = file.Path
 		}
 		rel = filepath.ToSlash(rel)
-		ok, _ := path.Match(pattern, rel)
+		ok, _ := path.Match(pattern, rel) // pattern validated at parse time by validateGlob
 		return ok
 	}
 	base := filepath.Base(file.Path)
-	ok, _ := path.Match(pattern, base)
+	ok, _ := path.Match(pattern, base) // pattern validated at parse time by validateGlob
 	return ok
 }
 
@@ -563,7 +586,7 @@ func reachableTargets(ix *mast.Index, start *mast.Group, targets map[*mast.Group
 			if targets[ref] {
 				result[ref] = true
 			}
-			if ref.Kind == mast.Func || ref.Kind == mast.Method {
+			if ref.Kind == mast.ObjectFunc || ref.Kind == mast.ObjectMethod {
 				visit(ref)
 			}
 			return true

@@ -34,9 +34,20 @@ type Span struct {
 type Side int
 
 const (
-	Before Side = iota
-	After
+	SideInvalid Side = iota
+	SideBefore
+	SideAfter
 )
+
+func (s Side) String() string {
+	switch s {
+	case SideBefore:
+		return "before"
+	case SideAfter:
+		return "after"
+	}
+	return "invalid"
+}
 
 // MoveOptions configures how a Move's relocated bytes are emitted at the
 // destination.

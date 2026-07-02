@@ -2,7 +2,7 @@
 
 source.go:Foo -> target.go
 
-@error name collision: Foo already exists in
+@error name collision: "Foo" already exists in
 
 -- input/go.mod --
 module example.com/pkg

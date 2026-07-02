@@ -3,6 +3,7 @@ package relo
 import (
 	"go/ast"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -486,13 +487,8 @@ func TestSortedKeys(t *testing.T) {
 	}
 	got := sortedKeys(m)
 	want := []string{"apple", "banana", "cherry"}
-	if len(got) != len(want) {
-		t.Fatalf("sortedKeys returned %d keys, want %d", len(got), len(want))
-	}
-	for i, k := range got {
-		if k != want[i] {
-			t.Errorf("sortedKeys[%d] = %q, want %q", i, k, want[i])
-		}
+	if !slices.Equal(got, want) {
+		t.Errorf("sortedKeys = %q, want %q", got, want)
 	}
 }
 

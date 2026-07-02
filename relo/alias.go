@@ -35,17 +35,17 @@ func generateAliases(rrs []*resolvedRelo, targetPkgName string, fset *token.File
 
 	for _, rr := range rrs {
 		switch rr.Group.Kind {
-		case mast.TypeName:
+		case mast.ObjectTypeName:
 			result.Stubs = append(result.Stubs, generateTypeAlias(rr, pkgQualifier, fset))
-		case mast.Func:
+		case mast.ObjectFunc:
 			result.Stubs = append(result.Stubs, generateFuncAlias(rr, pkgQualifier, fset))
-		case mast.Const:
+		case mast.ObjectConst:
 			result.Stubs = append(result.Stubs, fmt.Sprintf("//go:fix inline\nconst %s = %s.%s",
 				rr.Group.Name, pkgQualifier, rr.TargetName))
-		case mast.Var:
+		case mast.ObjectVar:
 			result.Stubs = append(result.Stubs, fmt.Sprintf("// Deprecated: Use %s.%s instead.\nvar %s = %s.%s",
 				pkgQualifier, rr.TargetName, rr.Group.Name, pkgQualifier, rr.TargetName))
-		case mast.Method:
+		case mast.ObjectMethod:
 			// Methods follow receiver type alias; no separate stub.
 		}
 	}
@@ -57,7 +57,7 @@ func generateAliases(rrs []*resolvedRelo, targetPkgName string, fset *token.File
 // whose name equals targetPkgName.
 func funcParamShadows(rrs []*resolvedRelo, targetPkgName string) bool {
 	for _, rr := range rrs {
-		if rr.Group.Kind != mast.Func || rr.File == nil {
+		if rr.Group.Kind != mast.ObjectFunc || rr.File == nil {
 			continue
 		}
 		fd, ok := rr.enclosingDecl().(*ast.FuncDecl)

@@ -124,6 +124,8 @@ func originsOf(prims []Primitive) []string {
 // it must invoke the callback exactly N! times with every distinct
 // ordering; zero items must still invoke once with an empty slice.
 func TestPermute(t *testing.T) {
+	t.Parallel()
+
 	t.Run("four", func(t *testing.T) {
 		items := []Primitive{
 			Insert{origin: "a"},
@@ -156,33 +158,43 @@ func TestPermute(t *testing.T) {
 }
 
 func TestApply_EmptyPlan(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
 	checkApply(t, &p, files, map[string]string{"a.go": "hello"})
 }
 
 func TestApply_Insert(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 5}, " world", Before, "greet")
+	p.Insert(Anchor{Path: "a.go", Offset: 5}, " world", SideBefore, "greet")
 	checkApply(t, &p, files, map[string]string{"a.go": "hello world"})
 }
 
 func TestApply_InsertAtStart(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 0}, "> ", Before, "prefix")
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "> ", SideBefore, "prefix")
 	checkApply(t, &p, files, map[string]string{"a.go": "> hello"})
 }
 
 func TestApply_InsertAtEndOfFileAnchor(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("hello")}
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: -1}, " world", Before, "eof")
+	p.Insert(Anchor{Path: "a.go", Offset: -1}, " world", SideBefore, "eof")
 	checkApply(t, &p, files, map[string]string{"a.go": "hello world"})
 }
 
 func TestApply_Delete(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("hello, world")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 5, End: 7}, "comma")
@@ -190,6 +202,8 @@ func TestApply_Delete(t *testing.T) {
 }
 
 func TestApply_Replace(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("hello, world")}
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 7, End: 12}, "Go", "rename")
@@ -197,39 +211,49 @@ func TestApply_Replace(t *testing.T) {
 }
 
 func TestApply_MultipleDisjointEdits(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("0123456789")}
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 0, End: 2}, "AA", "a")
 	p.Delete(Span{Path: "a.go", Start: 4, End: 6}, "b")
-	p.Insert(Anchor{Path: "a.go", Offset: 8}, "X", Before, "c")
+	p.Insert(Anchor{Path: "a.go", Offset: 8}, "X", SideBefore, "c")
 	checkApply(t, &p, files, map[string]string{"a.go": "AA2367X89"})
 }
 
 func TestApply_TwoInsertsSameAnchorDifferentSide(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("AB")}
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 1}, ">", Before, "before")
-	p.Insert(Anchor{Path: "a.go", Offset: 1}, "<", After, "after")
+	p.Insert(Anchor{Path: "a.go", Offset: 1}, ">", SideBefore, "before")
+	p.Insert(Anchor{Path: "a.go", Offset: 1}, "<", SideAfter, "after")
 	checkApply(t, &p, files, map[string]string{"a.go": "A><B"})
 }
 
 func TestApply_InsertAtDeleteStart(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("AxxB")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 3}, "d")
-	p.Insert(Anchor{Path: "a.go", Offset: 1}, "Y", Before, "i")
+	p.Insert(Anchor{Path: "a.go", Offset: 1}, "Y", SideBefore, "i")
 	checkApply(t, &p, files, map[string]string{"a.go": "AYB"})
 }
 
 func TestApply_InsertAtDeleteEnd(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("AxxB")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 3}, "d")
-	p.Insert(Anchor{Path: "a.go", Offset: 3}, "Y", After, "i")
+	p.Insert(Anchor{Path: "a.go", Offset: 3}, "Y", SideAfter, "i")
 	checkApply(t, &p, files, map[string]string{"a.go": "AYB"})
 }
 
 func TestApply_MultipleFiles(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("hello"),
 		"b.go": []byte("world"),
@@ -244,6 +268,8 @@ func TestApply_MultipleFiles(t *testing.T) {
 }
 
 func TestApply_IdenticalReplaceDeduped(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("AxxB")}
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 1, End: 3}, "YY", "one")
@@ -252,6 +278,8 @@ func TestApply_IdenticalReplaceDeduped(t *testing.T) {
 }
 
 func TestApply_IdenticalDeleteDeduped(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("AxxB")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 3}, "one")
@@ -260,14 +288,18 @@ func TestApply_IdenticalDeleteDeduped(t *testing.T) {
 }
 
 func TestApply_IdenticalInsertDeduped(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("AB")}
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", Before, "one")
-	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", Before, "two")
+	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", SideBefore, "one")
+	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", SideBefore, "two")
 	checkApply(t, &p, files, map[string]string{"a.go": "AXB"})
 }
 
 func TestApply_ConflictOverlappingReplace(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("abcdef")}
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "XX", "a")
@@ -276,6 +308,8 @@ func TestApply_ConflictOverlappingReplace(t *testing.T) {
 }
 
 func TestApply_ConflictSameSpanDifferentReplace(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("abcdef")}
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 1, End: 4}, "XX", "a")
@@ -284,6 +318,8 @@ func TestApply_ConflictSameSpanDifferentReplace(t *testing.T) {
 }
 
 func TestApply_ConflictDeleteAndReplaceSameSpan(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("abcdef")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 4}, "d")
@@ -292,22 +328,28 @@ func TestApply_ConflictDeleteAndReplaceSameSpan(t *testing.T) {
 }
 
 func TestApply_ConflictInsertInsideDelete(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("abcdef")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 1, End: 4}, "d")
-	p.Insert(Anchor{Path: "a.go", Offset: 2}, "X", Before, "i")
+	p.Insert(Anchor{Path: "a.go", Offset: 2}, "X", SideBefore, "i")
 	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_ConflictTwoInsertsSameAnchorSameSideDifferentText(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("AB")}
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", Before, "one")
-	p.Insert(Anchor{Path: "a.go", Offset: 1}, "Y", Before, "two")
+	p.Insert(Anchor{Path: "a.go", Offset: 1}, "X", SideBefore, "one")
+	p.Insert(Anchor{Path: "a.go", Offset: 1}, "Y", SideBefore, "two")
 	checkApplyConflict(t, &p, files)
 }
 
 func TestApply_OutOfBoundsDelete(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("hi")}
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 0, End: 10}, "d")
@@ -315,6 +357,8 @@ func TestApply_OutOfBoundsDelete(t *testing.T) {
 }
 
 func TestApply_MoveSameFile(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("Hello, world")}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "a.go", Offset: 12}, MoveOptions{}, "m")
@@ -322,6 +366,8 @@ func TestApply_MoveSameFile(t *testing.T) {
 }
 
 func TestApply_MoveToOtherFile(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("Hello, world"),
 		"b.go": []byte("<>"),
@@ -335,6 +381,8 @@ func TestApply_MoveToOtherFile(t *testing.T) {
 }
 
 func TestApply_MoveToNewFile(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("Hello, world")}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 0, End: 5}, Anchor{Path: "new.go", Offset: 0}, MoveOptions{}, "m")
@@ -345,6 +393,8 @@ func TestApply_MoveToNewFile(t *testing.T) {
 }
 
 func TestApply_MoveToEndOfFile(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("ABCDE"),
 		"b.go": []byte("xyz"),
@@ -358,6 +408,8 @@ func TestApply_MoveToEndOfFile(t *testing.T) {
 }
 
 func TestApply_MoveCarriesReplace(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("prefix[Foo bar]suffix"),
 		"b.go": []byte(""),
@@ -372,13 +424,15 @@ func TestApply_MoveCarriesReplace(t *testing.T) {
 }
 
 func TestApply_MoveCarriesInsert(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("prefix[x]suffix"),
 		"b.go": []byte(""),
 	}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 6, End: 9}, Anchor{Path: "b.go", Offset: 0}, MoveOptions{}, "m")
-	p.Insert(Anchor{Path: "a.go", Offset: 7}, "INS", Before, "i")
+	p.Insert(Anchor{Path: "a.go", Offset: 7}, "INS", SideBefore, "i")
 	checkApply(t, &p, files, map[string]string{
 		"a.go": "prefixsuffix",
 		"b.go": "[INSx]",
@@ -386,6 +440,8 @@ func TestApply_MoveCarriesInsert(t *testing.T) {
 }
 
 func TestApply_MoveCarriesDelete(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("prefix[AB]suffix"),
 		"b.go": []byte(""),
@@ -400,6 +456,8 @@ func TestApply_MoveCarriesDelete(t *testing.T) {
 }
 
 func TestApply_NestedMoves(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("prefix[ABXYZCD]suffix"),
 		"b.go": []byte(""),
@@ -416,6 +474,8 @@ func TestApply_NestedMoves(t *testing.T) {
 }
 
 func TestApply_MoveGroupKeywordMerges(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("<Foo Bar>"),
 		"b.go": []byte(""),
@@ -430,6 +490,8 @@ func TestApply_MoveGroupKeywordMerges(t *testing.T) {
 }
 
 func TestApply_MoveGroupRenderer(t *testing.T) {
+	t.Parallel()
+
 	// Custom renderer wraps a same-keyword group as `kw {[items]}` with
 	// each item indented by two spaces. Demonstrates the renderer
 	// extension point that lets callers control block formatting
@@ -461,6 +523,8 @@ func TestApply_MoveGroupRenderer(t *testing.T) {
 }
 
 func TestApply_MoveGroupKeywordMixedAtSameAnchor(t *testing.T) {
+	t.Parallel()
+
 	// Two Moves to the same destination anchor with different keywords
 	// emit two separate `keyword (…)` blocks in source-span order. This
 	// supports interleaved const/var/type sections at one anchor.
@@ -480,6 +544,8 @@ func TestApply_MoveGroupKeywordMixedAtSameAnchor(t *testing.T) {
 }
 
 func TestApply_MoveOverlapConflict(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("0123456789")}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m1")
@@ -488,6 +554,8 @@ func TestApply_MoveOverlapConflict(t *testing.T) {
 }
 
 func TestApply_MoveEqualSpanConflict(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a.go": []byte("0123456789")}
 	var p Plan
 	p.Move(Span{Path: "a.go", Start: 1, End: 5}, Anchor{Path: "a.go", Offset: 10}, MoveOptions{}, "m1")
@@ -496,6 +564,8 @@ func TestApply_MoveEqualSpanConflict(t *testing.T) {
 }
 
 func TestApply_MoveDedentOption(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("PRE\tfoo\n\tbar\nPOST"),
 		"b.go": []byte(""),
@@ -506,6 +576,8 @@ func TestApply_MoveDedentOption(t *testing.T) {
 }
 
 func TestApply_MoveAppendNewlineOption(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{
 		"a.go": []byte("abc"),
 		"b.go": []byte(""),
@@ -516,6 +588,8 @@ func TestApply_MoveAppendNewlineOption(t *testing.T) {
 }
 
 func TestApply_StressMoveRenameDetach(t *testing.T) {
+	t.Parallel()
+
 	// Simultaneous composition of four operations on the same method:
 	//   1. Move the type decl to a new file
 	//   2. Rename the type (Server → Host) inside the moved type decl
@@ -570,7 +644,7 @@ func TestApply_StressMoveRenameDetach(t *testing.T) {
 		"Serve", "rename-method")
 	// Carried: insert the renamed receiver as first parameter.
 	p.Insert(Anchor{Path: "a.go", Offset: paramInsertAt},
-		"s *Host, ", Before, "detach-add-recv-param")
+		"s *Host, ", SideBefore, "detach-add-recv-param")
 
 	wantA := "package src\n"
 	wantB := "type Host struct{ x int }\n" +
@@ -583,6 +657,8 @@ func TestApply_StressMoveRenameDetach(t *testing.T) {
 }
 
 func TestApply_DetachMethodExample(t *testing.T) {
+	t.Parallel()
+
 	// The user's driving example:
 	//   func (server *Server) ServeHTTP(w int) {}
 	// ↓ four primitives ↓
@@ -594,7 +670,7 @@ func TestApply_DetachMethodExample(t *testing.T) {
 	// 1. Move "server *Server" (bytes [6, 20)) to just after '(' of ServeHTTP (offset 32).
 	p.Move(Span{Path: "a.go", Start: 6, End: 20}, Anchor{Path: "a.go", Offset: 32}, MoveOptions{}, "detach-recv")
 	// 2. Insert ", " right after the Move's destination (Side=After so it follows the Move's Before-Insert).
-	p.Insert(Anchor{Path: "a.go", Offset: 32}, ", ", After, "detach-sep")
+	p.Insert(Anchor{Path: "a.go", Offset: 32}, ", ", SideAfter, "detach-sep")
 	// 3. Delete " (" preceding the receiver (bytes [4, 6)).
 	p.Delete(Span{Path: "a.go", Start: 4, End: 6}, "detach-openparen")
 	// 4. Delete ")" after the receiver (byte [20, 21)).
@@ -605,6 +681,8 @@ func TestApply_DetachMethodExample(t *testing.T) {
 }
 
 func TestApply_CreateNewFileAndMoveFuncsIn(t *testing.T) {
+	t.Parallel()
+
 	// Move the two funcs from src/a.go into a brand-new dst/b.go, inserting
 	// a fresh "package dst" header. The header is added by an Insert whose
 	// anchor falls strictly inside the first Move's span, so it is carried
@@ -630,7 +708,7 @@ func TestApply_CreateNewFileAndMoveFuncsIn(t *testing.T) {
 	var p Plan
 	// Carried Insert: the new package header for dst/b.go.
 	p.Insert(Anchor{Path: "src/a.go", Offset: alphaStart},
-		"package dst\n\n", Before, "insert-header")
+		"package dst\n\n", SideBefore, "insert-header")
 
 	// Move #1: Alpha's decl (with its preceding blank), TrimLeadingBlank
 	// strips that blank so the inserted header is the first thing emitted.
@@ -655,13 +733,17 @@ func TestApply_CreateNewFileAndMoveFuncsIn(t *testing.T) {
 }
 
 func TestApply_UnknownFileTreatedAsEmpty(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{}
 	var p Plan
-	p.Insert(Anchor{Path: "new.go", Offset: 0}, "hello", Before, "seed")
+	p.Insert(Anchor{Path: "new.go", Offset: 0}, "hello", SideBefore, "seed")
 	checkApply(t, &p, files, map[string]string{"new.go": "hello"})
 }
 
 func TestApply_DecomposedDetachRenameAtCallSite(t *testing.T) {
+	t.Parallel()
+
 	// Decomposed detach+rename at a call site: three independent edits
 	// targeting non-overlapping regions compose without coordination.
 	//
@@ -678,12 +760,14 @@ func TestApply_DecomposedDetachRenameAtCallSite(t *testing.T) {
 	var p Plan
 	p.Delete(Span{Path: "a.go", Start: 0, End: 5}, "detach-strip-recv")
 	p.Replace(Span{Path: "a.go", Start: 5, End: 11}, "Func", "rename")
-	p.Insert(Anchor{Path: "a.go", Offset: 12}, "recv, ", Before, "detach-insert-recv-arg")
+	p.Insert(Anchor{Path: "a.go", Offset: 12}, "recv, ", SideBefore, "detach-insert-recv-arg")
 
 	checkApply(t, &p, files, map[string]string{"a.go": "Func(recv, arg)"})
 }
 
 func TestApply_DecomposedDetachCrossPkgRenameAtCallSite(t *testing.T) {
+	t.Parallel()
+
 	// Decomposed detach + cross-package qualifier + rename at a call site.
 	// The qualifier region changes from "recv." to "pkg.", the ident region
 	// is renamed, and the receiver is inserted as an argument.
@@ -701,12 +785,14 @@ func TestApply_DecomposedDetachCrossPkgRenameAtCallSite(t *testing.T) {
 	var p Plan
 	p.Replace(Span{Path: "a.go", Start: 0, End: 5}, "pkg.", "qualifier-change")
 	p.Replace(Span{Path: "a.go", Start: 5, End: 11}, "Func", "rename")
-	p.Insert(Anchor{Path: "a.go", Offset: 12}, "recv, ", Before, "detach-insert-recv-arg")
+	p.Insert(Anchor{Path: "a.go", Offset: 12}, "recv, ", SideBefore, "detach-insert-recv-arg")
 
 	checkApply(t, &p, files, map[string]string{"a.go": "pkg.Func(recv, arg)"})
 }
 
 func TestApply_DecomposedQualifierInsertAndRename(t *testing.T) {
+	t.Parallel()
+
 	// Decomposed cross-package qualifier addition + rename for a bare
 	// (unqualified) reference. The qualifier insert lands just before the
 	// ident's Replace, so both must compose at the same offset.
@@ -721,13 +807,15 @@ func TestApply_DecomposedQualifierInsertAndRename(t *testing.T) {
 	files := map[string][]byte{"a.go": []byte(src)}
 
 	var p Plan
-	p.Insert(Anchor{Path: "a.go", Offset: 0}, "newpkg.", Before, "qualifier-add")
+	p.Insert(Anchor{Path: "a.go", Offset: 0}, "newpkg.", SideBefore, "qualifier-add")
 	p.Replace(Span{Path: "a.go", Start: 0, End: 3}, "Bar", "rename")
 
 	checkApply(t, &p, files, map[string]string{"a.go": "newpkg.Bar(x)"})
 }
 
 func TestApply_DecomposedQualifierStripAndRename(t *testing.T) {
+	t.Parallel()
+
 	// Decomposed qualifier removal + rename: a qualified reference
 	// becoming local in the target package.
 	//
@@ -747,6 +835,8 @@ func TestApply_DecomposedQualifierStripAndRename(t *testing.T) {
 }
 
 func TestApply_DoesNotMutateInput(t *testing.T) {
+	t.Parallel()
+
 	orig := []byte("hello")
 	files := map[string][]byte{"a.go": orig}
 	var p Plan

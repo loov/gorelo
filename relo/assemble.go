@@ -20,15 +20,15 @@ type assembler struct {
 }
 
 // assemble builds the final FileEdit list (phase 8).
-func assemble(ctx *compileCtx) {
-	ctx.initGroupByTargetSource()
+func assemble(cc *compileCtx) {
+	cc.initGroupByTargetSource()
 	a := &assembler{
-		compileCtx: ctx,
+		compileCtx: cc,
 		out:        make(map[string]FileEdit),
 	}
 
-	a.fileMoveSourcePaths = collectFileMoveSourcePaths(ctx.fmInfos)
-	a.fileMoveTargetPaths = collectFileMoveTargetPaths(ctx.fmInfos)
+	a.fileMoveSourcePaths = collectFileMoveSourcePaths(cc.fmInfos)
+	a.fileMoveTargetPaths = collectFileMoveTargetPaths(cc.fmInfos)
 	inputs, existedBefore := a.gatherInputs()
 
 	outputs, err := a.edits.Apply(inputs)
@@ -181,8 +181,8 @@ func (a *assembler) postProcess(outputs map[string][]byte, existedBefore map[str
 // new target file's input to plan.Apply: an optional `//go:build`
 // constraint (when all contributing rrs share one), then the package
 // clause. Move primitives at offset -1 land after this preamble.
-func buildTargetPreamble(ctx *compileCtx, rrs []*resolvedRelo) string {
-	targetPkgName := determineTargetPkgName(ctx, rrs)
+func buildTargetPreamble(cc *compileCtx, rrs []*resolvedRelo) string {
+	targetPkgName := determineTargetPkgName(cc, rrs)
 	constraint := collectBuildConstraint(rrs)
 	var b strings.Builder
 	if constraint != "" {
@@ -253,7 +253,7 @@ func (a *assembler) generateAllStubs() map[string]string {
 }
 
 // determineTargetPkgName figures out the package name for a new target file.
-func determineTargetPkgName(ctx *compileCtx, rrs []*resolvedRelo) string {
+func determineTargetPkgName(cc *compileCtx, rrs []*resolvedRelo) string {
 	for _, rr := range rrs {
 		if rr.File != nil && rr.File.Pkg != nil {
 			if isSamePackageDir(rr.File.Pkg, rr.TargetFile) {
@@ -263,7 +263,7 @@ func determineTargetPkgName(ctx *compileCtx, rrs []*resolvedRelo) string {
 	}
 	if len(rrs) > 0 {
 		targetDir := filepath.Dir(rrs[0].TargetFile)
-		if pkg := ctx.cachedPkgForDir(targetDir); pkg != nil {
+		if pkg := cc.cachedPkgForDir(targetDir); pkg != nil {
 			return pkg.Name
 		}
 		return guessPackageName(targetDir)

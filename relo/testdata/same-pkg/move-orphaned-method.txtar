@@ -2,7 +2,7 @@
 
 Render -> render.go
 
-@warn method Widget.Render is being moved but type Widget is not
+@warn method "Widget.Render" is being moved but type "Widget" is not
 
 -- input/go.mod --
 module example.com/pkg

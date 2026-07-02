@@ -38,20 +38,26 @@ func TestReceiverTypeName(t *testing.T) {
 			t.Parallel()
 
 			file, _ := parseSource(t, tt.src)
-			for _, decl := range file.Decls {
-				fd, ok := decl.(*ast.FuncDecl)
-				if !ok {
-					continue
-				}
-				got := mast.ReceiverTypeName(fd.Recv)
-				if got != tt.want {
-					t.Errorf("ReceiverTypeName = %q, want %q", got, tt.want)
-				}
-				return
+			fd := firstFuncDecl(t, file)
+			got := mast.ReceiverTypeName(fd.Recv)
+			if got != tt.want {
+				t.Errorf("ReceiverTypeName = %q, want %q", got, tt.want)
 			}
-			t.Fatal("no func decl found")
 		})
 	}
+}
+
+// firstFuncDecl returns the first *ast.FuncDecl in file, failing the
+// test if there is none.
+func firstFuncDecl(t *testing.T, file *ast.File) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range file.Decls {
+		if fd, ok := decl.(*ast.FuncDecl); ok {
+			return fd
+		}
+	}
+	t.Fatal("no func decl found")
+	return nil
 }
 
 func TestIsSamePackageDir(t *testing.T) {
@@ -246,7 +252,7 @@ func TestResolve_ConstructorWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !hasWarning(plan, "constructor NewFoo") {
+	if !hasWarning(plan, `constructor "NewFoo"`) {
 		t.Errorf("expected constructor warning, got: %v", plan.Warnings)
 	}
 }
@@ -336,15 +342,11 @@ func TestResolve_InvalidRenameTarget(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		rename  string
-		wantErr bool
+		name   string
+		rename string
 	}{
-		{"valid", "Y", false},
-		{"starts with digit", "123bad", true},
-		{"keyword", "func", true},
-		{"empty", "", false}, // empty means no rename
-		{"underscore", "_", false},
+		{"starts with digit", "123bad"},
+		{"keyword", "func"},
 	}
 
 	for _, tt := range tests {
@@ -353,10 +355,43 @@ func TestResolve_InvalidRenameTarget(t *testing.T) {
 
 			plan := &Plan{}
 			_, err := resolve(ix, []Relo{{Ident: varIdent, Rename: tt.rename}}, nil, plan)
-			if tt.wantErr && !errContains(err, "not a valid Go identifier") {
+			if !errContains(err, "not a valid Go identifier") {
 				t.Errorf("expected 'not a valid Go identifier' error, got: %v", err)
 			}
-			if !tt.wantErr && err != nil {
+		})
+	}
+}
+
+// TestResolve_ValidRenameTarget tests that valid Go identifiers (and the
+// empty string, which means no rename) are accepted as rename targets.
+func TestResolve_ValidRenameTarget(t *testing.T) {
+	t.Parallel()
+
+	ix := loadTestIndex(t, map[string]string{
+		"main.go": "package p\n\nvar X = 1\n",
+	})
+
+	varIdent := findDefIdentInIndex(ix, "X")
+	if varIdent == nil {
+		t.Fatal("var X not found")
+	}
+
+	tests := []struct {
+		name   string
+		rename string
+	}{
+		{"valid", "Y"},
+		{"empty", ""}, // empty means no rename
+		{"underscore", "_"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			plan := &Plan{}
+			_, err := resolve(ix, []Relo{{Ident: varIdent, Rename: tt.rename}}, nil, plan)
+			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
 		})

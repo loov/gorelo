@@ -42,8 +42,8 @@ type importSet struct {
 // import in any source file with a moved declaration. These imports
 // cannot be auto-transferred to the destination — the user must
 // reproduce them manually if the moved code relies on them.
-func warnNontransferableImports(ctx *compileCtx) {
-	ix, resolved, plan := ctx.ix, ctx.resolved, ctx.plan
+func warnNontransferableImports(cc *compileCtx) {
+	ix, resolved, plan := cc.ix, cc.resolved, cc.plan
 	for _, rr := range resolved {
 		if rr.File == nil {
 			continue
@@ -54,11 +54,11 @@ func warnNontransferableImports(ctx *compileCtx) {
 			switch localName {
 			case ".":
 				plan.Warnings.AddAtf(rr, ix,
-					"moved decl %s uses dot import %s which cannot be automatically transferred",
+					"moved decl %q uses dot import %s which cannot be automatically transferred",
 					rr.Group.Name, imp.Path.Value)
 			case "_":
 				plan.Warnings.AddAtf(rr, ix,
-					"moved decl %s has blank import %s for side effects which cannot be automatically transferred",
+					"moved decl %q has blank import %s for side effects which cannot be automatically transferred",
 					rr.Group.Name, imp.Path.Value)
 			}
 		}
@@ -195,6 +195,8 @@ func buildPkgByDir(ix *mast.Index) map[string]*mast.Package {
 
 // importPath returns the unquoted import path from an ImportSpec.
 func importPath(imp *ast.ImportSpec) string {
+	// Path.Value comes from a parsed AST, so it is always a valid
+	// quoted string literal and Unquote cannot fail.
 	p, _ := strconv.Unquote(imp.Path.Value)
 	return p
 }

@@ -1,8 +1,9 @@
 package rules
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParseForward(t *testing.T) {
@@ -20,8 +21,8 @@ func TestParseForward(t *testing.T) {
 			{Name: "ServerOption"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -40,8 +41,8 @@ func TestParseReverse(t *testing.T) {
 			{Name: "ServerOption"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -60,8 +61,8 @@ func TestParseMultilineTab(t *testing.T) {
 			{Name: "ServerOption"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -80,8 +81,8 @@ func TestParseMultiline(t *testing.T) {
 			{Name: "ServerOption"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -100,8 +101,8 @@ func TestParseMultilineIndentedComment(t *testing.T) {
 			{Name: "Handler"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -120,8 +121,8 @@ func TestParseRenames(t *testing.T) {
 			{Name: "ServerOptions", Rename: "Options"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -140,8 +141,8 @@ func TestParseFieldRenames(t *testing.T) {
 			{Name: "ServerOptions", Field: "Listen", FieldRename: "Address"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -159,8 +160,8 @@ func TestParseAnonymousFieldRename(t *testing.T) {
 			{Name: "ServerOptions", Field: "Limits.min", FieldRename: "Min"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -178,8 +179,8 @@ func TestParseSourceFile(t *testing.T) {
 			{Source: "server_linux.go", Name: "File"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -197,8 +198,8 @@ func TestParseSourceFilePath(t *testing.T) {
 			{Source: "./util/file_linux.go", Name: "File"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -216,8 +217,8 @@ func TestParseSourcePackage(t *testing.T) {
 			{Source: "./util", Name: "File"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -233,8 +234,8 @@ func TestParseComments(t *testing.T) {
 		Dest:  "server.go",
 		Items: []Item{{Name: "Server"}},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -250,8 +251,8 @@ func TestParseInlineComment(t *testing.T) {
 		Dest:  "server.go",
 		Items: []Item{{Name: "Server"}},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -267,8 +268,8 @@ func TestParseMultipleRules(t *testing.T) {
 		{Dest: "server.go", Items: []Item{{Name: "Server"}}},
 		{Dest: "handler.go", Items: []Item{{Name: "Handler"}}},
 	}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -284,8 +285,8 @@ func TestParseMultilineMultipleRules(t *testing.T) {
 		{Dest: "server.go", Items: []Item{{Name: "Server"}}},
 		{Dest: "handler.go", Items: []Item{{Name: "Handler"}}},
 	}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -297,8 +298,8 @@ func TestParseEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &File{}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -310,8 +311,8 @@ func TestParseCommentsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &File{}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -326,8 +327,8 @@ func TestParseRenameOnly(t *testing.T) {
 	want := &File{Rules: []Rule{{
 		Items: []Item{{Name: "Foo", Rename: "Bar"}},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -343,8 +344,8 @@ func TestParseFieldRenameOnly(t *testing.T) {
 		{Items: []Item{{Name: "Config", Field: "Host", FieldRename: "Hostname"}}},
 		{Items: []Item{{Name: "Config", Field: "Port", FieldRename: "ListenPort"}}},
 	}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -360,8 +361,8 @@ func TestParseFieldWithoutRenameNoArrow(t *testing.T) {
 	want := &File{Rules: []Rule{{
 		Items: []Item{{Name: "Server", Field: "Listen"}},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -409,8 +410,8 @@ func TestParseFieldWithoutRename(t *testing.T) {
 			{Name: "Server", Field: "Listen"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -423,8 +424,8 @@ func TestParseDirectiveEquals(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &File{Directives: []Directive{{Key: "stubs", Value: "true"}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -437,8 +438,8 @@ func TestParseDirectiveSpace(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &File{Directives: []Directive{{Key: "fmt", Value: "goimports"}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -451,8 +452,8 @@ func TestParseDirectiveNoValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &File{Directives: []Directive{{Key: "verbose"}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -487,8 +488,8 @@ func TestParseDirectiveIndented(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &File{Directives: []Directive{{Key: "fmt", Value: "goimports"}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -598,8 +599,8 @@ func TestParseCRLF(t *testing.T) {
 			{Name: "Handler"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -625,8 +626,8 @@ func TestParseDirectiveTab(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &File{Directives: []Directive{{Key: "fmt", Value: "goimports"}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -692,8 +693,8 @@ func TestParseSourceWithRename(t *testing.T) {
 			{Source: "file.go", Name: "Server", Rename: "Core"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -711,8 +712,8 @@ func TestParseSourceWithFieldRename(t *testing.T) {
 			{Source: "./util", Name: "Server", Field: "Listen", FieldRename: "Address"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -730,8 +731,8 @@ func TestParseAbsolutePackage(t *testing.T) {
 			{Source: "github.com/loov/gorelo", Name: "Server"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -749,8 +750,8 @@ func TestParseAbsolutePackageWithRename(t *testing.T) {
 			{Source: "github.com/loov/gorelo", Name: "Server", Rename: "Core"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -768,8 +769,8 @@ func TestParseAbsolutePackageWithFieldRename(t *testing.T) {
 			{Source: "github.com/loov/gorelo", Name: "Server", Field: "Listen", FieldRename: "Address"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -788,8 +789,8 @@ func TestParseAbsolutePackageMultiline(t *testing.T) {
 			{Source: "github.com/loov/gorelo", Name: "Handler"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -822,8 +823,8 @@ func TestParseFieldRenameInMoveBlock(t *testing.T) {
 			{Name: "ServerOptions", Field: "Listen", FieldRename: "Address"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -842,8 +843,8 @@ func TestParseFieldRenameInForwardBlock(t *testing.T) {
 			{Name: "ServerOptions", Field: "Listen", FieldRename: "Address"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -861,8 +862,8 @@ func TestParseDetach(t *testing.T) {
 			{Name: "Server", Field: "Start", Detach: true},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -880,8 +881,8 @@ func TestParseDetachWithRename(t *testing.T) {
 			{Name: "Server", Field: "Start", FieldRename: "StartServer", Detach: true},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -900,8 +901,8 @@ func TestParseDetachMultiline(t *testing.T) {
 			{Name: "Server", Field: "Stop", Detach: true},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -918,8 +919,8 @@ func TestParseDetachSameFile(t *testing.T) {
 			{Name: "Server", Field: "Start", Detach: true},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -936,8 +937,8 @@ func TestParseDetachExplicitSameName(t *testing.T) {
 			{Name: "Server", Field: "Start", FieldRename: "Start", Detach: true},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -955,8 +956,8 @@ func TestParseAttach(t *testing.T) {
 			{Name: "start", Rename: "Start", MethodOf: "Server"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -974,8 +975,8 @@ func TestParseAttachWithRename(t *testing.T) {
 			{Name: "StartServer", Rename: "Start", MethodOf: "Server"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -992,8 +993,8 @@ func TestParseAttachSameFile(t *testing.T) {
 			{Name: "start", Rename: "Start", MethodOf: "Server"},
 		},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1055,8 +1056,8 @@ func TestParseFileMoveForward(t *testing.T) {
 		Dest:  "new.go",
 		Items: []Item{{Source: "old.go", IsFileMove: true}},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1071,8 +1072,8 @@ func TestParseFileMoveReverse(t *testing.T) {
 		Dest:  "new.go",
 		Items: []Item{{Source: "old.go", IsFileMove: true}},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1087,8 +1088,8 @@ func TestParseFileMovePaths(t *testing.T) {
 		Dest:  "other/new.go",
 		Items: []Item{{Source: "pkg/old.go", IsFileMove: true}},
 	}}}
-	if !reflect.DeepEqual(file, want) {
-		t.Errorf("got %+v, want %+v", file, want)
+	if diff := cmp.Diff(want, file); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }
 

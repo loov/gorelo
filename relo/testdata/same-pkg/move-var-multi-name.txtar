@@ -2,8 +2,8 @@
 
 A B -> moved.go
 
-@warn A is part of a multi-name declaration
-@warn B is part of a multi-name declaration
+@warn "A" is part of a multi-name declaration
+@warn "B" is part of a multi-name declaration
 
 -- input/go.mod --
 module example.com/pkg

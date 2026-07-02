@@ -8,7 +8,7 @@
 @stubs
 config=Config config#host=Host config#port=Port newConfig=NewConfig -> dst/config.go
 
-@warn renaming type config to Config will also change embedded field names
+@warn renaming type "config" to "Config" will also change embedded field names
 
 -- input/go.mod --
 module example.com/test

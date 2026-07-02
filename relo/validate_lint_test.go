@@ -25,6 +25,8 @@ import (
 // nameConflicts, hasDirective) are exempt because their names do not
 // match the validator prefixes.
 func TestPostResolutionValidatorsTakeResolved(t *testing.T) {
+	t.Parallel()
+
 	files := []string{"validate.go", "conflict.go"}
 
 	validatorName := regexp.MustCompile(`^(check|detect|validate)[A-Z]`)

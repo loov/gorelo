@@ -4,7 +4,7 @@
 
 Greet -> dst/greet.go
 
-@warn moved decl Greet references unexported "greeting" which is not in the move set
+@warn moved decl "Greet" references unexported "greeting" which is not in the move set
 @vet undefined: greeting
 
 -- input/go.mod --

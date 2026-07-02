@@ -4,7 +4,7 @@
 
 Format -> dst/format.go
 
-@warn moved decl Format uses dot import "strings"
+@warn moved decl "Format" uses dot import "strings"
 @vet undefined: ToUpper
 
 -- input/go.mod --

@@ -234,7 +234,7 @@ func TestIsPackageScope_Method(t *testing.T) {
 	var methodGroup *mast.Group
 	for _, id := range ids {
 		grp := ix.Group(id)
-		if grp != nil && grp.Kind == mast.Method {
+		if grp != nil && grp.Kind == mast.ObjectMethod {
 			methodGroup = grp
 			break
 		}

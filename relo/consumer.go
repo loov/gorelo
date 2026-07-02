@@ -13,9 +13,9 @@ import (
 // computeRenames on the non-overlapping ident region. Groups whose
 // kind TravelsWithType (methods, fields) are skipped in external
 // packages — they are accessed via receivers, not package qualifiers.
-func computeConsumerEdits(ctx *compileCtx) {
-	ix, resolved := ctx.ix, ctx.resolved
-	movedSpans, edits, imports, opts := ctx.movedSpans, ctx.edits, ctx.imports, ctx.opts
+func computeConsumerEdits(cc *compileCtx) {
+	ix, resolved := cc.ix, cc.resolved
+	movedSpans, edits, imports, opts := cc.movedSpans, cc.edits, cc.imports, cc.opts
 
 	// Groups that cannot rely on stubs: file-move groups (source file
 	// is deleted) and detach/attach groups (calling convention changes,
@@ -66,7 +66,7 @@ func computeConsumerEdits(ctx *compileCtx) {
 		stubsHandled := opts.stubsEnabled() && !noStubGroups[grp]
 
 		for _, id := range grp.Idents {
-			if id.Kind != mast.Use || id.File == nil {
+			if id.Kind != mast.IdentUse || id.File == nil {
 				continue
 			}
 			filePath := id.File.Path
@@ -78,7 +78,7 @@ func computeConsumerEdits(ctx *compileCtx) {
 				continue
 			}
 
-			qe := ctx.classifyRef(info.targetDir, filepath.Dir(filePath))
+			qe := cc.classifyRef(info.targetDir, filepath.Dir(filePath))
 
 			if qe.LocalRef {
 				if qualified {

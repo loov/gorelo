@@ -3,8 +3,8 @@
 
 Content -> embedded.go
 
-@warn moved decl Content has blank import "embed" for side effects
-@warn moved decl Content has a //go:embed directive
+@warn moved decl "Content" has blank import "embed" for side effects
+@warn moved decl "Content" has a //go:embed directive
 
 -- input/go.mod --
 module example.com/pkg

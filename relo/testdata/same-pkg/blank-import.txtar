@@ -2,7 +2,7 @@
 
 Process -> moved.go
 
-@warn moved decl Process has blank import "image/png" for side effects
+@warn moved decl "Process" has blank import "image/png" for side effects
 
 -- input/go.mod --
 module example.com/pkg

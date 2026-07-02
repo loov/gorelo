@@ -6,7 +6,7 @@ Config Config#GetAddr=Address -> moved.go
 Config#host=Host
 Config#port=Port
 
-@warn constructor NewConfig exists but is not being moved with type Config
+@warn constructor "NewConfig" exists but is not being moved with type "Config"
 
 -- input/go.mod --
 module example.com/pkg

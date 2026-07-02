@@ -5,7 +5,7 @@
 Green -> dst/colors.go
 UseGreen -> dst/use.go
 
-@warn const Green depends on iota
+@warn const "Green" depends on iota
 @vet missing init expr for Green
 
 -- input/go.mod --

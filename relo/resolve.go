@@ -80,7 +80,7 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 		// Find the Def ident. Prefer the one matching r.Ident by
 		// pointer identity (the user provided the def itself); fall
 		// back to the group's first def.
-		defIdent := grp.FindIdent(r.Ident, mast.Def)
+		defIdent := grp.FindIdent(r.Ident, mast.IdentDef)
 		if defIdent == nil {
 			defIdent = grp.DefIdent()
 		}
@@ -90,31 +90,31 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 
 		// Validate kind.
 		switch grp.Kind {
-		case mast.TypeName, mast.Func, mast.Method, mast.Const, mast.Var:
+		case mast.ObjectTypeName, mast.ObjectFunc, mast.ObjectMethod, mast.ObjectConst, mast.ObjectVar:
 			// OK for both MoveTo and Rename.
-		case mast.Field:
+		case mast.ObjectField:
 			if r.MoveTo != "" {
 				return nil, fmt.Errorf("field %q cannot be moved, only renamed", grp.Name)
 			}
-		case mast.Label, mast.PackageName, mast.Unknown:
-			return nil, fmt.Errorf("cannot relocate %q (kind %d)", grp.Name, grp.Kind)
+		case mast.ObjectLabel, mast.ObjectPackageName, mast.ObjectUnknown:
+			return nil, fmt.Errorf("cannot relocate %q (kind %v)", grp.Name, grp.Kind)
 		}
 
 		// Validate detach/attach.
-		if r.Detach && grp.Kind != mast.Method {
+		if r.Detach && grp.Kind != mast.ObjectMethod {
 			return nil, fmt.Errorf("@detach requires a method, but %q is %v", grp.Name, grp.Kind)
 		}
-		if r.MethodOf != "" && grp.Kind != mast.Func {
+		if r.MethodOf != "" && grp.Kind != mast.ObjectFunc {
 			return nil, fmt.Errorf("@attach requires a function, but %q is %v", grp.Name, grp.Kind)
 		}
 
 		// Update group Kind for detach/attach so the rest of the
 		// pipeline treats the declaration with its new kind.
 		if r.Detach {
-			grp.Kind = mast.Func
+			grp.Kind = mast.ObjectFunc
 		}
 		if r.MethodOf != "" {
-			grp.Kind = mast.Method
+			grp.Kind = mast.ObjectMethod
 		}
 
 		// Validate rename target is a valid Go identifier.
@@ -123,7 +123,7 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 		}
 
 		// Warn about init/main rename semantics.
-		if r.Rename != "" && grp.Kind == mast.Func {
+		if r.Rename != "" && grp.Kind == mast.ObjectFunc {
 			if grp.Name == "init" && r.Rename != "init" {
 				plan.Warnings.Addf("renaming init function loses automatic execution semantics")
 			}
@@ -168,7 +168,7 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 				newName = grp.Name
 			}
 			if existing.TargetFile != newTarget || existing.TargetName != newName {
-				return nil, fmt.Errorf("conflicting relos for %q: (%s, %s) vs (%s, %s)",
+				return nil, fmt.Errorf("conflicting relos for %q: (%q, %q) vs (%q, %q)",
 					grp.Name, existing.TargetFile, existing.TargetName, newTarget, newName)
 			}
 			// Identical — silently deduplicate.
@@ -224,7 +224,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 	for _, rr := range resolved {
 		key := rr.Group.Pkg + "." + rr.Group.Name
 		movedNames[key] = rr
-		if rr.Group.Kind == mast.TypeName {
+		if rr.Group.Kind == mast.ObjectTypeName {
 			movedTypes[key] = rr
 		}
 	}
@@ -233,7 +233,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 	// Methods must be in the same package as the receiver type.
 	movedPkgs := make(map[string]bool)
 	for _, rr := range resolved {
-		if rr.Group.Kind == mast.TypeName {
+		if rr.Group.Kind == mast.ObjectTypeName {
 			movedPkgs[rr.Group.Pkg] = true
 		}
 	}
@@ -314,7 +314,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 		if _, moved := movedNames[ctorKey]; !moved {
 			if ix.FindDef(ctorName, typeRelo.Group.Pkg) != nil {
 				plan.Warnings.AddAtf(typeRelo, ix,
-					"constructor %s exists but is not being moved with type %s",
+					"constructor %q exists but is not being moved with type %q",
 					ctorName, typeRelo.Group.Name)
 			}
 		}
@@ -322,7 +322,7 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 
 	// Warn about orphaned methods.
 	for _, rr := range resolved {
-		if rr.Group.Kind != mast.Method {
+		if rr.Group.Kind != mast.ObjectMethod {
 			continue
 		}
 		// Find the receiver type name from the method's function decl.
@@ -333,8 +333,8 @@ func synthesize(ix *mast.Index, resolved []*resolvedRelo, seen map[seenKey]*reso
 		typeKey := rr.Group.Pkg + "." + recvType
 		if _, ok := movedTypes[typeKey]; !ok {
 			plan.Warnings.AddAtf(rr, ix,
-				"method %s.%s is being moved but type %s is not",
-				recvType, rr.Group.Name, recvType)
+				"method %q is being moved but type %q is not",
+				recvType+"."+rr.Group.Name, recvType)
 		}
 	}
 
@@ -365,7 +365,7 @@ func findMethodReceiverType(rr *resolvedRelo) string {
 // false means the method does not need to be exported.
 func methodHasExternalUses(grp *mast.Group, recvType string) bool {
 	for _, id := range grp.Idents {
-		if id.Kind != mast.Use || id.File == nil {
+		if id.Kind != mast.IdentUse || id.File == nil {
 			continue
 		}
 		enclosing := enclosingFuncDecl(id.File.Syntax, id.Ident.Pos())
@@ -440,7 +440,7 @@ func groupBySource(resolved []*resolvedRelo) map[string][]*resolvedRelo {
 // to the same destination directory do not count as external.
 func hasExternalUses(grp *mast.Group, targetDir string, fileMoveTargetDir map[string]string) bool {
 	for _, id := range grp.Idents {
-		if id.Kind != mast.Use || id.File == nil {
+		if id.Kind != mast.IdentUse || id.File == nil {
 			continue
 		}
 		if dir, ok := fileMoveTargetDir[id.File.Path]; ok && dir == targetDir {

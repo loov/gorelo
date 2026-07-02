@@ -77,7 +77,7 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 		opts = &Options{}
 	}
 
-	ctx := &compileCtx{
+	cc := &compileCtx{
 		ix:              ix,
 		opts:            opts,
 		plan:            &Plan{},
@@ -95,68 +95,68 @@ func Compile(ix *mast.Index, relos []Relo, fileMoves []FileMove, opts *Options) 
 	if err != nil {
 		return nil, err
 	}
-	ctx.fmInfos = fmInfos
+	cc.fmInfos = fmInfos
 	relos = append(userRelos, expanded...)
 
 	// Phase 0-1: validate, deduplicate, synthesize.
-	resolved, err := resolve(ix, relos, fmInfos, ctx.plan)
+	resolved, err := resolve(ix, relos, fmInfos, cc.plan)
 	if err != nil {
 		return nil, err
 	}
 	tagFileMoves(resolved, fmInfos)
 	if len(resolved) == 0 {
-		return ctx.plan, nil
+		return cc.plan, nil
 	}
-	ctx.resolved = resolved
+	cc.resolved = resolved
 
 	// Post-resolution validators (see validate.go).
-	if err := checkUnexportedCrossPkg(ctx.resolved, ctx.fmInfos); err != nil {
+	if err := checkUnexportedCrossPkg(cc.resolved, cc.fmInfos); err != nil {
 		return nil, err
 	}
 
 	// Phase 2-3: compute spans with block semantics.
-	spans, err := computeSpans(ctx)
+	spans, err := computeSpans(cc)
 	if err != nil {
 		return nil, err
 	}
-	ctx.spans = spans
+	cc.spans = spans
 
 	// Phase 4-5: check build constraints and detect conflicts.
-	checkConstraints(ctx)
-	ctx.resolvedGroups = buildResolvedGroups(ctx.resolved)
-	ctx.reloByGroup = buildReloByGroup(ctx.resolved)
-	if err := detectConflicts(ctx); err != nil {
+	checkConstraints(cc)
+	cc.resolvedGroups = buildResolvedGroups(cc.resolved)
+	cc.reloByGroup = buildReloByGroup(cc.resolved)
+	if err := detectConflicts(cc); err != nil {
 		return nil, err
 	}
 
 	// Phase 6: compute rename edits into the shared edit.Plan.
-	ctx.edits = &ed.Plan{}
-	ctx.movedSpans = buildMovedSpanIndex(ctx.resolved, ctx.spans)
-	computeRenames(ctx)
+	cc.edits = &ed.Plan{}
+	cc.movedSpans = buildMovedSpanIndex(cc.resolved, cc.spans)
+	computeRenames(cc)
 
-	// Phase 7: import changes accumulate into ctx.imports.
-	ctx.imports = &importSet{byFile: make(map[string]*importChange)}
-	warnNontransferableImports(ctx)
+	// Phase 7: import changes accumulate into cc.imports.
+	cc.imports = &importSet{byFile: make(map[string]*importChange)}
+	warnNontransferableImports(cc)
 
 	// Phase 7a: compute detach/attach structural edits.
-	computeDetachEdits(ctx)
+	computeDetachEdits(cc)
 
 	// Phase 7b: compute consumer qualifier edits (rewrite files that import moved symbols).
-	computeConsumerEdits(ctx)
+	computeConsumerEdits(cc)
 
 	// Phase 7c: rewrite qualifiers inside all cross-file-moved spans
 	// (both per-decl extractions and file moves share one loop).
-	rewriteAllCrossFileQualifiers(ctx)
+	rewriteAllCrossFileQualifiers(cc)
 
 	// Phase 7d: emit Move primitives — per-span for per-decl
 	// extractions, per-file for whole-file moves.
-	emitCrossFileExtraction(ctx)
-	emitFileMoveEdits(ctx)
+	emitCrossFileExtraction(cc)
+	emitFileMoveEdits(cc)
 
 	// Phase 8: assemble file edits.
-	assemble(ctx)
+	assemble(cc)
 
-	return ctx.plan, nil
+	return cc.plan, nil
 }
 
 // qualifyEdit describes how to qualify a reference to a group that is
@@ -174,50 +174,50 @@ type qualifyEdit struct {
 // classifyRef determines how a reference to a group whose destination is
 // groupDir should be qualified from the perspective of code in observerDir.
 // Both directories must be absolute paths.
-func (ctx *compileCtx) classifyRef(groupDir, observerDir string) qualifyEdit {
+func (cc *compileCtx) classifyRef(groupDir, observerDir string) qualifyEdit {
 	if groupDir == observerDir {
 		return qualifyEdit{LocalRef: true}
 	}
-	impPath := ctx.cachedImportPath(groupDir)
+	impPath := cc.cachedImportPath(groupDir)
 	return qualifyEdit{
-		Qualifier:  ctx.cachedPackageLocalName(groupDir),
+		Qualifier:  cc.cachedPackageLocalName(groupDir),
 		ImportPath: impPath,
 	}
 }
 
 // cachedImportPath returns guessImportPath(dir) with memoization.
-func (ctx *compileCtx) cachedImportPath(dir string) string {
-	if v, ok := ctx.importPathCache[dir]; ok {
+func (cc *compileCtx) cachedImportPath(dir string) string {
+	if v, ok := cc.importPathCache[dir]; ok {
 		return v
 	}
 	v := guessImportPath(dir)
-	ctx.importPathCache[dir] = v
+	cc.importPathCache[dir] = v
 	return v
 }
 
 // cachedPkgForDir returns the non-test package in dir, or nil. Cached.
-func (ctx *compileCtx) cachedPkgForDir(dir string) *mast.Package {
-	if pkg, ok := ctx.pkgByDir[dir]; ok {
+func (cc *compileCtx) cachedPkgForDir(dir string) *mast.Package {
+	if pkg, ok := cc.pkgByDir[dir]; ok {
 		return pkg
 	}
 	return nil
 }
 
 // cachedPackageLocalName returns the package local name for dir, using cached lookups.
-func (ctx *compileCtx) cachedPackageLocalName(dir string) string {
-	if pkg := ctx.cachedPkgForDir(dir); pkg != nil {
+func (cc *compileCtx) cachedPackageLocalName(dir string) string {
+	if pkg := cc.cachedPkgForDir(dir); pkg != nil {
 		return pkg.Name
 	}
-	return guessImportLocalName(ctx.cachedImportPath(dir))
+	return guessImportLocalName(cc.cachedImportPath(dir))
 }
 
 // initGroupByTargetSource populates byTarget and bySource once.
-func (ctx *compileCtx) initGroupByTargetSource() {
-	if ctx.byTarget != nil {
+func (cc *compileCtx) initGroupByTargetSource() {
+	if cc.byTarget != nil {
 		return
 	}
-	ctx.byTarget = groupByTarget(ctx.resolved)
-	ctx.bySource = groupBySource(ctx.resolved)
+	cc.byTarget = groupByTarget(cc.resolved)
+	cc.bySource = groupBySource(cc.resolved)
 }
 
 // Apply writes a Plan to disk.

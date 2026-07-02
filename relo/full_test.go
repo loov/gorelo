@@ -24,6 +24,9 @@ import (
 // go vet on the resulting files. Skipped under -short because the matrix
 // shells out to go vet once per scenario.
 func TestFull(t *testing.T) {
+	if testing.Short() {
+		t.Skip("shells out to go vet per scenario")
+	}
 	t.Parallel()
 
 	scenarios := generateFullScenarios()
@@ -135,15 +138,18 @@ func runFullScenario(t *testing.T, sc fullScenario) {
 	}
 
 	// Wipe .go files under tmp and rewrite from actual.
-	_ = filepath.WalkDir(tmp, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(tmp, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && strings.HasSuffix(path, ".go") {
-			os.Remove(path)
+			return os.Remove(path)
 		}
 		return nil
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for rel, content := range actual {
 		p := filepath.Join(tmp, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

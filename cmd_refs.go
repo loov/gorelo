@@ -41,7 +41,7 @@ func (c *cmdRefs) Execute(ctx context.Context) error {
 		return fmt.Errorf("resolving working directory: %w", err)
 	}
 
-	var results []refsResult
+	results := []refsResult{} // emit [] rather than null in --json output
 	for _, arg := range c.args {
 		r, err := resolveRefs(ix, absDir, arg)
 		if err != nil {
@@ -139,7 +139,7 @@ func resolveRefs(ix *mast.Index, absDir string, arg string) (refsResult, error) 
 	// Collect use locations.
 	var refs []refsLoc
 	for _, ident := range grp.Idents {
-		if ident.Kind != mast.Use || ident.File == nil {
+		if ident.Kind != mast.IdentUse || ident.File == nil {
 			continue
 		}
 		refs = append(refs, refsLoc{
@@ -166,17 +166,17 @@ func resolveRefs(ix *mast.Index, absDir string, arg string) (refsResult, error) 
 
 func objectKindString(k mast.ObjectKind) string {
 	switch k {
-	case mast.TypeName:
+	case mast.ObjectTypeName:
 		return "type"
-	case mast.Func:
+	case mast.ObjectFunc:
 		return "func"
-	case mast.Method:
+	case mast.ObjectMethod:
 		return "method"
-	case mast.Field:
+	case mast.ObjectField:
 		return "field"
-	case mast.Var:
+	case mast.ObjectVar:
 		return "var"
-	case mast.Const:
+	case mast.ObjectConst:
 		return "const"
 	default:
 		return "unknown"

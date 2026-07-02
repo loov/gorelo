@@ -4,12 +4,13 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
 	"html"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +19,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/loov/gorelo/mast"
 )
@@ -73,17 +77,21 @@ func main() {
 	flag.Parse()
 
 	if err := run(*dir, *listen, *cpuprofile); err != nil {
-		log.Fatal(err)
+		slog.Error("run failed", "error", err)
+		os.Exit(1)
 	}
 }
 
-func run(dir, listen, cpuprofile string) error {
+func run(dir, listen, cpuprofile string) (err error) {
 	if cpuprofile != "" {
-		f, err := os.Create(cpuprofile)
-		if err != nil {
-			return err
+		f, createErr := os.Create(cpuprofile)
+		if createErr != nil {
+			return createErr
 		}
-		defer f.Close()
+		// The profile file is written to; its Close error can carry the
+		// final write failure. Deferred after StopCPUProfile so the
+		// profile is flushed before closing.
+		defer func() { err = errors.Join(err, f.Close()) }()
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return err
 		}
@@ -95,15 +103,15 @@ func run(dir, listen, cpuprofile string) error {
 		return err
 	}
 
-	log.Printf("loading packages in %s ...", absDir)
+	slog.Info("loading packages", "dir", absDir)
 	ix, err := mast.Load(&mast.Config{Dir: absDir}, "./...")
 	if err != nil {
 		return fmt.Errorf("loading packages: %w", err)
 	}
 	for _, e := range ix.Errors {
-		log.Printf("warning: %v", e)
+		slog.Warn("package load issue", "error", e)
 	}
-	log.Printf("loaded %d packages", len(ix.Pkgs))
+	slog.Info("loaded packages", "count", len(ix.Pkgs))
 
 	s := &server{
 		ix:       ix,
@@ -148,23 +156,25 @@ func run(dir, listen, cpuprofile string) error {
 		}
 	}
 
+	// Response write errors below are ignored: a failed write means the
+	// client went away, which is not actionable on a local dev server.
 	http.HandleFunc("/style.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Write(styleCSS)
+		_, _ = w.Write(styleCSS)
 	})
 	http.HandleFunc("/file.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Write(fileJS)
+		_, _ = w.Write(fileJS)
 	})
 	http.HandleFunc("/theme.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Write(themeJS)
+		_, _ = w.Write(themeJS)
 	})
 	serveFont := func(data []byte) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "font/woff2")
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			w.Write(data)
+			_, _ = w.Write(data)
 		}
 	}
 	http.HandleFunc("/fonts/JetBrainsMono-Regular.woff2", serveFont(fontRegular))
@@ -173,18 +183,33 @@ func run(dir, listen, cpuprofile string) error {
 	http.HandleFunc("/file", s.handleFile)
 	http.HandleFunc("/group", s.handleGroup)
 
-	srv := &http.Server{Addr: listen}
+	srv := &http.Server{
+		Addr:              listen,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// WriteTimeout is generous so large file responses can finish.
+		WriteTimeout: 5 * time.Minute,
+		IdleTimeout:  2 * time.Minute,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	go func() {
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		slog.Info("listening", "url", "http://"+listen)
+		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	})
+	g.Go(func() error {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
-	}()
-
-	log.Printf("listening on http://%s", listen)
-	return srv.ListenAndServe()
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	})
+	return g.Wait()
 }
 
 type server struct {
@@ -220,7 +245,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, "index.html", struct{ Pkgs []indexPkg }{pkgs}); err != nil {
-		log.Printf("index template: %v", err)
+		slog.Error("executing index template", "error", err)
 	}
 }
 
@@ -256,7 +281,8 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 
 	src, err := os.ReadFile(file.Path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("reading source file", "path", file.Path, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -301,7 +327,7 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 			sp.kind = "use"
 			for _, ident := range g.Idents {
 				if ident.Ident == id {
-					if ident.Kind == mast.Def {
+					if ident.Kind == mast.IdentDef {
 						sp.kind = "def"
 					}
 					if ident.Qualifier != nil {
@@ -336,6 +362,10 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 	srcStr := string(src)
 	spanIdx := 0
 
+	// renderLine constructs per-span markup by hand instead of via
+	// html/template: all interpolated source text goes through
+	// html.EscapeString, and cls/group come from internal constants, so
+	// the output is safe; a template would re-escape the span tags.
 	renderLine := func(lineContent string, lineOffset int) template.HTML {
 		var sb strings.Builder
 		cursor := lineOffset
@@ -404,7 +434,7 @@ func (s *server) handleFile(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, "file.html", data); err != nil {
-		log.Printf("file template: %v", err)
+		slog.Error("executing file template", "error", err)
 	}
 }
 
@@ -418,7 +448,7 @@ type groupHighlight struct {
 
 // groupSnippet is a merged context range, possibly covering multiple references.
 type groupSnippet struct {
-	ContextStart int              `json:"contextStart"` // 1-based
+	ContextStart int              `json:"context_start"` // 1-based
 	Context      []string         `json:"context"`
 	Highlights   []groupHighlight `json:"highlights"`
 }
@@ -471,7 +501,7 @@ func (s *server) handleGroup(w http.ResponseWriter, r *http.Request) {
 		pos := s.ix.Fset.Position(ident.Ident.Pos())
 		rel := relativePath(s.dir, ident.File.Path)
 		kind := "use"
-		if ident.Kind == mast.Def {
+		if ident.Kind == mast.IdentDef {
 			kind = "def"
 		}
 		if _, seen := byFile[rel]; !seen {
@@ -551,7 +581,9 @@ func (s *server) handleGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	// Encode errors after headers are sent mean the client went away,
+	// which is not actionable on a local dev server.
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func relativePath(base, full string) string {
@@ -564,21 +596,21 @@ func relativePath(base, full string) string {
 
 func objectKindString(k mast.ObjectKind) string {
 	switch k {
-	case mast.TypeName:
+	case mast.ObjectTypeName:
 		return "type"
-	case mast.Func:
+	case mast.ObjectFunc:
 		return "func"
-	case mast.Method:
+	case mast.ObjectMethod:
 		return "method"
-	case mast.Field:
+	case mast.ObjectField:
 		return "field"
-	case mast.Var:
+	case mast.ObjectVar:
 		return "var"
-	case mast.Const:
+	case mast.ObjectConst:
 		return "const"
-	case mast.PackageName:
+	case mast.ObjectPackageName:
 		return "package"
-	case mast.Label:
+	case mast.ObjectLabel:
 		return "label"
 	default:
 		return "unknown"

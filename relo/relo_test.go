@@ -15,7 +15,12 @@ import (
 	"github.com/loov/gorelo/rules"
 )
 
+// TestGolden runs the txtar-based golden tests under testdata. Skipped
+// under -short because every scenario shells out to go vet on its output.
 func TestGolden(t *testing.T) {
+	if testing.Short() {
+		t.Skip("shells out to go vet per scenario")
+	}
 	t.Parallel()
 
 	var entries []string
@@ -247,15 +252,18 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 
 	// Write actual output files to the temp directory.
 	// First remove all .go files, then write the output.
-	_ = filepath.WalkDir(pkgDir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(pkgDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && strings.HasSuffix(path, ".go") {
-			os.Remove(path)
+			return os.Remove(path)
 		}
 		return nil
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, content := range actual {
 		path := filepath.Join(pkgDir, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {

@@ -223,6 +223,9 @@ func TestPackageLocalName(t *testing.T) {
 }
 
 func TestPackageLocalName_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("loads a real module via mast.Load")
+	}
 	t.Parallel()
 
 	// Create a module with a package whose name differs from the dir.

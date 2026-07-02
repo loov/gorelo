@@ -4,7 +4,7 @@
 
 Helper -> dst/dst.go
 
-@warn source file helper_linux.go has build constraints
+@warn source file "helper_linux.go" has build constraints
 
 -- input/go.mod --
 module example.com/test

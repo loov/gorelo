@@ -55,7 +55,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(obj, fields)
 		grp := findOrCreateGroup(ix, key, obj)
-		addIdent(ix, grp, ident, qualifiers[ident], file, Def)
+		addIdent(ix, grp, ident, qualifiers[ident], file, IdentDef)
 	}
 
 	// Process Uses.
@@ -70,7 +70,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(obj, fields)
 		grp := findOrCreateGroup(ix, key, obj)
-		addIdent(ix, grp, ident, qualifiers[ident], file, Use)
+		addIdent(ix, grp, ident, qualifiers[ident], file, IdentUse)
 	}
 
 	// Process Selections (field/method access via selector expressions).
@@ -86,7 +86,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(obj, fields)
 		grp := findOrCreateGroup(ix, key, obj)
-		addIdent(ix, grp, sel.Sel, qualifiers[sel.Sel], file, Use)
+		addIdent(ix, grp, sel.Sel, qualifiers[sel.Sel], file, IdentUse)
 	}
 
 	// Process type-switch guards. go/types records the implicit
@@ -115,7 +115,7 @@ func resolveInfo(ix *Index, info *types.Info, fileMap map[*ast.File]*File) {
 
 		key := objectKeyFor(typeName, fields)
 		grp := findOrCreateGroup(ix, key, typeName)
-		addIdent(ix, grp, ident, qualifiers[ident], file, Use)
+		addIdent(ix, grp, ident, qualifiers[ident], file, IdentUse)
 	}
 }
 
@@ -157,7 +157,7 @@ func processTypeSwitchGuards(ix *Index, info *types.Info, fileMap map[*ast.File]
 			}
 			key := objectKeyFor(obj, fields)
 			grp := findOrCreateGroup(ix, key, obj)
-			addIdent(ix, grp, guardIdent, qualifiers[guardIdent], file, Def)
+			addIdent(ix, grp, guardIdent, qualifiers[guardIdent], file, IdentDef)
 			return true
 		})
 	}
@@ -342,25 +342,25 @@ func mergeGroups(ix *Index, dst, src *Group) {
 func objectKindFor(obj types.Object) ObjectKind {
 	switch o := obj.(type) {
 	case *types.TypeName:
-		return TypeName
+		return ObjectTypeName
 	case *types.Func:
 		if sig, ok := o.Type().(*types.Signature); ok && sig.Recv() != nil {
-			return Method
+			return ObjectMethod
 		}
-		return Func
+		return ObjectFunc
 	case *types.Var:
 		if o.IsField() {
-			return Field
+			return ObjectField
 		}
-		return Var
+		return ObjectVar
 	case *types.Const:
-		return Const
+		return ObjectConst
 	case *types.PkgName:
-		return PackageName
+		return ObjectPackageName
 	case *types.Label:
-		return Label
+		return ObjectLabel
 	default:
-		return Unknown
+		return ObjectUnknown
 	}
 }
 
@@ -475,7 +475,7 @@ func resolveUntracked(ix *Index) {
 				if !ok {
 					continue
 				}
-				addIdent(ix, grp, ident, nil, file, Use)
+				addIdent(ix, grp, ident, nil, file, IdentUse)
 			}
 		}
 	}

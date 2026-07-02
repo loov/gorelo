@@ -16,9 +16,9 @@ import (
 // renamed groups. It only touches the ident region [identStart, identEnd);
 // qualifier changes and structural edits (detach, consumer) are handled
 // by their own passes on non-overlapping byte regions.
-func computeRenames(ctx *compileCtx) {
-	ix, resolved := ctx.ix, ctx.resolved
-	movedSpans, opts, plan, edits := ctx.movedSpans, ctx.opts, ctx.plan, ctx.edits
+func computeRenames(cc *compileCtx) {
+	ix, resolved := cc.ix, cc.resolved
+	movedSpans, opts, plan, edits := cc.movedSpans, cc.opts, cc.plan, cc.edits
 	renamedGroups := make(map[*mast.Group]string)
 
 	// When stubs are enabled, track groups with cross-package moves.
@@ -44,12 +44,12 @@ func computeRenames(ctx *compileCtx) {
 	// and propagate the rename to the embedded field groups so that
 	// composite literal keys and selectors are also updated.
 	for _, rr := range resolved {
-		if rr.Group.Kind != mast.TypeName || rr.TargetName == rr.Group.Name {
+		if rr.Group.Kind != mast.ObjectTypeName || rr.TargetName == rr.Group.Name {
 			continue
 		}
 		if typeHasEmbeddedUses(ix, rr.Group) {
 			plan.Warnings.AddAtf(rr, ix,
-				"renaming type %s to %s will also change embedded field names, which may affect serialization and reflection",
+				"renaming type %q to %q will also change embedded field names, which may affect serialization and reflection",
 				rr.Group.Name, rr.TargetName)
 			for _, fgrp := range ix.EmbeddedFieldGroups(rr.Group.Name, rr.Group.Pkg) {
 				renamedGroups[fgrp] = rr.TargetName
@@ -115,18 +115,18 @@ type groupAction struct {
 
 // qualifiedName returns the fully-qualified text for this action,
 // using sw.destLocal to resolve any import alias at the destination.
-func (act *groupAction) qualifiedName(sw *spanRewriter) string {
-	if act.ref.LocalRef {
-		return act.targetName
+func (a *groupAction) qualifiedName(sw *spanRewriter) string {
+	if a.ref.LocalRef {
+		return a.targetName
 	}
-	return sw.destLocal(act.ref.ImportPath) + "." + act.targetName
+	return sw.destLocal(a.ref.ImportPath) + "." + a.targetName
 }
 
 // newSpanRewriter builds the action table and registers cross-target
 // destination imports. The returned spanRewriter is ready for the
 // single-pass rewrite walk in rewriteSpanQualifiers.
-func newSpanRewriter(ctx *compileCtx, rr *resolvedRelo, s *span) *spanRewriter {
-	ix, resolved, resolvedGroups, imports := ctx.ix, ctx.resolved, ctx.resolvedGroups, ctx.imports
+func newSpanRewriter(cc *compileCtx, rr *resolvedRelo, s *span) *spanRewriter {
+	ix, resolved, resolvedGroups, imports := cc.ix, cc.resolved, cc.resolvedGroups, cc.imports
 	targetPath := rr.TargetFile
 	targetDir := filepath.Dir(targetPath)
 
@@ -137,7 +137,7 @@ func newSpanRewriter(ctx *compileCtx, rr *resolvedRelo, s *span) *spanRewriter {
 		resolvedGroups:   resolvedGroups,
 		imports:          imports,
 		targetPath:       targetPath,
-		targetImportPath: ctx.cachedImportPath(targetDir),
+		targetImportPath: cc.cachedImportPath(targetDir),
 		isCrossPkg:       rr.isCrossPackageMove(),
 		actions:          make(map[*mast.Group]*groupAction),
 		importByLocal:    make(map[string]string),
@@ -152,7 +152,7 @@ func newSpanRewriter(ctx *compileCtx, rr *resolvedRelo, s *span) *spanRewriter {
 			sw.actions[r.Group] = &groupAction{targetName: r.TargetName, ref: qualifyEdit{LocalRef: true}}
 			continue
 		}
-		ref := ctx.classifyRef(rDir, targetDir)
+		ref := cc.classifyRef(rDir, targetDir)
 		if !ref.LocalRef && ref.ImportPath == "" {
 			continue
 		}
@@ -161,7 +161,7 @@ func newSpanRewriter(ctx *compileCtx, rr *resolvedRelo, s *span) *spanRewriter {
 
 	// Propagate type renames to embedded field groups.
 	for _, r := range resolved {
-		if r.Group.Kind != mast.TypeName || r.TargetName == r.Group.Name {
+		if r.Group.Kind != mast.ObjectTypeName || r.TargetName == r.Group.Name {
 			continue
 		}
 		for _, fgrp := range ix.EmbeddedFieldGroups(r.Group.Name, r.Group.Pkg) {
@@ -173,7 +173,7 @@ func newSpanRewriter(ctx *compileCtx, rr *resolvedRelo, s *span) *spanRewriter {
 	}
 
 	if sw.isCrossPkg {
-		sw.srcImportPath = ctx.cachedImportPath(rr.SourceDir)
+		sw.srcImportPath = cc.cachedImportPath(rr.SourceDir)
 	}
 
 	// Pre-register cross-target imports in path-sorted order so
@@ -261,13 +261,13 @@ func (sw *spanRewriter) destLocal(impPath string) string {
 // mast qualifier, the SelectorExpr handler emits the full rewrite
 // and returns false to skip children. Otherwise, import-qualifier
 // rewrites are handled here and children are visited normally.
-func rewriteSpanQualifiers(ctx *compileCtx, rr *resolvedRelo, s *span, origin string) {
+func rewriteSpanQualifiers(cc *compileCtx, rr *resolvedRelo, s *span, origin string) {
 	if rr.File == nil || s == nil {
 		return
 	}
 
-	sw := newSpanRewriter(ctx, rr, s)
-	ix, plan := ctx.ix, ctx.edits
+	sw := newSpanRewriter(cc, rr, s)
+	ix, plan := cc.ix, cc.edits
 	srcPath := rr.File.Path
 	fset := ix.Fset
 
@@ -353,7 +353,7 @@ func rewriteSpanQualifiers(ctx *compileCtx, rr *resolvedRelo, s *span, origin st
 		definedInSpan := false
 		inSourcePkg := false
 		for _, gid := range grp.Idents {
-			if gid.Kind != mast.Def || gid.File == nil {
+			if gid.Kind != mast.IdentDef || gid.File == nil {
 				continue
 			}
 			defOff := fset.Position(gid.Ident.Pos()).Offset
@@ -379,7 +379,7 @@ func rewriteSpanQualifiers(ctx *compileCtx, rr *resolvedRelo, s *span, origin st
 // that appear as embedded fields in struct declarations.
 func typeHasEmbeddedUses(ix *mast.Index, grp *mast.Group) bool {
 	for _, id := range grp.Idents {
-		if id.Kind != mast.Use || id.File == nil {
+		if id.Kind != mast.IdentUse || id.File == nil {
 			continue
 		}
 		// Walk the file to check if this ident is used as an anonymous

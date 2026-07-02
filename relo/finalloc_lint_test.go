@@ -18,6 +18,8 @@ import (
 // edit-range byte offset, or reading an import alias) and are excluded
 // by regex.
 func TestNoRawIdentityReadsInRewriters(t *testing.T) {
+	t.Parallel()
+
 	files := []string{"detach.go", "assemble.go"}
 
 	// Each rule has:

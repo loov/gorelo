@@ -23,12 +23,12 @@ import (
 // every cross-file-moved span in a single pass. Both per-decl
 // extraction and file-move paths share this loop; only the Move
 // emission differs.
-func rewriteAllCrossFileQualifiers(ctx *compileCtx) {
-	for _, rr := range ctx.resolved {
+func rewriteAllCrossFileQualifiers(cc *compileCtx) {
+	for _, rr := range cc.resolved {
 		if !rr.isCrossFileMove() || rr.File == nil {
 			continue
 		}
-		s := ctx.spans[rr]
+		s := cc.spans[rr]
 		if s == nil {
 			continue
 		}
@@ -36,19 +36,19 @@ func rewriteAllCrossFileQualifiers(ctx *compileCtx) {
 		if rr.FromFileMove != nil {
 			origin = "filemove"
 		}
-		rewriteSpanQualifiers(ctx, rr, s, origin)
+		rewriteSpanQualifiers(cc, rr, s, origin)
 	}
 }
 
-func emitCrossFileExtraction(ctx *compileCtx) {
-	spans, edits := ctx.spans, ctx.edits
+func emitCrossFileExtraction(cc *compileCtx) {
+	spans, edits := cc.spans, cc.edits
 	type spanKey struct {
 		path       string
 		start, end int
 	}
 	emittedSpan := make(map[spanKey]bool)
 
-	for _, rr := range ctx.resolved {
+	for _, rr := range cc.resolved {
 		if !rr.isCrossFileMove() || rr.File == nil || rr.FromFileMove != nil {
 			continue
 		}
@@ -86,7 +86,7 @@ func emitCrossFileExtraction(ctx *compileCtx) {
 func emitEdit(plan *ed.Plan, path string, start, end int, new string, origin string) {
 	switch {
 	case start == end:
-		plan.Insert(ed.Anchor{Path: path, Offset: start}, new, ed.Before, origin)
+		plan.Insert(ed.Anchor{Path: path, Offset: start}, new, ed.SideBefore, origin)
 	case new == "":
 		plan.Delete(ed.Span{Path: path, Start: start, End: end}, origin)
 	default:

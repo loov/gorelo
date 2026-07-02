@@ -5,7 +5,7 @@
 @stubs
 Config=Settings NewConfig=NewSettings -> dst/config.go
 
-@warn renaming type Config to Settings will also change embedded field names
+@warn renaming type "Config" to "Settings" will also change embedded field names
 
 -- input/go.mod --
 module example.com/test

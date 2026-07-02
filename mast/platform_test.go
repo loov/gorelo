@@ -53,7 +53,7 @@ func TestPlatformSpecificTypeMethod(t *testing.T) {
 	if grp == nil {
 		t.Fatal("PrintName has no group")
 	}
-	if grp.Kind != mast.Method {
+	if grp.Kind != mast.ObjectMethod {
 		t.Errorf("expected Method kind for PrintName, got %v", grp.Kind)
 	}
 }

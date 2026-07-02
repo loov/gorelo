@@ -51,13 +51,13 @@ func (m movedSpanIndex) Contains(filePath string, off, endOff int) bool {
 }
 
 // computeSpans computes byte ranges for each resolved relo (phases 2-3).
-func computeSpans(ctx *compileCtx) (map[*resolvedRelo]*span, error) {
-	ix, resolved, plan := ctx.ix, ctx.resolved, ctx.plan
+func computeSpans(cc *compileCtx) (map[*resolvedRelo]*span, error) {
+	ix, resolved, plan := cc.ix, cc.resolved, cc.plan
 
 	// First pass: cache enclosing decl on every resolvedRelo so that
 	// checkIotaBlock and downstream phases can use rr.Decl directly.
 	for _, rr := range resolved {
-		if rr.File == nil || rr.Group.Kind == mast.Field {
+		if rr.File == nil || rr.Group.Kind == mast.ObjectField {
 			continue
 		}
 		rr.Decl = findEnclosingDecl(rr.File.Syntax, rr.DefIdent.Ident)
@@ -67,14 +67,14 @@ func computeSpans(ctx *compileCtx) (map[*resolvedRelo]*span, error) {
 	warnedBlocks := make(map[ast.Decl]bool)
 
 	for _, rr := range resolved {
-		if rr.File == nil || rr.Group.Kind == mast.Field {
+		if rr.File == nil || rr.Group.Kind == mast.ObjectField {
 			continue
 		}
 
 		decl := rr.Decl
 		if decl == nil {
 			plan.Warnings.AddAtf(rr, ix,
-				"cannot find declaration for %s in %s", rr.Group.Name, rr.File.Path)
+				"cannot find declaration for %q in %q", rr.Group.Name, rr.File.Path)
 			continue
 		}
 
@@ -92,7 +92,7 @@ func computeSpans(ctx *compileCtx) (map[*resolvedRelo]*span, error) {
 
 			if vs, ok := spec.(*ast.ValueSpec); ok && len(vs.Names) > 1 {
 				plan.Warnings.AddAtf(rr, ix,
-					"%s is part of a multi-name declaration; all names in the spec will be moved together",
+					"%q is part of a multi-name declaration; all names in the spec will be moved together",
 					rr.Group.Name)
 			}
 
@@ -275,7 +275,7 @@ func checkIotaBlock(ix *mast.Index, gd *ast.GenDecl, rr *resolvedRelo, resolved 
 
 	if !allMoved {
 		plan.Warnings.AddAtf(rr, ix,
-			"const %s depends on iota — moving it without the full block will change its value",
+			"const %q depends on iota — moving it without the full block will change its value",
 			rr.Group.Name)
 		return nil
 	}

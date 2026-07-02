@@ -7,7 +7,7 @@ import (
 	"github.com/loov/gorelo/mast"
 )
 
-func TestTypeRename(t *testing.T) {
+func TestTypeIdentsShareOneGroup(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)
@@ -28,12 +28,12 @@ func TestTypeRename(t *testing.T) {
 		}
 	}
 
-	if grp.Kind != mast.TypeName {
+	if grp.Kind != mast.ObjectTypeName {
 		t.Errorf("expected TypeName kind, got %v", grp.Kind)
 	}
 }
 
-func TestFieldRename(t *testing.T) {
+func TestFieldUsesLinkedToDef(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)
@@ -93,7 +93,7 @@ func TestEmbeddedField(t *testing.T) {
 
 	hasEmbedded := false
 	for _, id := range typeGroup.Idents {
-		if strings.Contains(id.File.Path, "structs.go") && id.Kind == mast.Use {
+		if strings.Contains(id.File.Path, "structs.go") && id.Kind == mast.IdentUse {
 			hasEmbedded = true
 		}
 	}
@@ -180,7 +180,7 @@ func TestAnonymousStructFields(t *testing.T) {
 	if grp == nil {
 		t.Fatal("Host field has no group")
 	}
-	if grp.Kind != mast.Field {
+	if grp.Kind != mast.ObjectField {
 		t.Errorf("expected Field kind for Host, got %v", grp.Kind)
 	}
 	if len(grp.Idents) < 2 {
@@ -358,7 +358,7 @@ func TestChannelTypes(t *testing.T) {
 		t.Fatal("no TypeName group for Event")
 	}
 	for _, id := range findIdentsInFile(ix, "Event", "channels.go") {
-		if g := ix.Group(id); g != nil && g != eventGrp && g.Kind == mast.TypeName && g.Name == "Event" {
+		if g := ix.Group(id); g != nil && g != eventGrp && g.Kind == mast.ObjectTypeName && g.Name == "Event" {
 			t.Errorf("Event ident at %v in different group", ix.Fset.Position(id.Pos()))
 		}
 	}
@@ -439,7 +439,7 @@ func TestAlternateInterfaceSameMethod(t *testing.T) {
 	var stringerStringGrp, alternateStringGrp *mast.Group
 	for _, id := range findIdentsInFile(ix, "String", "types.go") {
 		g := ix.Group(id)
-		if g == nil || g.Kind != mast.Method {
+		if g == nil || g.Kind != mast.ObjectMethod {
 			continue
 		}
 		pos := ix.Fset.Position(id.Pos())
@@ -493,7 +493,7 @@ func TestInterfaceMethodVsConcreteMethod(t *testing.T) {
 	// s.String() in CallStringer should resolve to some Method group.
 	for _, id := range findIdentsInFunc(ix, "String", "expressions.go", "CallStringer") {
 		grp := ix.Group(id)
-		if grp != nil && grp.Kind != mast.Method {
+		if grp != nil && grp.Kind != mast.ObjectMethod {
 			t.Errorf("s.String() call expected Method kind, got %v", grp.Kind)
 		}
 	}
@@ -536,7 +536,7 @@ func TestNamedReturnValues(t *testing.T) {
 	if grp == nil {
 		t.Fatal("result named return in Divide has no group")
 	}
-	if grp.Kind != mast.Var {
+	if grp.Kind != mast.ObjectVar {
 		t.Errorf("expected Var kind for result, got %v", grp.Kind)
 	}
 
@@ -577,7 +577,7 @@ func TestVariadicForwarding(t *testing.T) {
 	}
 }
 
-func TestLabels(t *testing.T) {
+func TestLabelDefAndUsesShareGroup(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)
@@ -590,7 +590,7 @@ func TestLabels(t *testing.T) {
 	if grp == nil {
 		t.Fatal("Outer label has no group")
 	}
-	if grp.Kind != mast.Label {
+	if grp.Kind != mast.ObjectLabel {
 		t.Errorf("expected Label kind for Outer, got %v", grp.Kind)
 	}
 	for _, id := range outerIdents {
@@ -715,42 +715,32 @@ func TestCrossPackageMissingDep(t *testing.T) {
 	ix := loadTestdataRoot(t)
 
 	tests := []struct {
-		name         string
-		identName    string
-		file         string
-		kind         mast.ObjectKind
-		funcName     string
-		searchInFunc bool
+		name      string
+		identName string
+		file      string
+		kind      mast.ObjectKind
+		funcName  string
 	}{
 		{
-			name:         "linux field access",
-			identName:    "Distro",
-			file:         "platform_linux.go",
-			kind:         mast.Field,
-			funcName:     "LinuxDistro",
-			searchInFunc: true,
-		},
-		{
-			name:      "linux type embedding",
-			identName: "Info",
+			name:      "linux field access",
+			identName: "Distro",
 			file:      "platform_linux.go",
-			kind:      mast.TypeName,
+			kind:      mast.ObjectField,
+			funcName:  "LinuxDistro",
 		},
 		{
-			name:         "linux promoted field",
-			identName:    "Distro",
-			file:         "platform_linux.go",
-			kind:         mast.Field,
-			funcName:     "LinuxAdminDistro",
-			searchInFunc: true,
+			name:      "linux promoted field",
+			identName: "Distro",
+			file:      "platform_linux.go",
+			kind:      mast.ObjectField,
+			funcName:  "LinuxAdminDistro",
 		},
 		{
-			name:         "linux dot import func",
-			identName:    "Name",
-			file:         "dotimport.go",
-			kind:         mast.Func,
-			funcName:     "DotImportName",
-			searchInFunc: true,
+			name:      "linux dot import func",
+			identName: "Name",
+			file:      "dotimport.go",
+			kind:      mast.ObjectFunc,
+			funcName:  "DotImportName",
 		},
 	}
 
@@ -759,26 +749,32 @@ func TestCrossPackageMissingDep(t *testing.T) {
 			t.Parallel()
 
 			var found bool
-			if tt.searchInFunc {
-				for _, id := range findIdentsInFunc(ix, tt.identName, tt.file, tt.funcName) {
-					if g := ix.Group(id); g != nil && g.Kind == tt.kind {
-						found = true
-						break
-					}
-				}
-			} else {
-				for _, id := range findIdentsInFile(ix, tt.identName, tt.file) {
-					if g := ix.Group(id); g != nil && g.Kind == tt.kind {
-						found = true
-						break
-					}
+			for _, id := range findIdentsInFunc(ix, tt.identName, tt.file, tt.funcName) {
+				if g := ix.Group(id); g != nil && g.Kind == tt.kind {
+					found = true
+					break
 				}
 			}
 			if !found {
-				t.Errorf("no group (kind=%d) found for %s in %s — dependency not loaded?", tt.kind, tt.identName, tt.file)
+				t.Errorf("no group (kind=%v) found for %s in %s — dependency not loaded?", tt.kind, tt.identName, tt.file)
 			}
 		})
 	}
+
+	t.Run("linux type embedding", func(t *testing.T) {
+		t.Parallel()
+
+		var found bool
+		for _, id := range findIdentsInFile(ix, "Info", "platform_linux.go") {
+			if g := ix.Group(id); g != nil && g.Kind == mast.ObjectTypeName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no group (kind=%v) found for Info in platform_linux.go — dependency not loaded?", mast.ObjectTypeName)
+		}
+	})
 }
 
 func TestDeferWithMethod(t *testing.T) {
@@ -924,7 +920,7 @@ func TestUserDefinedTypeConstraint(t *testing.T) {
 		if ix.Group(id) == addableGrp {
 			// Check it's a use (not the def)
 			for _, ident := range addableGrp.Idents {
-				if ident.Ident == id && ident.Kind == mast.Use {
+				if ident.Ident == id && ident.Kind == mast.IdentUse {
 					found = true
 					break
 				}
@@ -955,7 +951,7 @@ func TestRecursiveType(t *testing.T) {
 	defs := 0
 	uses := 0
 	for _, ident := range nodeGrp.Idents {
-		if ident.Kind == mast.Def {
+		if ident.Kind == mast.IdentDef {
 			defs++
 		} else {
 			uses++
@@ -993,7 +989,7 @@ func TestEmbeddedInterfaceInStruct(t *testing.T) {
 	// The embedded Stringer in Formatted should be in the Stringer group.
 	found := false
 	for _, ident := range stringerGrp.Idents {
-		if strings.Contains(ident.File.Path, "types.go") && ident.Kind == mast.Use {
+		if strings.Contains(ident.File.Path, "types.go") && ident.Kind == mast.IdentUse {
 			// Check it's from the Formatted struct area (not from Use() or CallStringer etc)
 			pos := ix.Fset.Position(ident.Ident.Pos())
 			if pos.Line > 40 {
@@ -1009,7 +1005,7 @@ func TestEmbeddedInterfaceInStruct(t *testing.T) {
 	// f.String() on Formatted should work through the embedded interface.
 	found = false
 	for _, id := range findIdentsInFunc(ix, "String", "types.go", "FormatWith") {
-		if g := ix.Group(id); g != nil && g.Kind == mast.Method {
+		if g := ix.Group(id); g != nil && g.Kind == mast.ObjectMethod {
 			found = true
 			break
 		}
@@ -1019,7 +1015,7 @@ func TestEmbeddedInterfaceInStruct(t *testing.T) {
 	}
 }
 
-func TestVarConst(t *testing.T) {
+func TestVarAndConstDeclsHaveNamedGroups(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)

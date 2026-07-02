@@ -4,7 +4,7 @@
 
 Base=Foundation -> moved.go
 
-@warn renaming type Base to Foundation will also change embedded field names
+@warn renaming type "Base" to "Foundation" will also change embedded field names
 
 -- input/go.mod --
 module example.com/pkg

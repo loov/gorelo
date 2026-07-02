@@ -41,7 +41,7 @@ func (c *cmdDeps) Execute(ctx context.Context) error {
 		return fmt.Errorf("resolving working directory: %w", err)
 	}
 
-	var results []depsResult
+	results := []depsResult{} // emit [] rather than null in --json output
 	for _, arg := range c.args {
 		r, err := resolveDeps(ix, absDir, arg)
 		if err != nil {
@@ -151,7 +151,7 @@ func resolveDeps(ix *mast.Index, absDir string, arg string) (depsResult, error) 
 	})
 
 	// Also collect dependencies from methods if the specifier is a type.
-	if grp.Kind == mast.TypeName {
+	if grp.Kind == mast.ObjectTypeName {
 		collectMethodDeps(ix, grp, absDir, seen, &deps)
 	}
 
@@ -199,7 +199,7 @@ func collectMethodDeps(ix *mast.Index, typeGrp *mast.Group, absDir string, seen 
 						return true
 					}
 					// Skip the type itself and its methods.
-					if ref == typeGrp || ref.Kind == mast.Method {
+					if ref == typeGrp || ref.Kind == mast.ObjectMethod {
 						return true
 					}
 					seen[ref] = true

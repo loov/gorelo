@@ -4,7 +4,7 @@
 
 init -> dst/init.go
 
-@warn moved decl init references unexported "initialized" which is not in the move set
+@warn moved decl "init" references unexported "initialized" which is not in the move set
 @vet undefined: initialized
 
 -- input/go.mod --

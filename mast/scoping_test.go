@@ -254,7 +254,7 @@ func TestMultipleInitFunctions(t *testing.T) {
 	}
 }
 
-func TestLocalConst(t *testing.T) {
+func TestLocalConstIdentsGroupedAsConst(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)
@@ -268,7 +268,7 @@ func TestLocalConst(t *testing.T) {
 	if grp == nil {
 		t.Fatal("local const limit has no group")
 	}
-	if grp.Kind != mast.Const {
+	if grp.Kind != mast.ObjectConst {
 		t.Errorf("expected Const kind for limit, got %v", grp.Kind)
 	}
 	for _, id := range limitIdents {
@@ -299,7 +299,7 @@ func TestRenamedImport(t *testing.T) {
 	if pkgNameGrp == nil {
 		t.Fatal("lnx import has no group")
 	}
-	if pkgNameGrp.Kind != mast.PackageName {
+	if pkgNameGrp.Kind != mast.ObjectPackageName {
 		t.Errorf("expected PackageName kind for lnx, got %v", pkgNameGrp.Kind)
 	}
 	for _, id := range lnxIdents {
@@ -332,7 +332,7 @@ func TestSelectCaseVariableScoping(t *testing.T) {
 	}
 }
 
-func TestDotImport(t *testing.T) {
+func TestDotImportLinksToDefiningPackage(t *testing.T) {
 	t.Parallel()
 
 	ix := loadTestdata(t)

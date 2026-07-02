@@ -6,7 +6,7 @@
 Config=Settings Config#Host=Address -> dst1/config.go
 Handler=Router Handler#Path=Route NewHandler=NewRouter -> dst2/handler.go
 
-@warn renaming type Handler to Router will also change embedded field names
+@warn renaming type "Handler" to "Router" will also change embedded field names
 
 -- input/go.mod --
 module example.com/test

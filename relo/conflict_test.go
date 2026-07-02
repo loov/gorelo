@@ -135,19 +135,23 @@ const Qux = "hello"
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			for _, decl := range file.Decls {
-				if nameConflicts(decl, tt.name) {
-					if !tt.want {
-						t.Errorf("nameConflicts(%q) found conflict unexpectedly", tt.name)
-					}
-					return
-				}
-			}
-			if tt.want {
-				t.Errorf("nameConflicts(%q) did not find expected conflict", tt.name)
+			got := anyDeclConflicts(file, tt.name)
+			if got != tt.want {
+				t.Errorf("anyDeclConflicts(%q) = %v, want %v", tt.name, got, tt.want)
 			}
 		})
 	}
+}
+
+// anyDeclConflicts reports whether any declaration in file conflicts
+// with name according to nameConflicts.
+func anyDeclConflicts(file *ast.File, name string) bool {
+	for _, decl := range file.Decls {
+		if nameConflicts(decl, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNameConflicts_Method(t *testing.T) {
@@ -220,21 +224,27 @@ func Foo() {}
 			t.Parallel()
 
 			file, fset := parseSource(t, tt.src)
-
-			// Find the first non-import decl.
-			for _, decl := range file.Decls {
-				if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
-					continue
-				}
-				got := hasDirective(decl, file, fset, tt.directive)
-				if got != tt.want {
-					t.Errorf("hasDirective(%q) = %v, want %v", tt.directive, got, tt.want)
-				}
-				return
+			decl := firstNonImportDecl(t, file)
+			got := hasDirective(decl, file, fset, tt.directive)
+			if got != tt.want {
+				t.Errorf("hasDirective(%q) = %v, want %v", tt.directive, got, tt.want)
 			}
-			t.Fatal("no declaration found")
 		})
 	}
+}
+
+// firstNonImportDecl returns the first declaration in file that is not
+// an import block, failing the test if there is none.
+func firstNonImportDecl(t *testing.T, file *ast.File) ast.Decl {
+	t.Helper()
+	for _, decl := range file.Decls {
+		if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
+			continue
+		}
+		return decl
+	}
+	t.Fatal("no declaration found")
+	return nil
 }
 
 func TestCheckConstraints_MixedWarning(t *testing.T) {
@@ -289,7 +299,7 @@ func testResolvedRelo(grp *mast.Group, targetFile, targetName string, file *mast
 	fakeIdent := ast.NewIdent(grp.Name)
 	return &resolvedRelo{
 		Group:      grp,
-		DefIdent:   &mast.Ident{Ident: fakeIdent, Kind: mast.Def, File: file},
+		DefIdent:   &mast.Ident{Ident: fakeIdent, Kind: mast.IdentDef, File: file},
 		TargetFile: targetFile,
 		TargetName: targetName,
 		File:       file,
@@ -301,8 +311,8 @@ func TestDetectConflicts_InterReloCollision(t *testing.T) {
 
 	// Two relos with the same TargetName going to the same directory
 	// from different groups should produce an error.
-	grpA := &mast.Group{Name: "Foo", Kind: mast.TypeName, Pkg: "example.com/a"}
-	grpB := &mast.Group{Name: "Bar", Kind: mast.TypeName, Pkg: "example.com/b"}
+	grpA := &mast.Group{Name: "Foo", Kind: mast.ObjectTypeName, Pkg: "example.com/a"}
+	grpB := &mast.Group{Name: "Bar", Kind: mast.ObjectTypeName, Pkg: "example.com/b"}
 
 	emptyFile := &ast.File{Name: ast.NewIdent("p")}
 	ix := &mast.Index{Fset: token.NewFileSet()}
@@ -327,8 +337,8 @@ func TestDetectConflicts_InterReloCollision_NonOverlappingConstraints(t *testing
 
 	// Two relos with the same TargetName but non-overlapping build constraints
 	// should NOT produce an error.
-	grpA := &mast.Group{Name: "Foo", Kind: mast.TypeName, Pkg: "example.com/a"}
-	grpB := &mast.Group{Name: "Bar", Kind: mast.TypeName, Pkg: "example.com/b"}
+	grpA := &mast.Group{Name: "Foo", Kind: mast.ObjectTypeName, Pkg: "example.com/a"}
+	grpB := &mast.Group{Name: "Bar", Kind: mast.ObjectTypeName, Pkg: "example.com/b"}
 
 	emptyFile := &ast.File{Name: ast.NewIdent("p")}
 	ix := &mast.Index{Fset: token.NewFileSet()}

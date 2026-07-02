@@ -225,7 +225,8 @@ func spanArea(s Span) int { return s.End - s.Start }
 type spanRel int
 
 const (
-	relDisjoint spanRel = iota
+	relInvalid spanRel = iota
+	relDisjoint
 	relEqual
 	relContained // a inside b (strict)
 	relContains  // b inside a (strict)
@@ -282,9 +283,9 @@ func classifySpanIntoMove(sp Span, mv Move) (spanRel, error) {
 	case relContained, relEqual:
 		return relContained, nil
 	case relContains:
-		return 0, fmt.Errorf("Delete/Replace span fully contains a Move span")
+		return relInvalid, fmt.Errorf("Delete/Replace span fully contains a Move span")
 	case relOverlapping:
-		return 0, fmt.Errorf("Delete/Replace span partially overlaps a Move span")
+		return relInvalid, fmt.Errorf("Delete/Replace span partially overlaps a Move span")
 	}
 	return relDisjoint, nil
 }
@@ -450,7 +451,7 @@ func mergeMoveInserts(pending []pendingInsert) ([]Primitive, error) {
 		out = append(out, Insert{
 			Anchor: Anchor{Path: ak.path, Offset: ak.offset},
 			Text:   string(content),
-			Side:   Before,
+			Side:   SideBefore,
 			origin: items[0].origin,
 		})
 	}
