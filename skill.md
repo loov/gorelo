@@ -1,16 +1,14 @@
 # gorelo
 
-A CLI for refactoring Go codebases. Moves declarations between files
-and packages, renames declarations and struct fields, attaches and
-detaches methods, and updates every reference in the module across all
-build constraints.
+A CLI for refactoring Go codebases. Every rule updates all references
+in the module, across all build constraints.
 
 ## When to use gorelo
 
 - Move a type, function, var, or const to another file or package.
-- Rename a declaration and update every caller.
+- Rename a declaration, or a struct field (including nested
+  anonymous-struct fields).
 - Convert a function to a method, or detach a method back to a function.
-- Rename a struct field (including nested anonymous-struct fields).
 - Split a flat package into subpackages, optionally exporting private
   identifiers during the split.
 
@@ -20,6 +18,8 @@ build constraints.
    `gorelo coverage --for <type> <entries>`, `gorelo grep <pattern>`.
 2. Preview: `gorelo check <rules>`.
 3. Apply: `gorelo apply <rules>` (`-v` to log every edit).
+4. Verify: `go build ./...` passes and `gorelo ls`/`refs` show the
+   declarations where you intended them.
 
 ## Commands
 
@@ -115,8 +115,11 @@ Use it to:
 - Verify a refactor: re-run before and after to confirm coverage hasn't
   regressed.
 
-The walk follows direct calls through function and method bodies in
-the loaded module.
+The walk follows references to package-level functions and methods
+through declaration bodies — a function passed as a value counts as
+reached, not only calls. Dynamic dispatch is not resolved: a call
+through an interface reaches the interface method, not its concrete
+implementations.
 
 ## Grep
 
@@ -147,6 +150,7 @@ gorelo grep 'panic(' ./pkg.*         # only declarations in ./pkg
 gorelo grep 'recover()' file.go      # only a file (suffix match)
 gorelo grep 'ctx' 'Handle*'          # only decls whose name matches
 gorelo grep 'recover()' DB#*         # only methods of type DB
+gorelo grep 'recover()' DB           # bare type name expands to DB#*
 ```
 
 ## JSON output
@@ -185,9 +189,4 @@ server/server.go <-
 
 # detach and rename a method
 Server#cleanup=! -> shutdown.go
-```
-
-```
-gorelo check gorelo.rules
-gorelo apply gorelo.rules
 ```
