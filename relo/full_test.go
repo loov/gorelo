@@ -58,9 +58,6 @@ type fullCheck struct {
 	missing  []string // content must NOT include any of these substrings
 }
 
-//go:fix inline
-func boolPtr(b bool) *bool { return new(b) }
-
 // runFullScenario writes sc.inputs to a tmp dir, runs Compile, applies
 // the plan, runs go vet, and asserts sc.checks.
 func runFullScenario(t *testing.T, sc fullScenario) {
