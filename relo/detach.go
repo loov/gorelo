@@ -3,7 +3,9 @@ package relo
 import (
 	"go/ast"
 	"go/token"
+	"go/version"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	ed "github.com/loov/gorelo/edit"
@@ -39,13 +41,18 @@ func detachMethod(ix *mast.Index, rr *resolvedRelo, reloByGroup map[*mast.Group]
 		return
 	}
 
+	typeParams, ok := detachTypeParams(ix, rr, fd, plan)
+	if !ok {
+		return
+	}
+
 	var recvParam string
 	if rr.isCrossFileMove() {
 		recvParam = detachRecvParamForTarget(ix, rr, fd, reloByGroup)
 	} else {
 		recvParam = formatRecvAsParam(fd.Recv, ix.Fset, "", "")
 	}
-	detachDeclEdits(ix, rr, fd, recvParam, edits)
+	detachDeclEdits(ix, rr, fd, recvParam, typeParams, edits)
 
 	if rr.isCrossFileMove() {
 		recvImportPath := detachedReceiverImportPath(ix, rr, fd, reloByGroup)
@@ -110,15 +117,122 @@ func receiverTypeIdent(recv *ast.FieldList) *ast.Ident {
 	return nil
 }
 
+// typeArgExprs returns the type arguments of an instantiated type
+// expression (T[A] or T[A, B]), after stripping a pointer. Returns nil
+// for non-instantiated types.
+func typeArgExprs(t ast.Expr) []ast.Expr {
+	if star, ok := t.(*ast.StarExpr); ok {
+		t = star.X
+	}
+	switch x := t.(type) {
+	case *ast.IndexExpr:
+		return []ast.Expr{x.Index}
+	case *ast.IndexListExpr:
+		return x.Indices
+	}
+	return nil
+}
+
+// typeSpecFor returns the TypeSpec declaring the type that id refers
+// to, or nil when it cannot be found in the index.
+func typeSpecFor(ix *mast.Index, id *ast.Ident) *ast.TypeSpec {
+	grp := ix.Group(id)
+	if grp == nil {
+		return nil
+	}
+	def := grp.DefIdent()
+	if def == nil || def.File == nil {
+		return nil
+	}
+	for _, decl := range def.File.Syntax.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name == def.Ident {
+				return ts
+			}
+		}
+	}
+	return nil
+}
+
+// fieldListTypes returns one type expression per declared name in fl
+// (so `[E, F any]` yields two entries), or nil for a nil list.
+func fieldListTypes(fl *ast.FieldList) []ast.Expr {
+	if fl == nil {
+		return nil
+	}
+	var out []ast.Expr
+	for _, f := range fl.List {
+		for range f.Names {
+			out = append(out, f.Type)
+		}
+	}
+	return out
+}
+
+// detachTypeParams returns the bracketed type parameter list text for
+// the detached function, or "" when it has none. The method's own type
+// parameters (Go 1.27 generic methods) come first, followed by the
+// receiver's type parameters with constraints copied from the type
+// declaration. Method parameters go first so explicit instantiations
+// at call sites stay valid after rewriting — l.Apply[string](f) becomes
+// Apply[string](l, f), with the receiver's type arguments inferred from
+// the receiver argument. Reports false after warning when the receiver
+// type parameters cannot be reconstructed.
+func detachTypeParams(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, plan *Plan) (string, bool) {
+	var parts []string
+	if tp := fd.Type.TypeParams; tp != nil && len(tp.List) > 0 {
+		parts = append(parts, formatTypeParams(tp, ix.Fset))
+	}
+	args := typeArgExprs(fd.Recv.List[0].Type)
+	if len(args) > 0 {
+		ts := typeSpecFor(ix, receiverTypeIdent(fd.Recv))
+		var constraints []ast.Expr
+		if ts != nil {
+			constraints = fieldListTypes(ts.TypeParams)
+		}
+		if len(constraints) != len(args) {
+			plan.Warnings.AddAtf(rr, ix, "cannot detach %q: cannot resolve type parameters of receiver type", rr.Group.Name)
+			return "", false
+		}
+		for i, a := range args {
+			id, ok := a.(*ast.Ident)
+			if !ok || id.Name == "_" {
+				plan.Warnings.AddAtf(rr, ix, "cannot detach %q: receiver type argument is not a named type parameter", rr.Group.Name)
+				return "", false
+			}
+			// ponytail: constraint text is copied verbatim from the type
+			// declaration; constraints naming imports or unexported
+			// identifiers of the source package are not re-qualified
+			// for cross-package targets.
+			parts = append(parts, id.Name+" "+nodeString(constraints[i], ix.Fset))
+		}
+	}
+	if len(parts) == 0 {
+		return "", true
+	}
+	return "[" + strings.Join(parts, ", ") + "]", true
+}
+
 // detachDeclEdits emits primitives onto edits that convert a method
 // declaration into a standalone function. recvParam is the receiver
 // text formatted as a function parameter; callers decide whether to
 // qualify it with a package prefix and/or substitute a renamed base
 // type. The declaration rename (if any) is handled by the rename pass.
-func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvParam string, edits *ed.Plan) {
+func detachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvParam, typeParams string, edits *ed.Plan) {
 	fset := ix.Fset
 	src := fileContent(rr.File)
 	path := rr.File.Path
+
+	// Rewrite (or insert) the type parameter list.
+	if tp := fd.Type.TypeParams; tp != nil {
+		emitEdit(edits, path, fset.Position(tp.Opening).Offset, fset.Position(tp.Closing).Offset+1, typeParams, "detach-type-params")
+	} else if typeParams != "" {
+		emitEdit(edits, path, fset.Position(fd.Type.Params.Opening).Offset, fset.Position(fd.Type.Params.Opening).Offset, typeParams, "detach-type-params")
+	}
 
 	// Remove receiver: from opening paren to closing paren + trailing space.
 	recvOpen := fset.Position(fd.Recv.Opening).Offset
@@ -242,10 +356,6 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, plan *Plan) 
 		plan.Warnings.AddAtf(rr, ix, "%q is already a method", rr.Group.Name)
 		return
 	}
-	if fd.Type.TypeParams != nil && len(fd.Type.TypeParams.List) > 0 {
-		plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: generic functions cannot become methods", rr.Group.Name)
-		return
-	}
 	if fd.Type.Params == nil || len(fd.Type.Params.List) == 0 {
 		plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: no parameters", rr.Group.Name)
 		return
@@ -273,6 +383,17 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, plan *Plan) 
 		return
 	}
 
+	recvParams, ok := attachRecvTypeParams(ix, rr, fd, firstField, plan)
+	if !ok {
+		return
+	}
+	if tp := fd.Type.TypeParams; tp != nil && len(fieldListTypes(tp)) > len(recvParams) {
+		if v := rr.File.Pkg.GoVersion; v != "" && version.Compare("go"+v, "go1.27") < 0 {
+			plan.Warnings.AddAtf(rr, ix, "cannot attach %q as method: generic methods require go1.27 or later (module is go%s)", rr.Group.Name, v)
+			return
+		}
+	}
+
 	// Emit declaration edits unconditionally. The cross-file path
 	// strips the receiver type's package qualifier when moving into
 	// that type's package (self-import removal); the decl edits sit
@@ -283,19 +404,87 @@ func attachMethod(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan, plan *Plan) 
 		unqualifyPkgPath = finalImportPath(rr)
 	}
 	recvText := attachRecvText(rr.File, ix.Fset, fd, unqualifyPkgPath)
-	attachDeclEdits(ix, rr, fd, recvText, edits)
+	attachDeclEdits(ix, rr, fd, recvText, recvParams, edits)
 
-	attachCallSites(ix, rr, edits)
+	attachCallSites(ix, rr, recvParams, edits)
+}
+
+// attachRecvTypeParams returns, for a function becoming a method, the
+// positions within fd's type parameter list of the parameters that
+// move onto the receiver (the E in `func F[E, G any](l List[E], ...)`
+// → `func (l List[E]) F[G any](...)`). The rest stay on the method as
+// Go 1.27 generic method type parameters. Reports false after warning
+// when the receiver's type arguments are not distinct type parameters
+// of fd.
+func attachRecvTypeParams(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, firstField *ast.Field, plan *Plan) ([]int, bool) {
+	args := typeArgExprs(firstField.Type)
+	if len(args) == 0 {
+		return nil, true
+	}
+	var names []string
+	if fd.Type.TypeParams != nil {
+		for _, f := range fd.Type.TypeParams.List {
+			for _, n := range f.Names {
+				names = append(names, n.Name)
+			}
+		}
+	}
+	var positions []int
+	for _, a := range args {
+		id, ok := a.(*ast.Ident)
+		pos := -1
+		if ok {
+			pos = slices.Index(names, id.Name)
+		}
+		if pos < 0 || slices.Contains(positions, pos) {
+			plan.Warnings.AddAtf(rr, ix,
+				"cannot attach %q as method: receiver type arguments must be distinct type parameters of the function",
+				rr.Group.Name)
+			return nil, false
+		}
+		positions = append(positions, pos)
+	}
+	return positions, true
+}
+
+// attachTypeParamsText returns the rewritten bracketed type parameter
+// list of fd with the parameters at the given positions removed, or ""
+// when none remain.
+func attachTypeParamsText(fd *ast.FuncDecl, removed []int, fset *token.FileSet) string {
+	kept := &ast.FieldList{}
+	pos := 0
+	for _, f := range fd.Type.TypeParams.List {
+		nf := &ast.Field{Type: f.Type}
+		for _, n := range f.Names {
+			if !slices.Contains(removed, pos) {
+				nf.Names = append(nf.Names, n)
+			}
+			pos++
+		}
+		if len(nf.Names) > 0 {
+			kept.List = append(kept.List, nf)
+		}
+	}
+	if len(kept.List) == 0 {
+		return ""
+	}
+	return "[" + formatTypeParams(kept, fset) + "]"
 }
 
 // attachDeclEdits emits primitives onto edits that convert a function
 // declaration into a method. recvText is the receiver formatted as the
 // field inside the method's receiver parens. The declaration rename
 // (if any) is handled by the rename pass on the ident region.
-func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvText string, edits *ed.Plan) {
+func attachDeclEdits(ix *mast.Index, rr *resolvedRelo, fd *ast.FuncDecl, recvText string, recvParams []int, edits *ed.Plan) {
 	fset := ix.Fset
 	path := rr.File.Path
 	firstField := fd.Type.Params.List[0]
+
+	// Drop the type parameters that moved onto the receiver.
+	if tp := fd.Type.TypeParams; tp != nil && len(recvParams) > 0 {
+		emitEdit(edits, path, fset.Position(tp.Opening).Offset, fset.Position(tp.Closing).Offset+1,
+			attachTypeParamsText(fd, recvParams, fset), "attach-type-params")
+	}
 
 	// Insert receiver before the function name.
 	nameStart := fset.Position(fd.Name.Pos()).Offset
@@ -377,7 +566,7 @@ func findImportPathForIdent(f *mast.File, name string) string {
 // It edits the qualifier region [editStart, identStart) to replace `pkg.`
 // or bare with `recv.`, and emits structural edits to remove the first arg.
 // The ident region rename is handled by the rename pass.
-func attachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan) {
+func attachCallSites(ix *mast.Index, rr *resolvedRelo, recvParams []int, edits *ed.Plan) {
 	for _, id := range rr.Group.Idents {
 		if id.Kind != mast.IdentUse || id.File == nil {
 			continue
@@ -405,6 +594,22 @@ func attachCallSites(ix *mast.Index, rr *resolvedRelo, edits *ed.Plan) {
 
 		// Edit qualifier region: replace `pkg.` or bare prefix with `recv.`
 		emitEdit(edits, filePath, editStart, identStart, recvText+".", "attach-callsite-qualifier")
+
+		// Drop the receiver's type arguments from an explicit
+		// instantiation: Apply[int, string](l, f) → l.Apply[string](f).
+		if args := typeArgExprs(call.Fun); len(args) > 0 && len(recvParams) > 0 {
+			var kept []string
+			for i, a := range args {
+				if !slices.Contains(recvParams, i) {
+					kept = append(kept, string(src[fset.Position(a.Pos()).Offset:fset.Position(a.End()).Offset]))
+				}
+			}
+			text := ""
+			if len(kept) > 0 {
+				text = "[" + strings.Join(kept, ", ") + "]"
+			}
+			emitEdit(edits, filePath, identStart+len(id.Ident.Name), fset.Position(call.Fun.End()).Offset, text, "attach-callsite-type-args")
+		}
 
 		lparen := fset.Position(call.Lparen).Offset
 		if len(call.Args) > 1 {
@@ -441,7 +646,7 @@ func enclosingCallExpr(file *ast.File, ident *ast.Ident) (sel *ast.SelectorExpr,
 		}
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			if s, ok := x.Fun.(*ast.SelectorExpr); ok && s.Sel == ident {
+			if s, ok := unwrapIndex(x.Fun).(*ast.SelectorExpr); ok && s.Sel == ident {
 				sel = s
 				call = x
 				return false
@@ -457,6 +662,18 @@ func enclosingCallExpr(file *ast.File, ident *ast.Ident) (sel *ast.SelectorExpr,
 	return
 }
 
+// unwrapIndex strips an explicit instantiation (f[T] or f[T, U]) from
+// a call's Fun expression, returning the instantiated expression.
+func unwrapIndex(e ast.Expr) ast.Expr {
+	switch x := e.(type) {
+	case *ast.IndexExpr:
+		return x.X
+	case *ast.IndexListExpr:
+		return x.X
+	}
+	return e
+}
+
 // enclosingCallOnly finds the CallExpr where ident is the function being called.
 func enclosingCallOnly(file *ast.File, ident *ast.Ident) *ast.CallExpr {
 	var result *ast.CallExpr
@@ -468,7 +685,7 @@ func enclosingCallOnly(file *ast.File, ident *ast.Ident) *ast.CallExpr {
 		if !ok {
 			return true
 		}
-		switch fun := call.Fun.(type) {
+		switch fun := unwrapIndex(call.Fun).(type) {
 		case *ast.Ident:
 			if fun == ident {
 				result = call
@@ -547,6 +764,7 @@ func typeExprName(expr ast.Expr) string {
 	if star, ok := expr.(*ast.StarExpr); ok {
 		expr = star.X
 	}
+	expr = unwrapIndex(expr)
 	if ident, ok := expr.(*ast.Ident); ok {
 		return ident.Name
 	}

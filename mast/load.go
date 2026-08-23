@@ -209,9 +209,14 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 	}
 
 	// Create packages and assign files.
+	goVersion := ""
+	if pkg.Module != nil {
+		goVersion = pkg.Module.GoVersion
+	}
 	mpkg := &Package{
-		Name: pkg.Name,
-		Path: pkg.PkgPath,
+		Name:      pkg.Name,
+		Path:      pkg.PkgPath,
+		GoVersion: goVersion,
 	}
 	extTestName := pkg.Name + "_test"
 	var extTestPkg *Package
@@ -224,8 +229,9 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 		if isExtTest {
 			if extTestPkg == nil {
 				extTestPkg = &Package{
-					Name: extTestName,
-					Path: pkg.PkgPath + "_test",
+					Name:      extTestName,
+					Path:      pkg.PkgPath + "_test",
+					GoVersion: goVersion,
 				}
 			}
 			owner = extTestPkg

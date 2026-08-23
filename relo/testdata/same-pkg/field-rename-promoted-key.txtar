@@ -1,0 +1,49 @@
+# Go 1.27: composite literal keys may name promoted fields.
+# Renaming the embedded struct's field must update the promoted key.
+
+Object#name=Name
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.27
+-- input/line.go --
+package pkg
+
+type Object struct {
+	name  string
+	color string
+}
+
+type Line struct {
+	Object
+	p, q int
+}
+
+func newLine() Line {
+	return Line{name: "diagonal", p: 1, q: 2}
+}
+
+func describe(l Line) string {
+	return l.name + l.Object.name
+}
+-- golden/line.go --
+package pkg
+
+type Object struct {
+	Name  string
+	color string
+}
+
+type Line struct {
+	Object
+	p, q int
+}
+
+func newLine() Line {
+	return Line{Name: "diagonal", p: 1, q: 2}
+}
+
+func describe(l Line) string {
+	return l.Name + l.Object.Name
+}

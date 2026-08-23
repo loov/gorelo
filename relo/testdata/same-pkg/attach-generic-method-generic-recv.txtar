@@ -1,0 +1,51 @@
+# Go 1.27: attach a generic function to a generic type. The type
+# parameters used by the receiver move onto it; the rest become the
+# method's own type parameters. Explicit instantiations at call sites
+# drop the receiver's type arguments.
+
+Apply=List#Apply
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.27
+-- input/list.go --
+package pkg
+
+import "strconv"
+
+type List[E any] []E
+
+func Apply[E, F any](l List[E], f func(E) F) List[F] {
+	r := make(List[F], len(l))
+	for i, x := range l {
+		r[i] = f(x)
+	}
+	return r
+}
+
+func use(l List[int]) {
+	_ = Apply(l, strconv.Itoa)
+	_ = Apply[int](l, strconv.Itoa)
+	_ = Apply[int, string](l, strconv.Itoa)
+}
+-- golden/list.go --
+package pkg
+
+import "strconv"
+
+type List[E any] []E
+
+func (l List[E]) Apply[F any](f func(E) F) List[F] {
+	r := make(List[F], len(l))
+	for i, x := range l {
+		r[i] = f(x)
+	}
+	return r
+}
+
+func use(l List[int]) {
+	_ = l.Apply(strconv.Itoa)
+	_ = l.Apply(strconv.Itoa)
+	_ = l.Apply[string](strconv.Itoa)
+}

@@ -1,0 +1,63 @@
+# Go 1.27: move a generic type with a generic method to a different
+# package; an in-package consumer with explicit instantiation and
+# promoted-field literal keys is rewritten.
+
+Pair -> dst/pair.go
+
+-- input/go.mod --
+module example.com/test
+
+go 1.27
+-- input/src/pair.go --
+package src
+
+import "strconv"
+
+type Pair[A, B any] struct {
+	First  A
+	Second B
+}
+
+func (p Pair[A, B]) MapFirst[C any](f func(A) C) Pair[C, B] {
+	return Pair[C, B]{First: f(p.First), Second: p.Second}
+}
+
+type Named struct {
+	Pair[int, int]
+	Label string
+}
+
+func use() {
+	n := Named{First: 1, Second: 2, Label: "x"}
+	_ = n.MapFirst[string](strconv.Itoa)
+	_ = n.MapFirst(strconv.Itoa)
+}
+-- golden/src/pair.go --
+package src
+
+import (
+	"strconv"
+	"example.com/test/dst"
+)
+
+type Named struct {
+	dst.Pair[int, int]
+	Label string
+}
+
+func use() {
+	n := Named{First: 1, Second: 2, Label: "x"}
+	_ = n.MapFirst[string](strconv.Itoa)
+	_ = n.MapFirst(strconv.Itoa)
+}
+-- golden/dst/pair.go --
+package dst
+
+type Pair[A, B any] struct {
+	First  A
+	Second B
+}
+
+func (p Pair[A, B]) MapFirst[C any](f func(A) C) Pair[C, B] {
+	return Pair[C, B]{First: f(p.First), Second: p.Second}
+}

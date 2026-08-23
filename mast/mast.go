@@ -56,9 +56,10 @@ func (ix *Index) EmbeddedFieldGroups(name, pkg string) []*Group {
 
 // Package represents a parsed and type-checked Go package.
 type Package struct {
-	Name  string
-	Path  string
-	Files []*File
+	Name      string
+	Path      string
+	GoVersion string // go directive of the containing module ("1.27"), or "" if unknown
+	Files     []*File
 }
 
 // File represents a single Go source file.

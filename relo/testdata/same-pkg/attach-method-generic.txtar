@@ -1,7 +1,7 @@
-# Attaching a generic function as a method should warn.
-# Go does not allow type parameters on methods.
+# Attaching a generic function as a method should warn when the module
+# predates Go 1.27 generic methods.
 
-@warn generic functions cannot become methods
+@warn generic methods require go1.27 or later
 Start=Server#Start
 
 -- input/go.mod --

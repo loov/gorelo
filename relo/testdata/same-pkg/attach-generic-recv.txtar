@@ -1,0 +1,25 @@
+# Attach a function to a generic type; all type parameters move onto
+# the receiver.
+
+First=List#First
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.21
+-- input/list.go --
+package pkg
+
+type List[E any] []E
+
+func First[E any](l List[E]) E { return l[0] }
+
+func use(l List[int]) int { return First[int](l) + First(l) }
+-- golden/list.go --
+package pkg
+
+type List[E any] []E
+
+func (l List[E]) First() E { return l[0] }
+
+func use(l List[int]) int { return l.First() + l.First() }

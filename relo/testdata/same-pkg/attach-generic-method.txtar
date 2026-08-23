@@ -1,0 +1,30 @@
+# Go 1.27: a generic function can become a generic method.
+
+Start=Server#Start
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.27
+-- input/server.go --
+package pkg
+
+type Server struct{}
+
+func Start[T any](s *Server, v T) {}
+
+func run(s *Server) {
+	Start(s, 1)
+	Start[int](s, 1)
+}
+-- golden/server.go --
+package pkg
+
+type Server struct{}
+
+func (s *Server) Start[T any](v T) {}
+
+func run(s *Server) {
+	s.Start(1)
+	s.Start[int](1)
+}

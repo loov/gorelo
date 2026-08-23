@@ -1,0 +1,58 @@
+# Go 1.27: methods may declare their own type parameters.
+# Renaming a generic method must update inferred calls, explicit
+# instantiations, method values, and method expressions.
+
+List List#Apply=Map -> moved.go
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.27
+-- input/list.go --
+package pkg
+
+import "strconv"
+
+type List[E any] []E
+
+func (l List[E]) Apply[F any](f func(E) F) List[F] {
+	r := make(List[F], len(l))
+	for i, x := range l {
+		r[i] = f(x)
+	}
+	return r
+}
+
+func use(l List[int]) {
+	_ = l.Apply(strconv.Itoa)
+	_ = l.Apply[string](strconv.Itoa)
+	g := l.Apply[string]
+	_ = g
+	h := List[int].Apply[string]
+	_ = h
+}
+-- golden/list.go --
+package pkg
+
+import "strconv"
+
+func use(l List[int]) {
+	_ = l.Map(strconv.Itoa)
+	_ = l.Map[string](strconv.Itoa)
+	g := l.Map[string]
+	_ = g
+	h := List[int].Map[string]
+	_ = h
+}
+-- golden/moved.go --
+package pkg
+
+type List[E any] []E
+
+func (l List[E]) Map[F any](f func(E) F) List[F] {
+	r := make(List[F], len(l))
+	for i, x := range l {
+		r[i] = f(x)
+	}
+	return r
+}
