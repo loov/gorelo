@@ -33,7 +33,6 @@ func TestFull(t *testing.T) {
 	t.Logf("generated %d scenarios", len(scenarios))
 
 	for _, sc := range scenarios {
-		sc := sc
 		t.Run(sc.name, func(t *testing.T) {
 			t.Parallel()
 			runFullScenario(t, sc)
@@ -59,7 +58,8 @@ type fullCheck struct {
 	missing  []string // content must NOT include any of these substrings
 }
 
-func boolPtr(b bool) *bool { return &b }
+//go:fix inline
+func boolPtr(b bool) *bool { return new(b) }
 
 // runFullScenario writes sc.inputs to a tmp dir, runs Compile, applies
 // the plan, runs go vet, and asserts sc.checks.
@@ -349,7 +349,7 @@ func genFuncScenarios() []fullScenario {
 			body = "@stubs\n" + body
 		}
 		checks := []fullCheck{
-			{path: targetPath, contains: []string{"func Target() int"}, exists: boolPtr(true)},
+			{path: targetPath, contains: []string{"func Target() int"}, exists: new(true)},
 		}
 		if !a.stubs {
 			// Without stubs the original decl vanishes from src/src.go
@@ -405,7 +405,7 @@ func genFuncScenarios() []fullScenario {
 			body = "@stubs\n" + body
 		}
 		checks := []fullCheck{
-			{path: targetPath, contains: []string{"func Renamed() int"}, exists: boolPtr(true)},
+			{path: targetPath, contains: []string{"func Renamed() int"}, exists: new(true)},
 		}
 		if a.consumer {
 			if a.crossPkg {
@@ -508,7 +508,7 @@ func genTypeScenarios() []fullScenario {
 			body = "@stubs\n" + body
 		}
 		checks := []fullCheck{
-			{path: targetPath, contains: []string{"type Target struct"}, exists: boolPtr(true)},
+			{path: targetPath, contains: []string{"type Target struct"}, exists: new(true)},
 		}
 		if a.consumer && a.crossPkg {
 			if a.stubs {
@@ -554,7 +554,7 @@ func genTypeScenarios() []fullScenario {
 			body = "@stubs\n" + body
 		}
 		checks := []fullCheck{
-			{path: targetPath, contains: []string{"type Renamed struct"}, exists: boolPtr(true)},
+			{path: targetPath, contains: []string{"type Renamed struct"}, exists: new(true)},
 		}
 		if a.consumer && a.crossPkg {
 			if a.stubs {
@@ -644,7 +644,7 @@ func genConstScenarios() []fullScenario {
 					checks = append(checks, fullCheck{path: "consumer/consumer.go", contains: []string{"src.Renamed"}})
 				}
 			} else {
-				checks = append(checks, fullCheck{path: targetPath, contains: []string{"const " + newName}, exists: boolPtr(true)})
+				checks = append(checks, fullCheck{path: targetPath, contains: []string{"const " + newName}, exists: new(true)})
 				if a.consumer && a.crossPkg {
 					if a.stubs {
 						checks = append(checks, fullCheck{path: "consumer/consumer.go", contains: []string{"src.Target"}})
@@ -726,7 +726,7 @@ func genVarScenarios() []fullScenario {
 			if op == "rename" {
 				checks = append(checks, fullCheck{path: "src/src.go", contains: []string{"var Renamed"}})
 			} else {
-				checks = append(checks, fullCheck{path: targetPath, contains: []string{"var " + newName}, exists: boolPtr(true)})
+				checks = append(checks, fullCheck{path: targetPath, contains: []string{"var " + newName}, exists: new(true)})
 			}
 			out = append(out, fullScenario{name: name, inputs: inputs, rules: body, checks: checks})
 		}
@@ -769,7 +769,7 @@ func genMethodScenarios() []fullScenario {
 			checkFuncPath = "src/src.go"
 		}
 		checks := []fullCheck{
-			{path: checkFuncPath, contains: []string{"func Start("}, exists: boolPtr(true)},
+			{path: checkFuncPath, contains: []string{"func Start("}, exists: new(true)},
 		}
 		if a.consumer {
 			if a.crossPkg {
@@ -800,7 +800,7 @@ func genMethodScenarios() []fullScenario {
 			checkFuncPath = "src/src.go"
 		}
 		checks := []fullCheck{
-			{path: checkFuncPath, contains: []string{"func Begin("}, exists: boolPtr(true)},
+			{path: checkFuncPath, contains: []string{"func Begin("}, exists: new(true)},
 		}
 		if a.consumer {
 			if a.crossPkg {
@@ -916,7 +916,7 @@ func genAttachScenarios() []fullScenario {
 				methodFile = "src/src.go"
 			}
 			checks := []fullCheck{
-				{path: methodFile, contains: []string{"func (s *Server) " + methodName + "("}, exists: boolPtr(true)},
+				{path: methodFile, contains: []string{"func (s *Server) " + methodName + "("}, exists: new(true)},
 			}
 			if a.consumer {
 				checks = append(checks, fullCheck{path: "consumer/consumer.go", contains: []string{"." + methodName + "("}})
@@ -1022,8 +1022,8 @@ func genFileMoveScenarios() []fullScenario {
 		inputs := buildFileMoveInputs(a)
 		rule := "src/server.go -> dst/server.go\n"
 		checks := []fullCheck{
-			{path: "dst/server.go", contains: []string{"type Server struct", "func (s *Server) Start("}, exists: boolPtr(true)},
-			{path: "src/server.go", exists: boolPtr(false)},
+			{path: "dst/server.go", contains: []string{"type Server struct", "func (s *Server) Start("}, exists: new(true)},
+			{path: "src/server.go", exists: new(false)},
 		}
 		if a.sibling {
 			checks = append(checks, fullCheck{path: "src/sibling.go", contains: []string{"dst.Server", "s.Start()"}})
@@ -1043,7 +1043,7 @@ func genFileMoveScenarios() []fullScenario {
 		inputs := buildFileMoveInputs(a)
 		rule := "src/server.go -> dst/server.go\nServer=Host\n"
 		checks := []fullCheck{
-			{path: "dst/server.go", contains: []string{"type Host struct", "func (s *Host) Start("}, exists: boolPtr(true)},
+			{path: "dst/server.go", contains: []string{"type Host struct", "func (s *Host) Start("}, exists: new(true)},
 		}
 		if a.consumer {
 			checks = append(checks, fullCheck{path: "consumer/consumer.go", contains: []string{"dst.Host", "s.Start()"}})
@@ -1060,7 +1060,7 @@ func genFileMoveScenarios() []fullScenario {
 		inputs := buildFileMoveInputs(a)
 		rule := "src/server.go -> dst/server.go\nServer#Start=!\n"
 		checks := []fullCheck{
-			{path: "dst/server.go", contains: []string{"type Server struct", "func Start(s *Server)"}, exists: boolPtr(true)},
+			{path: "dst/server.go", contains: []string{"type Server struct", "func Start(s *Server)"}, exists: new(true)},
 		}
 		if a.consumer {
 			checks = append(checks, fullCheck{path: "consumer/consumer.go", contains: []string{"dst.Start("}})

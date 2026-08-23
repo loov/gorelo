@@ -36,8 +36,7 @@ func checkApply(t *testing.T, p *Plan, files map[string][]byte, want map[string]
 func checkApplyConflict(t *testing.T, p *Plan, files map[string][]byte) {
 	t.Helper()
 	runAllOrders(t, p, files, func(_ map[string][]byte, err error, label string) {
-		var ce *ConflictError
-		if !errors.As(err, &ce) {
+		if _, ok := errors.AsType[*ConflictError](err); !ok {
 			t.Fatalf("%s: want *ConflictError, got %v", label, err)
 		}
 	})
@@ -51,8 +50,7 @@ func checkApplyError(t *testing.T, p *Plan, files map[string][]byte) {
 		if err == nil {
 			t.Fatalf("%s: want error, got nil", label)
 		}
-		var ce *ConflictError
-		if errors.As(err, &ce) {
+		if _, ok := errors.AsType[*ConflictError](err); ok {
 			t.Fatalf("%s: want plain error, got *ConflictError: %v", label, err)
 		}
 	})

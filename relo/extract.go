@@ -111,7 +111,7 @@ func goBlockRenderer(kw string) ed.GroupRenderer {
 		b.WriteString("\n" + kw + " (\n")
 		for _, item := range items {
 			body := bytes.TrimRight(item, "\n")
-			for _, line := range bytes.Split(body, []byte{'\n'}) {
+			for line := range bytes.SplitSeq(body, []byte{'\n'}) {
 				b.WriteByte('\t')
 				b.Write(line)
 				b.WriteByte('\n')

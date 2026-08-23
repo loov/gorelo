@@ -301,8 +301,8 @@ func constSpecDependsOnIota(gd *ast.GenDecl, vs *ast.ValueSpec) bool {
 		return exprListUsesIota(vs.Values)
 	}
 	// No explicit values — inherits from a previous spec.
-	for i := len(gd.Specs) - 1; i >= 0; i-- {
-		s, ok := gd.Specs[i].(*ast.ValueSpec)
+	for i, v := range slices.Backward(gd.Specs) {
+		s, ok := v.(*ast.ValueSpec)
 		if !ok {
 			continue
 		}
