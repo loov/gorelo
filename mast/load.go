@@ -146,6 +146,11 @@ func loadPackage(ix *Index, pkg *packages.Package, cfg *packages.Config, depPkgs
 	if dir == "" {
 		return nil, []error{fmt.Errorf("cannot determine directory for package %q", pkg.PkgPath)}
 	}
+	// Synthesized packages (missed dirs) may carry relative paths; relo compares
+	// file paths against filepath.Abs results, so keep them absolute.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 
 	// Discover all .go files in the directory.
 	allPaths, err := discoverGoFiles(dir)

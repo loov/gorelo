@@ -154,14 +154,9 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 			// Two explicit relos for the same key: error if they conflict.
 			// Normalize newTarget the same way TargetFile is set below
 			// (filepath.Abs) so the comparison works on all platforms.
-			newTarget := r.MoveTo
+			newTarget := absMoveTo(r.MoveTo)
 			if newTarget == "" && defIdent.File != nil {
 				newTarget = defIdent.File.Path
-			}
-			if newTarget != "" {
-				if abs, err := filepath.Abs(newTarget); err == nil {
-					newTarget = abs
-				}
 			}
 			newName := r.Rename
 			if newName == "" {
@@ -180,19 +175,16 @@ func resolve(ix *mast.Index, relos []Relo, fmInfos []*fileMoveInfo, plan *Plan) 
 			Group:      grp,
 			DefIdent:   defIdent,
 			File:       defIdent.File,
-			TargetFile: r.MoveTo,
+			TargetFile: absMoveTo(r.MoveTo),
 			TargetName: grp.Name,
 		}
 		if r.Rename != "" {
 			rr.TargetName = r.Rename
 		}
 		if rr.TargetFile == "" && rr.File != nil {
+			// Rename-only: keep the file's own spelling so it never
+			// looks like a move to a differently-spelled path.
 			rr.TargetFile = rr.File.Path
-		}
-		if rr.TargetFile != "" {
-			if abs, err := filepath.Abs(rr.TargetFile); err == nil {
-				rr.TargetFile = abs
-			}
 		}
 		initResolvedDirs(rr)
 
@@ -457,4 +449,15 @@ func isSamePackageDir(pkg *mast.Package, targetFile string) bool {
 		return false
 	}
 	return filepath.Dir(pkg.Files[0].Path) == filepath.Dir(targetFile)
+}
+
+// absMoveTo normalizes an explicit MoveTo path; empty stays empty.
+func absMoveTo(p string) string {
+	if p == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
