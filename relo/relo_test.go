@@ -88,7 +88,12 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 	}
 
 	// Write input files to a temp directory.
-	tmpDir := t.TempDir()
+	// Resolve symlinks (macOS /var -> /private/var) so paths from go list
+	// match the ones the harness builds.
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	pkgDir := filepath.Join(tmpDir, "pkg")
 	for name, content := range inputFiles {
 		path := filepath.Join(pkgDir, filepath.FromSlash(name))
@@ -101,7 +106,12 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 	}
 
 	// Load all packages in the test module.
-	ix, err := mast.Load(&mast.Config{Dir: pkgDir}, "./...")
+	// Load with a relative Dir, mirroring the CLI's Dir: ".".
+	relDir, err := filepath.Rel(mustGetwd(t), pkgDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix, err := mast.Load(&mast.Config{Dir: relDir}, "./...")
 	if err != nil {
 		t.Fatal("loading package:", err)
 	}
@@ -362,4 +372,12 @@ func parseRules(t *testing.T, text string, ix *mast.Index, pkgDir string) (*rule
 		return f, nil, nil, err
 	}
 	return f, relos, fileMoves, nil
+}
+
+func mustGetwd(t *testing.T) string {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wd
 }

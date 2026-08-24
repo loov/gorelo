@@ -1,0 +1,46 @@
+# Rename-only in a package that packages.Load skips (all files are
+# build-constrained out). Such packages are loaded through the missed-dir
+# fallback; its file paths must not be mistaken for a move target.
+
+ContentAdaptive=Resize
+
+-- input/go.mod --
+module example.com/pkg
+
+go 1.27
+-- input/repro.go --
+//go:build never
+
+package pkg
+
+func ContentAdaptive() int { return 42 }
+-- input/repro_test.go --
+//go:build never
+
+package pkg
+
+import "testing"
+
+func TestContentAdaptive(t *testing.T) {
+	if ContentAdaptive() != 42 {
+		t.Fatal("wrong result")
+	}
+}
+-- golden/repro.go --
+//go:build never
+
+package pkg
+
+func Resize() int { return 42 }
+-- golden/repro_test.go --
+//go:build never
+
+package pkg
+
+import "testing"
+
+func TestContentAdaptive(t *testing.T) {
+	if Resize() != 42 {
+		t.Fatal("wrong result")
+	}
+}
