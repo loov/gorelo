@@ -107,9 +107,10 @@ func runGoldenTest(t *testing.T, txtarPath string) {
 
 	// Load all packages in the test module.
 	// Load with a relative Dir, mirroring the CLI's Dir: ".".
+	// Falls back to the absolute path when Rel fails (different volume on Windows).
 	relDir, err := filepath.Rel(mustGetwd(t), pkgDir)
 	if err != nil {
-		t.Fatal(err)
+		relDir = pkgDir
 	}
 	ix, err := mast.Load(&mast.Config{Dir: relDir}, "./...")
 	if err != nil {
